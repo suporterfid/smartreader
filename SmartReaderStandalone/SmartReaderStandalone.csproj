@@ -1,0 +1,59 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    <AssemblyVersion>3.0.0.90</AssemblyVersion>
+    <FileVersion>3.0.0.90</FileVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+	  <PackageReference Include="EasySharpIni" Version="1.1.1" />
+	  <PackageReference Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" Version="6.0.1" />
+	  <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="6.0.1">
+		  <PrivateAssets>all</PrivateAssets>
+		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+	  </PackageReference>
+	  <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="6.0.1" />
+	  <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="6.0.1">
+		  <PrivateAssets>all</PrivateAssets>
+		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+	  </PackageReference>
+    <PackageReference Include="MQTTnet.Extensions.ManagedClient" Version="3.1.2" />
+    <PackageReference Include="Newtonsoft.Json.Bson" Version="1.0.2" />
+    <PackageReference Include="RestSharp" Version="107.0.2" />
+    <PackageReference Include="SimpleUdp" Version="1.0.0.5" />
+    <PackageReference Include="SuperSimpleTcp" Version="2.5.0.2" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.2.3" />
+	  <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+	  <PackageReference Include="Serilog.AspNetCore" Version="4.1.0" />
+	  <PackageReference Include="Serilog.Expressions" Version="3.2.1" />
+	  <PackageReference Include="Serilog.Sinks.Seq" Version="5.1.0" />
+	  <PackageReference Include="System.IO.Ports" Version="6.0.0" />
+  </ItemGroup>
+
+	<ItemGroup>
+		<Reference Include="Impinj.Atlas">
+			<HintPath>Impinj.Atlas.dll</HintPath>
+		</Reference>
+		<Reference Include="ImpinjLogger">
+		  <HintPath>ImpinjLogger.dll</HintPath>
+		</Reference>
+		<Reference Include="TagDataTranslation">
+		  <HintPath>..\..\..\SmartReader\SmartReader\TagDataTranslation.dll</HintPath>
+		</Reference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="Impinj.Atlas.dll">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="Plugins\" />
+	</ItemGroup>
+
+</Project>

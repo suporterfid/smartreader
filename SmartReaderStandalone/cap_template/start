@@ -1,0 +1,52 @@
+#!/bin/sh
+
+#chown -R root:root *
+chmod 777 /customer/config/
+chmod 777 /cust/config/
+touch /customer/config/error.txt
+chmod 777 /customer/config/error.txt
+chmod 777 /customer/config/smartreader.json
+chown root:cap /customer/config/smartreader.json
+chown root:cap /customer/config/error.txt
+#chmod -R 777 /customer/config/*.ini
+#chmod -R 777 /customer/config/*.json
+
+
+#/opt/ys/rshell -c "config network https enable"
+#/opt/ys/rshell -c "config rfid interface rest"
+
+mkdir /customer/wwwroot/logs
+chmod 775 /customer/wwwroot/logs
+chmod 775 /customer/wwwroot/logs/log-app.txt
+rm -rf /customer/wwwroot/logs/*.*
+cd /customer
+(( count = 1 ))
+while true ; do
+        # Count the log lines and clean if needed. 
+	# $(..) can be used to get the output of a command
+	# use -ge, not >, for comparing numbers
+	# 5 != 50k
+	#if [ "$(wc -l < /customer/wwwroot/logs/log-app.txt)" -ge 30000 ]
+	#then
+	#	rm -rf /customer/wwwroot/logs/log-app.txt  # specify the file to delete
+	#	echo "++++++++" > /customer/wwwroot/logs/log-app.txt
+		#echo "IS GREATER"
+	#fi # end the if statement 
+	# Check to see whether /customer/SmartReaderStandalone exists
+        if [ -f /customer/SmartReaderStandalone ] ; then
+                # The /customer/SmartReaderStandalone exists, so tes whether it's executable
+                if [ -x /customer/SmartReaderStandalone ] ; then
+                        # /customer/SmartReaderStandalone is executable, so run it
+                        appDir=/customer
+                        /customer/SmartReaderStandalone
+                        /usr/bin/logger -p user.notice \
+                                "Starting custom application, count $count."
+                        (( count = count + 1 ))
+                fi
+                        # /customer/SmartReaderStandalone is NOT executable, so wait for a moment
+                 
+		sleep 10
+        else
+                exit 0
+        fi
+done

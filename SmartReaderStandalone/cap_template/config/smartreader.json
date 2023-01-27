@@ -108,7 +108,9 @@
   "connectionStatus": "1",
   "mqttEnabled": "0",
   "mqttUseSsl": "0",
-  
+  "mqttSslCaCertificate": "",
+  "mqttSslClientCertificate": "",
+  "mqttSslClientCertificatePassword": "",
   "mqttBrokerName": "MQTT-Server",
   "mqttBrokerDescription": "MQTT Description",
   "mqttBrokerType": "MQTT",

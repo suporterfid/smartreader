@@ -99,7 +99,7 @@
             <a data-toggle="pill" href="#output">Data output options</a>
         </li>
         <li>
-            <a data-toggle="pill" href="#firmware-upgrade">firmware</a>
+            <a data-toggle="pill" href="#firmware-upgrade">Firmware</a>
         </li>
         <li>
             <a data-toggle="pill" href="#backup-restore">Backup/Restore</a>
@@ -1183,14 +1183,21 @@
         <input type="password" id="outputMqttPassword" class="form-control" v-model="readerConfigs[0].mqttPassword">
         <label for="outputMqttPuslishInterval">Publish Interval (in seconds):</label>
         <input id="outputMqttPuslishInterval" class="form-control" v-model="readerConfigs[0].mqttPuslishIntervalSec">
-
+        <br>
+        <br>
+        <label for="outputMqttCaCertificate">Upload MQTT CA Certificate:</label>
+        <input type="file" @change="uploadCaCert($event)" id="file-input">
+        <br>
+        <br>
+        <label for="outputMqttClientCertificate">Upload MQTT Client Certificate:</label>
+        <input type="file" @change="uploadClientCert($event)" id="file-input">
         <br>
         <br>
         <label for="outputMqttBrokerAddress">Broker Address:</label>
         <input id="outputMqttBrokerAddress" class="form-control" v-model="readerConfigs[0].mqttBrokerAddress">
         <label for="outputMqttBrokerPort">Broker Port:</label>
         <input id="outputMqttBrokerPort" class="form-control" v-model="readerConfigs[0].mqttBrokerPort">
-        <br/>
+        <br />
         <label for="outputMqttBrokerTopic">Tag Events Topic:</label>
         <input id="outputMqttBrokerTopic" class="form-control" v-model="readerConfigs[0].mqttTagEventsTopic">
         <label for="outputMqttQoS">Tag Events QoS Level:</label>
@@ -1200,8 +1207,8 @@
                v-bind:true-value="true"
                v-bind:false-value="false">
         <label for="mqttTagEventsRetainMessages">Retain Messages</label>
-        <br/>
-        <br/>
+        <br />
+        <br />
 
         <label for="mqttManagementEventsTopic">Management Events Topic:</label>
         <input id="mqttManagementEventsTopic" class="form-control" v-model="readerConfigs[0].mqttManagementEventsTopic">
@@ -1212,8 +1219,8 @@
                v-bind:true-value="true"
                v-bind:false-value="false">
         <label for="mqttManagementEventsRetainMessages">Retain Messages</label>
-        <br/>
-        <br/>
+        <br />
+        <br />
 
         <label for="mqttMetricEventsTopic">Metrics Topic:</label>
         <input id="mqttMetricEventsTopic" class="form-control" v-model="readerConfigs[0].mqttMetricEventsTopic">
@@ -1224,28 +1231,28 @@
                v-bind:true-value="true"
                v-bind:false-value="false">
         <label for="mqttMetricEventsRetainMessages">Retain Messages</label>
-        <br/>
-        <br/>
+        <br />
+        <br />
 
         <input id="outputMqttUseSsl" type="checkbox"
                v-model="readerConfigs[0].mqttUseSsl"
                v-bind:true-value="1"
                v-bind:false-value="0">
         <label for="outputMqttUseSsl">Enable Command receiver</label>
-        <br/>
+        <br />
         <label for="outputMqttCommandTopic">Topic for receiving management commands:</label>
         <input id="outputMqttCommandTopic" class="form-control" v-model="readerConfigs[0].mqttManagementCommandTopic">
         <label for="outputMqttCommandQoS">Management Command QoS Level:</label>
         <input id="outputMqttCommandQoS" class="form-control" v-model="readerConfigs[0].mqttManagementCommandQoS">
         <!--
-        <input id="mqttManagementCommandRetainMessages" type="checkbox"
-               v-model="readerConfigs[0].mqttManagementCommandRetainMessages"
-               v-bind:true-value="true"
-               v-bind:false-value="false">
-        <label for="mqttManagementCommandRetainMessages">Retain Messages</label>
-        -->
-        <br/>
-        <br/>
+    <input id="mqttManagementCommandRetainMessages" type="checkbox"
+           v-model="readerConfigs[0].mqttManagementCommandRetainMessages"
+           v-bind:true-value="true"
+           v-bind:false-value="false">
+    <label for="mqttManagementCommandRetainMessages">Retain Messages</label>
+    -->
+        <br />
+        <br />
 
         <label for="mqttManagementResponseTopic">Topic for Management Command Response publishing:</label>
         <input id="mqttManagementResponseTopic" class="form-control" v-model="readerConfigs[0].mqttManagementResponseTopic">
@@ -1256,22 +1263,22 @@
                v-bind:true-value="true"
                v-bind:false-value="false">
         <label for="mqttManagementResponseRetainMessages">Retain Messages</label>
-        <br/>
-        <br/>
+        <br />
+        <br />
 
         <label for="mqttControlCommandTopic">Topic for Control Command:</label>
         <input id="mqttControlCommandTopic" class="form-control" v-model="readerConfigs[0].mqttControlCommandTopic">
         <label for="mqttControlCommandQoS">Control Command QoS Level:</label>
         <input id="mqttControlCommandQoS" class="form-control" v-model="readerConfigs[0].mqttControlCommandQoS">
         <!--
-        <input id="mqttControlCommandRetainMessages" type="checkbox"
-               v-model="readerConfigs[0].mqttControlCommandRetainMessages"
-               v-bind:true-value="true"
-               v-bind:false-value="false">
-        <label for="mqttControlCommandRetainMessages">Retain Messages</label>
-        -->
-        <br/>
-        <br/>
+    <input id="mqttControlCommandRetainMessages" type="checkbox"
+           v-model="readerConfigs[0].mqttControlCommandRetainMessages"
+           v-bind:true-value="true"
+           v-bind:false-value="false">
+    <label for="mqttControlCommandRetainMessages">Retain Messages</label>
+    -->
+        <br />
+        <br />
 
         <label for="mqttControlResponseTopic">Topic for Control Command Response publishing:</label>
         <input id="mqttControlResponseTopic" class="form-control" v-model="readerConfigs[0].mqttControlResponseTopic">
@@ -1282,8 +1289,8 @@
                v-bind:true-value="true"
                v-bind:false-value="false">
         <label for="mqttControlResponseRetainMessages">Retain Messages</label>
-        <br/>
-        <br/>
+        <br />
+        <br />
 
     </template>
 </template>

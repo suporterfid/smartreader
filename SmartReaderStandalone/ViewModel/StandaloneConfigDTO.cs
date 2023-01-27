@@ -227,6 +227,12 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
     public string mqttUseSsl { get; set; }
 
+    public string mqttSslCaCertificate { get; set; }
+
+    public string mqttSslClientCertificate { get; set; }
+
+    public string mqttSslClientCertificatePassword { get; set; }
+
     public string mqttBrokerName { get; set; }
 
     public string mqttBrokerDescription { get; set; }
@@ -843,6 +849,9 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
         if (!mqttUseSsl.Equals(otherStandaloneConfigDTO.mqttUseSsl)) return false;
 
+        if (!mqttSslCaCertificate.Equals(otherStandaloneConfigDTO.mqttSslCaCertificate)) return false;
+
+        if (!mqttSslClientCertificate.Equals(otherStandaloneConfigDTO.mqttSslClientCertificate)) return false;
 
         if (!mqttBrokerAddress.Equals(otherStandaloneConfigDTO.mqttBrokerAddress)) return false;
 
@@ -1568,6 +1577,10 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
             config.mqttEnabled = HttpUtility.UrlDecode(config.mqttEnabled);
 
             config.mqttUseSsl = HttpUtility.UrlDecode(config.mqttUseSsl);
+
+            config.mqttSslCaCertificate = HttpUtility.UrlDecode(config.mqttSslCaCertificate);
+
+            config.mqttSslClientCertificate = HttpUtility.UrlDecode(config.mqttSslClientCertificate);
 
             config.mqttBrokerAddress = HttpUtility.UrlDecode(config.mqttBrokerAddress);
 

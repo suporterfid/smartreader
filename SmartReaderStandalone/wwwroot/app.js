@@ -776,6 +776,76 @@ var vueApplication = new Vue({
 					console.log(err);
 				});
 		},
+		uploadCaCert(event) {
+			let data = new FormData();
+			let file = event.target.files[0];
+
+			//data.append('name', 'my-file')
+			data.append('files', file)
+
+			let headerConfig = {
+				header: {
+					'Content-Type': 'multipart/form-data'
+				}
+			}
+			// POST /apply-settings
+			this.$http.post('/upload/mqtt/ca', data , headerConfig).then((response) => {
+
+				// get status
+				console.log(response.status);
+
+				// get status text
+				console.log(response.statusText);
+
+				// get 'Expires' header
+				//console.log(response.headers.get('Expires'));
+
+				// set data on vm
+				//this.$set('someData', response.body);
+				console.log('Settings applied!!');
+				this.fetchReaderConfig();
+				this.alertSettingsApplied();
+			}, (response) => {
+				// error callback
+				console.log('Error applying settings:' + err);
+				this.alertSettingsNotApplied();
+			});
+		},
+		uploadClientCert(event) {
+			let data = new FormData();
+			let file = event.target.files[0];
+
+			//data.append('name', 'my-file')
+			data.append('files', file)
+
+			let headerConfig = {
+				header: {
+					'Content-Type': 'multipart/form-data'
+				}
+			}
+			// POST /apply-settings
+			this.$http.post('/upload/mqtt/certificate', data, headerConfig).then((response) => {
+
+				// get status
+				console.log(response.status);
+
+				// get status text
+				console.log(response.statusText);
+
+				// get 'Expires' header
+				//console.log(response.headers.get('Expires'));
+
+				// set data on vm
+				//this.$set('someData', response.body);
+				console.log('Settings applied!!');
+				this.fetchReaderConfig();
+				this.alertSettingsApplied();
+			}, (response) => {
+				// error callback
+				console.log('Error applying settings:' + err);
+				this.alertSettingsNotApplied();
+			});
+		},
 		cancelAutoUpdate () {
             clearInterval(this.timer);
 		}

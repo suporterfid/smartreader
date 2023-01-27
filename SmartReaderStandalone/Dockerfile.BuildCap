@@ -1,0 +1,44 @@
+FROM ubuntu:20.04
+RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
+    && apt-get -y install \
+    build-essential \
+    cmake \
+    file \
+    squashfs-tools \
+    dos2unix \
+    zip \
+    unzip
+
+WORKDIR /etk
+RUN chmod 777 /etk
+COPY etk_tools/8.1.0_Octane_Embedded_Development_Tools.tar.gz /etk/
+RUN tar -xvzf /etk/8.1.0_Octane_Embedded_Development_Tools.tar.gz
+COPY bin/Release/net6.0/publish/* /etk/cap/
+COPY cap_template/* /etk/cap/ 
+RUN mv /etk/cap/cap_gen.sh /etk/cap_gen.sh
+RUN mv /etk/cap/cap_description.in /etk/cap_description.in
+RUN mv /etk/cap/capcommand.sh /etk/capcommand.sh 
+
+RUN rm -rf /etk/cap/config/*
+COPY cap_template/config/smartreader.json /etk/cap/config/
+RUN chmod 755 /etk/cap/start
+RUN chmod 755 /etk/cap/SmartReaderStandalone
+RUN chmod 755 /etk/cap/*.so
+RUN chmod 777 /etk/cap/config
+RUN chmod 777 /etk/cap/config/*.json
+#RUN chmod 755 /etk/cap/*.a
+RUN chmod 755 /etk/cap/*.dll
+RUN chmod 755 /etk/cap/*.json
+RUN dos2unix /etk/cap/*.json
+RUN dos2unix /etk/*.in
+RUN dos2unix /etk/cap/config/*.json
+RUN chmod -R 775 /etk/cap/*
+RUN /etk/8.1.0_Octane_Embedded_Development_Tools/cap_gen.sh -d /etk/cap_description.in -o /etk/smartreader_cap.upgx
+RUN chmod 777 /etk/smartreader_cap.upgx
+
+#COPY --from=cap_template /etk/smartreader_cap.upgx .
+
+# Add user
+#ARG UID
+#RUN useradd -mu${UID} -s/bin/bash dev
+#USER dev

@@ -1067,6 +1067,91 @@ app.MapGet("/control", [AuthorizeBasicAuth] async (HttpRequest readerRequest, Ru
     }
 });
 
+app.MapPost("/upload/mqtt/ca", [AuthorizeBasicAuth]
+async (HttpRequest request, RuntimeDb db) =>
+{
+    var requestResult = "Error saving file.";
+
+    try
+    {
+        if(!request.Form.Files.Any())
+        {
+            return Results.BadRequest("Atleast one file is needed");
+        }
+
+        if(!Directory.Exists(@"/customer/config/ca/"))
+        {
+            try
+            {
+                Directory.CreateDirectory(@"/customer/config/ca/");
+            }
+            catch (Exception ex)
+            {
+
+                logger.LogError(ex, "Error creating CA directory.");
+            }           
+        }
+
+        foreach (var file in request.Form.Files)
+        {
+            using (var stream = new FileStream(@"/customer/config/ca/" + file.FileName, FileMode.Create))
+            {
+                file.CopyTo(stream);
+            }
+            break;
+        }
+
+        return Results.Ok("File Uploaded Sucessuful");
+    }
+    catch (Exception exDb)
+    {
+        File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
+        return Results.BadRequest(requestResult);
+    }
+});
+
+app.MapPost("/upload/mqtt/certificate", [AuthorizeBasicAuth]
+async (HttpRequest request, RuntimeDb db) =>
+{
+    var requestResult = "Error saving file.";
+
+    try
+    {
+        if (!request.Form.Files.Any())
+        {
+            return Results.BadRequest("At least one file is needed");
+        }
+
+        if (!Directory.Exists(@"/customer/config/certificate/"))
+        {
+            try
+            {
+                Directory.CreateDirectory(@"/customer/config/certificate/");
+            }
+            catch (Exception ex)
+            {
+
+                logger.LogError(ex, "Error creating CA directory.");
+            }
+        }
+
+        foreach (var file in request.Form.Files)
+        {
+            using (var stream = new FileStream(@"/customer/config/certificate/" + file.FileName, FileMode.Create))
+            {
+                file.CopyTo(stream);
+            }
+            break;
+        }
+
+        return Results.Ok("File Uploaded Sucessuful");
+    }
+    catch (Exception exDb)
+    {
+        File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
+        return Results.BadRequest(requestResult);
+    }
+});
 
 app.UseSwagger();
 app.UseSwaggerUI();
@@ -1439,4 +1524,5 @@ static IResult ProcessMqttEndpointRequest(JsonDocument jsonDocument, RuntimeDb d
 
     return Results.BadRequest(operationResulterror);
 }
+
 

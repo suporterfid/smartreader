@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+This file is used by the publish/package process of your Web project. You can customize the behavior of this process
+by editing this MSBuild file. In order to learn more about this please visit https://go.microsoft.com/fwlink/?LinkID=208121. 
+-->
+<Project>
+  <PropertyGroup>
+    <_PublishTargetUrl>C:\workspace\Impinj\smartreader\smartreader\SmartReaderStandalone\bin\Release\net6.0\publish\</_PublishTargetUrl>
+    <History>True|2023-02-10T02:19:33.4629635Z;True|2023-02-09T23:18:20.2826501-03:00;</History>
+    <LastFailureDetails />
+  </PropertyGroup>
+</Project>

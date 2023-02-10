@@ -73,4 +73,4 @@ Input Directory = /etk/cap
 # Persist a file or directory across a CAP install.  This file or
 # directory will be copied from the existing CAP in to the new CAP
 # during install.  Path is relative to the root of the CAP.
-#Persistent Data = config/app.db
+Persistent Data = config/smartreader.json

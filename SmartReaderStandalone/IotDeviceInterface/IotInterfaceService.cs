@@ -3,10 +3,12 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO.Ports;
+using System.Linq;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Security;
 using System.Reflection;
+using System.Runtime;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -157,6 +159,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     public readonly ConcurrentDictionary<string, ReadCountTimeoutEvent> _softwareFilterReadCountTimeoutDictionary =
         new();
+
+    public readonly ConcurrentDictionary<string, JObject> _smartReaderTagEventsListBatch = new();
 
     private readonly Stopwatch _stopwatchBearerToken = new();
     private readonly Stopwatch _stopwatchKeepalive = new();
@@ -1762,6 +1766,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _logger.LogError(exOnInventoryStatusEvent,
                 "Unexpected error on OnInventoryStatusEvent " + exOnInventoryStatusEvent.Message);
         }
+
+        
     }
 
     private string ProcessBarcodeQueue()
@@ -2732,39 +2738,95 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 if (httpPostIntervalInSec < 1) httpPostIntervalInSec = 1;
             }
 
-            while (httpPostTimer.Elapsed.Seconds < httpPostIntervalInSec)
-            while (_messageQueueTagSmartReaderTagEventHttpPost.TryDequeue(out smartReaderTagReadEvent))
-                try
+            if(!string.IsNullOrEmpty(_standaloneConfigDTO.httpPostEnabled)
+                        && string.Equals("1", _standaloneConfigDTO.httpPostEnabled,
+                            StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch)
+                        && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
+                            StringComparison.OrdinalIgnoreCase))
                 {
-                    if (smartReaderTagReadEvent == null)
-                        continue;
-                    if (smartReaderTagReadEventAggregated == null)
+                    while (httpPostTimer.Elapsed.Seconds < httpPostIntervalInSec)
                     {
-                        smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
-                        smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                            .FirstOrDefault().FirstOrDefault());
+                        await Task.Delay(10);
                     }
-                    else
+                    if (_smartReaderTagEventsListBatch.Count > 0)
                     {
-                        try
+                        foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
                         {
-                            smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                .FirstOrDefault().FirstOrDefault());
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogInformation(ex,
-                                "Unexpected error on OnRunPeriodicTagPublisherTasksEvent " + ex.Message);
-                            //Console.WriteLine("Unexpected error on OnRunPeriodicTagPublisherTasksEvent " + ex.Message);
+                            smartReaderTagReadEvent = smartReaderTagReadEventBatch;
+                            try
+                            {
+                                if (smartReaderTagReadEvent == null)
+                                    continue;
+                                if (smartReaderTagReadEventAggregated == null)
+                                {
+                                    smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
+                                    smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                        .FirstOrDefault().FirstOrDefault());
+                                }
+                                else
+                                {
+                                    try
+                                    {
+                                        smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                            .FirstOrDefault().FirstOrDefault());
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogInformation(ex,
+                                            "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                            }
                         }
                     }
+
                 }
-                catch (Exception ex)
+                else
                 {
-                    _logger.LogInformation("Unexpected error on OnRunPeriodicTagPublisherTasksEvent " + ex.Message,
-                        SeverityType.Error);
-                    //Console.WriteLine("Unexpected error on OnRunPeriodicTagPublisherTasksEvent " + ex.Message);
+                    while (httpPostTimer.Elapsed.Seconds < httpPostIntervalInSec)
+                        while (_messageQueueTagSmartReaderTagEventHttpPost.TryDequeue(out smartReaderTagReadEvent))
+                            try
+                            {
+                                if (smartReaderTagReadEvent == null)
+                                    continue;
+                                if (smartReaderTagReadEventAggregated == null)
+                                {
+                                    smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
+                                    smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                        .FirstOrDefault().FirstOrDefault());
+                                }
+                                else
+                                {
+                                    try
+                                    {
+                                        smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                            .FirstOrDefault().FirstOrDefault());
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogInformation(ex,
+                                            "Unexpected error on OnRunPeriodicTagPublisherTasksEvent " + ex.Message);
+                                        //Console.WriteLine("Unexpected error on OnRunPeriodicTagPublisherTasksEvent " + ex.Message);
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogInformation("Unexpected error on OnRunPeriodicTagPublisherTasksEvent " + ex.Message,
+                                    SeverityType.Error);
+                                //Console.WriteLine("Unexpected error on OnRunPeriodicTagPublisherTasksEvent " + ex.Message);
+                            }
                 }
+            }
+            
+
+            
 
             httpPostTimer.Restart();
 
@@ -2935,40 +2997,97 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         else
             mqttPublishIntervalInMillis = mqttPublishIntervalInSec * 1000;
 
+        
 
         try
         {
-            while (mqttPublisherTimer.Elapsed.Milliseconds < mqttPublishIntervalInMillis)
-            while (_messageQueueTagSmartReaderTagEventMqtt.TryDequeue(out smartReaderTagReadEvent))
-                try
+            if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttEnabled)
+                        && string.Equals("1", _standaloneConfigDTO.mqttEnabled,
+                            StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch)
+                        && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
+                            StringComparison.OrdinalIgnoreCase))
                 {
-                    if (smartReaderTagReadEvent == null)
-                        continue;
-                    if (smartReaderTagReadEventAggregated == null)
+                    while (mqttPublisherTimer.Elapsed.Seconds * 1000 < mqttPublishIntervalInMillis)
                     {
-                        smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
-                        smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                            .FirstOrDefault().FirstOrDefault());
+                        await Task.Delay(10);
                     }
-                    else
+                    if (_smartReaderTagEventsListBatch.Count > 0)
                     {
-                        try
+                        foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
                         {
-                            smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                .FirstOrDefault().FirstOrDefault());
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogInformation(ex,
-                                "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                            smartReaderTagReadEvent = smartReaderTagReadEventBatch;
+                            try
+                            {
+                                if (smartReaderTagReadEvent == null)
+                                    continue;
+                                if (smartReaderTagReadEventAggregated == null)
+                                {
+                                    smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
+                                    smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                        .FirstOrDefault().FirstOrDefault());
+                                }
+                                else
+                                {
+                                    try
+                                    {
+                                        smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                            .FirstOrDefault().FirstOrDefault());
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogInformation(ex,
+                                            "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                            }
                         }
                     }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                }
 
+                }
+                else
+                {
+                    while (mqttPublisherTimer.Elapsed.Milliseconds < mqttPublishIntervalInMillis)
+                        while (_messageQueueTagSmartReaderTagEventMqtt.TryDequeue(out smartReaderTagReadEvent))
+                            try
+                            {
+                                if (smartReaderTagReadEvent == null)
+                                    continue;
+                                if (smartReaderTagReadEventAggregated == null)
+                                {
+                                    smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
+                                    smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                        .FirstOrDefault().FirstOrDefault());
+                                }
+                                else
+                                {
+                                    try
+                                    {
+                                        smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                            .FirstOrDefault().FirstOrDefault());
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogInformation(ex,
+                                            "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                            }
+
+
+                }
+            }
+
+            
             mqttPublisherTimer.Restart();
             try
             {
@@ -2984,6 +3103,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
             }
+
         }
         catch (Exception ex)
         {
@@ -3030,16 +3150,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             var mqttDataTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}";
 
             _mqttClient.PublishAsync(mqttDataTopic, jsonParam);
+            _logger.LogInformation($"Data sent: {jsonParam}");
         }
         catch (Exception ex)
         {
-            try
-            {
-                _messageQueueTagSmartReaderTagEventHttpPostRetry.Enqueue(smartReaderTagEventData);
-            }
-            catch (Exception)
-            {
-            }
 
             _logger.LogInformation(ex, "Unexpected error on ProcessTagEventData " + ex.Message);
         }
@@ -4152,6 +4266,21 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                                 if (string.Equals("STOP_INVENTORY", commands[i].Id, StringComparison.OrdinalIgnoreCase))
                                 {
+                                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch)
+                                     && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
+                                     StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        _logger.LogInformation("Cleaning up batch EPC list.");
+                                        try
+                                        {
+                                            _smartReaderTagEventsListBatch.Clear();
+                                        }
+                                        catch (Exception)
+                                        {
+
+                                        }
+
+                                    }
                                     try
                                     {
                                         var pauseRequest = Path.Combine("/customer", "pause-request.txt");
@@ -4196,6 +4325,21 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                                 if (string.Equals("STOP_PRESET", commands[i].Id, StringComparison.OrdinalIgnoreCase))
                                 {
+                                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch)
+                                     && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
+                                     StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        _logger.LogInformation("Cleaning up batch EPC list.");
+                                        try
+                                        {
+                                            _smartReaderTagEventsListBatch.Clear();
+                                        }
+                                        catch (Exception)
+                                        {
+
+                                        }
+
+                                    }
                                     try
                                     {
                                         var pauseRequest = Path.Combine("/customer", "pause-request.txt");
@@ -5352,7 +5496,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     //StartPresetAsync();
                                     //_ = StartTasksAsync();
-                                    SaveStartCommandToDb();
+                                    //SaveStartCommandToDb();
+                                    SaveStartPresetCommandToDb();
                                 }
                                 catch (Exception e)
                                 {
@@ -5407,14 +5552,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     //StopPresetAsync();
                                     //_ = StopTasksAsync();
-                                    SaveStopCommandToDb();
+                                    //SaveStopCommandToDb();
+                                    SaveStopPresetCommandToDb();
                                 }
                                 catch (Exception e)
                                 {
                                     commandStatus = "error";
                                     _logger.LogError(e, "Unexpected error");
                                 }
-
+                                
                                 if (deserializedCmdData.ContainsKey("response"))
                                 {
                                     deserializedCmdData["response"] = commandStatus;
@@ -5455,6 +5601,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
                                 _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
+
+
                             }
                             else if ("reboot".Equals(commandValue))
                             {
@@ -5595,12 +5743,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
                                 _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
-                                if ("success".Equals(commandStatus))
-                                {
-                                    // exits the app to reload the settings
-                                    Task.Delay(3000);
-                                    Environment.Exit(0);
-                                }
+                                //if ("success".Equals(commandStatus))
+                                //{
+                                //    // exits the app to reload the settings
+                                //    Task.Delay(3000);
+                                //    Environment.Exit(0);
+                                //}
                             }
                             else if ("retrieve-settings".Equals(commandValue))
                             {
@@ -6031,7 +6179,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     //StartPresetAsync();
                                     //_ = StartTasksAsync();
-                                    SaveStartCommandToDb();
+                                    //SaveStartCommandToDb();
+                                    SaveStartPresetCommandToDb();
                                 }
                                 catch (Exception e)
                                 {
@@ -6085,13 +6234,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     //StopPresetAsync();
                                     //_ = StopTasksAsync();
-                                    SaveStopCommandToDb();
+                                    //SaveStopCommandToDb();
+                                    SaveStopPresetCommandToDb();
                                 }
                                 catch (Exception e)
                                 {
                                     commandStatus = "error";
                                     _logger.LogError(e, "Unexpected error");
                                 }
+
+                                
 
                                 if (deserializedCmdData.ContainsKey("response"))
                                 {
@@ -6270,12 +6422,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
                                 _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
-                                if ("success".Equals(commandStatus))
-                                {
-                                    // exits the app to reload the settings
-                                    Task.Delay(3000);
-                                    Environment.Exit(0);
-                                }
+                                //if ("success".Equals(commandStatus))
+                                //{
+                                //    // exits the app to reload the settings
+                                //    Task.Delay(3000);
+                                //    Environment.Exit(0);
+                                //}
                             }
                             else if ("impinj_iot_device_interface".Equals(commandValue))
                             {
@@ -6575,13 +6727,18 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var commandPayloadJObject = deserializedConfigData["payload"].Value<JObject>();
                     if (commandPayloadJObject != null && commandPayloadJObject.ContainsKey("type"))
                     {
+                        var antennaZone = "zone1";
+                        var antennaZoneState = "enabled";
                         var antennaList = new List<int>();
+                        var antennaZoneList = _standaloneConfigDTO.antennaZones.Split(",");
+                        var antennaPortList = _standaloneConfigDTO.antennaPorts.Split(",");
                         antennaList.Add(1);
                         double transmitPower = 30;
                         var transmitPowerCdbm = 3000;
                         var rssiThreshold = -92;
                         double groupIntervalInMs = 400;
 
+                        var newAntennaZoneConfigLine = _standaloneConfigDTO.antennaZones;
                         var newAntennaStatesConfigLine = _standaloneConfigDTO.antennaStates;
                         var newAntennaTransmitPowerCdbmConfigLine = _standaloneConfigDTO.transmitPower;
                         var newAntennaReceiveSensitivityConfigLine = _standaloneConfigDTO.receiveSensitivity;
@@ -6592,13 +6749,56 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         if (!string.IsNullOrEmpty(commandType)
                             && string.Equals("INVENTORY", commandType, StringComparison.OrdinalIgnoreCase))
                         {
+                            if (commandPayloadJObject.ContainsKey("antennaZone"))
+                            {
+                                try
+                                {
+                                    antennaZone = commandPayloadJObject["antennaZone"].Value<string>();
+                                }
+                                catch (Exception ex)
+                                {
+                                    commandResult = "error setting the antenna zone.";
+                                    _logger.LogError(ex,
+                                        "ProcessMqttModeJsonCommand (antennaZone): Unexpected error" + ex.Message);
+                                    return commandResult;
+                                }
+
+                                if (commandPayloadJObject.ContainsKey("antennaZoneState"))
+                                {
+                                    try
+                                    {
+                                        antennaZoneState = commandPayloadJObject["antennaZoneState"].Value<string>();
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        commandResult = "error setting the antenna zone.";
+                                        _logger.LogError(ex,
+                                            "ProcessMqttModeJsonCommand (antennaZoneState): Unexpected error" + ex.Message);
+                                        return commandResult;
+                                    }
+                                }
+                                antennaList.Clear();
+                                for (int i = 0; i < antennaZoneList.Length; i++)
+                                {
+                                    if (antennaZoneList[i].Equals(antennaZone))
+                                    {
+                                        antennaList.Add(int.Parse(antennaPortList[i]));
+                                    }
+                                }
+                            }
+                                
+
                             if (commandPayloadJObject.ContainsKey("antennas"))
                                 try
                                 {
                                     var antennaListJArray =
                                         commandPayloadJObject["antennas"].Value<JArray>(); // Value<List<int>>();
                                     if (antennaListJArray != null)
+                                    {
+                                        antennaList.Clear();
                                         antennaList = antennaListJArray.ToObject<List<int>>();
+                                    }
+                                        
                                 }
                                 catch (Exception ex)
                                 {
@@ -6644,16 +6844,30 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             {
                                 if (antennaList != null && antennaList.Count > 0)
                                 {
-                                    for (var i = 0; i < currentStates.Length; i++) currentStates[i] = "0";
+                                    var valueToSet = "1";
+                                    var disabledValue = "0";
+                                    if("disabled".Equals(antennaZoneState))
+                                    {
+                                        valueToSet = "0";
+                                    }
+                                    //for (var i = 0; i < currentStates.Length; i++) currentStates[i] = disabledValue;
 
-                                    foreach (var antennaPortNumber in antennaList)
-                                        if (currentStates.Length >= antennaPortNumber)
-                                            currentStates[antennaPortNumber - 1] = "1";
+                                    //foreach (var antennaPortNumber in antennaList)
+                                    //    if (currentStates.Length >= antennaPortNumber)
+                                    //        currentStates[antennaPortNumber - 1] = valueToSet;
 
                                     newAntennaStatesConfigLine = "";
                                     for (var i = 0; i < currentStates.Length; i++)
                                     {
-                                        newAntennaStatesConfigLine += currentStates[i];
+                                        if(antennaList.Contains(i + 1))
+                                        {
+                                            newAntennaStatesConfigLine += valueToSet;
+                                        }
+                                        else
+                                        {
+                                            newAntennaStatesConfigLine += currentStates[i];
+                                        }
+                                        
                                         if (i < currentStates.Length - 1) newAntennaStatesConfigLine += ",";
                                     }
                                 }
@@ -6669,12 +6883,23 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             try
                             {
                                 var currentAntennaPorts = _standaloneConfigDTO.antennaPorts.Split(",");
+                                var previousTransmitPower = _standaloneConfigDTO.transmitPower.Split(",");
+                                var previousReceiveSensitivity = _standaloneConfigDTO.receiveSensitivity.Split(",");
                                 newAntennaTransmitPowerCdbmConfigLine = "";
                                 newAntennaReceiveSensitivityConfigLine = "";
                                 for (var i = 0; i < currentAntennaPorts.Length; i++)
                                 {
-                                    newAntennaTransmitPowerCdbmConfigLine += transmitPowerCdbm;
-                                    newAntennaReceiveSensitivityConfigLine += rssiThreshold;
+                                    if (antennaList.Contains(int.Parse(currentAntennaPorts[i])))
+                                    {
+                                        newAntennaTransmitPowerCdbmConfigLine += transmitPowerCdbm;
+                                        newAntennaReceiveSensitivityConfigLine += rssiThreshold;
+                                    }
+                                    else
+                                    {
+                                        newAntennaTransmitPowerCdbmConfigLine += previousTransmitPower[i];
+                                        newAntennaReceiveSensitivityConfigLine += previousReceiveSensitivity[i];
+                                    }
+                                    
                                     if (i < currentAntennaPorts.Length - 1)
                                     {
                                         newAntennaTransmitPowerCdbmConfigLine += ",";
@@ -6749,9 +6974,26 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             _standaloneConfigDTO.mqttPuslishIntervalSec = newMqttPuslishIntervalSec;
                             _standaloneConfigDTO.readerMode = newReaderModeConfigLine;
                             ConfigFileHelper.SaveFile(_standaloneConfigDTO);
-                            //SaveConfigDtoToDb(_standaloneConfigDTO);
+                            SaveConfigDtoToDb(_standaloneConfigDTO);
                             LoadConfig();
                             //_logger.LogInformation($"Requesting image upgrade from {remoteUrl}");
+                            try
+                            {
+                                StopPresetAsync().RunSynchronously(); 
+                                
+                            }
+                            catch (Exception)
+                            {
+
+                            }
+                            try
+                            {
+                                ApplySettingsAsync().RunSynchronously();
+                            }
+                            catch (Exception)
+                            {
+
+                            }
                         }
                     }
                     //SaveConfigDtoToDb(deserializedConfigData);
@@ -7515,13 +7757,39 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 dataToPublish.Add(newPropertyData);
             }
 
+            if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch)
+                        && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
+                            StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    if (_smartReaderTagEventsListBatch.TryGetValue(tagRead.Epc, out JObject retrievedValue))
+                    {
 
-            if (string.Equals("1", _standaloneConfigDTO.enableValidation, StringComparison.OrdinalIgnoreCase)
+                        _smartReaderTagEventsListBatch.TryUpdate(tagRead.Epc, dataToPublish, retrievedValue);
+                    }
+                    else
+                    {
+                        _smartReaderTagEventsListBatch.TryAdd(tagRead.Epc, dataToPublish);
+                    }
+                }
+                catch (Exception)
+                {
+
+             
+                }       
+            }
+            else
+            {
+                if (string.Equals("1", _standaloneConfigDTO.enableValidation, StringComparison.OrdinalIgnoreCase)
                 || string.Equals("1", _standaloneConfigDTO.groupEventsOnInventoryStatus,
                     StringComparison.OrdinalIgnoreCase))
-                _messageQueueTagSmartReaderTagEventGroupToValidate.Enqueue(dataToPublish);
-            else
-                EnqueueToExternalPublishers(dataToPublish);
+                    _messageQueueTagSmartReaderTagEventGroupToValidate.Enqueue(dataToPublish);
+                else
+                    EnqueueToExternalPublishers(dataToPublish);
+            }
+
+            
         }
         catch (Exception ex)
         {
@@ -7939,6 +8207,77 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         return model;
     }
 
+    public async void SaveStartPresetCommandToDb()
+    {
+        try
+        {
+            _logger.LogInformation("Requesting Start Preset Command... ", SeverityType.Debug);
+            await readLock.WaitAsync();
+            using var scope = Services.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDb>();
+            var commandModel = dbContext.ReaderCommands.FindAsync("START_PRESET").Result;
+            if (commandModel == null)
+            {
+                commandModel = new ReaderCommands();
+                commandModel.Id = "START_PRESET";
+                commandModel.Value = "START";
+                commandModel.Timestamp = DateTime.Now;
+                dbContext.ReaderCommands.Add(commandModel);
+            }
+            else
+            {
+                commandModel.Value = "START";
+                commandModel.Timestamp = DateTime.Now;
+                dbContext.ReaderCommands.Update(commandModel);
+            }
+
+            await dbContext.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Unexpected error on SaveStartPresetCommandToDb. " + ex.Message);
+        }
+        finally
+        {
+            readLock.Release();
+        }
+    }
+
+    public async void SaveStopPresetCommandToDb()
+    {
+        try
+        {
+            _logger.LogInformation("Requesting Stop Preset Command... ", SeverityType.Debug);
+            await readLock.WaitAsync();
+            using var scope = Services.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDb>();
+            var commandModel = dbContext.ReaderCommands.FindAsync("STOP_PRESET").Result;
+            if (commandModel == null)
+            {
+                commandModel = new ReaderCommands();
+                commandModel.Id = "STOP_PRESET";
+                commandModel.Value = "STOP";
+                commandModel.Timestamp = DateTime.Now;
+                dbContext.ReaderCommands.Add(commandModel);
+            }
+            else
+            {
+                commandModel.Value = "STOP";
+                commandModel.Timestamp = DateTime.Now;
+                dbContext.ReaderCommands.Update(commandModel);
+            }
+
+            await dbContext.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Unexpected error on SaveStopPresetCommandToDb. " + ex.Message);
+        }
+        finally
+        {
+            readLock.Release();
+        }
+    }
 
     public async void SaveStartCommandToDb()
     {

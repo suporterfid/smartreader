@@ -1,6 +1,9 @@
-﻿docker build -t smartreader < BuildCap.Dockerfile
+﻿docker-compose build smartreader
 
-docker run --rm -it -v %cd%:/etk/deploy smartreader
 
-cp smartreader_cap.upgx deploy/cap_deploy/
-exit
+docker-compose cp smartreader:/etk/smartreader_cap.upgx cap_deploy/
+
+docker-compose down
+
+
+

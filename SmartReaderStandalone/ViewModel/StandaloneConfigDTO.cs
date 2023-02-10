@@ -5,565 +5,567 @@ namespace SmartReader.Infrastructure.ViewModel;
 
 public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 {
-    public string id { get; set; }
+    public string id { get; set; } = "";
 
-    public string readerName { get; set; }
+    public string readerName { get; set; } = "";
 
-    public string serial { get; set; }
+    public string serial { get; set; } = "";
 
-    public string isEnabled { get; set; }
+    public string isEnabled { get; set; } = "1";
 
-    public string licenseKey { get; set; }
+    public string licenseKey { get; set; } = "";
 
-    public string profileName { get; set; }
+    public string profileName { get; set; } = "SmartReader";
 
-    public string isCurrentProfile { get; set; }
+    public string isCurrentProfile { get; set; } = "1";
 
-    public string antennaPorts { get; set; }
+    public string antennaPorts { get; set; } = "1,2,3,4";
 
-    public string antennaStates { get; set; }
+    public string antennaStates { get; set; } = "1,0,0,0";
 
-    public string antennaZones { get; set; }
+    public string antennaZones { get; set; } = "ANT1,ANT2,ANT3,ANT4";
 
-    public string transmitPower { get; set; }
+    public string transmitPower { get; set; } = "1700,1700,1700,1700";
 
-    public string receiveSensitivity { get; set; }
+    public string receiveSensitivity { get; set; } = "-92,-92,-92,-92";
 
-    public string readerMode { get; set; }
+    public string readerMode { get; set; } = "1002";
 
-    public string searchMode { get; set; }
+    public string searchMode { get; set; } = "1";
 
-    public string session { get; set; }
+    public string session { get; set; } = "1";
 
-    public string tagPopulation { get; set; }
+    public string tagPopulation { get; set; } = "32";
 
-    public string startTriggerType { get; set; }
+    public string startTriggerType { get; set; } = "1";
 
-    public string startTriggerPeriod { get; set; }
+    public string startTriggerPeriod { get; set; } = "0";
 
-    public string startTriggerOffset { get; set; }
+    public string startTriggerOffset { get; set; } = "0";
 
-    public string startTriggerUTCTimestamp { get; set; }
+    public string startTriggerUTCTimestamp { get; set; } = "0";
 
-    public string startTriggerGpiEvent { get; set; }
+    public string startTriggerGpiEvent { get; set; } = "1";
 
-    public string startTriggerGpiPort { get; set; }
+    public string startTriggerGpiPort { get; set; } = "1";
 
-    public string stopTriggerType { get; set; }
+    public string stopTriggerType { get; set; } = "0";
 
-    public string stopTriggerDuration { get; set; }
+    public string stopTriggerDuration { get; set; } = "0";
 
-    public string stopTriggerTimeout { get; set; }
+    public string stopTriggerTimeout { get; set; } = "0";
 
-    public string stopTriggerGpiEvent { get; set; }
+    public string stopTriggerGpiEvent { get; set; } = "0";
 
-    public string stopTriggerGpiPort { get; set; }
+    public string stopTriggerGpiPort { get; set; } = "1";
 
-    public string socketServer { get; set; }
+    public string socketServer { get; set; } = "0";
 
-    public string socketPort { get; set; }
+    public string socketPort { get; set; } = "14150";
 
-    public string socketCommandServer { get; set; }
+    public string socketCommandServer { get; set; } = "0";
 
-    public string socketCommandServerPort { get; set; }
+    public string socketCommandServerPort { get; set; } = "14151";
 
-    public string udpServer { get; set; }
+    public string udpServer { get; set; } = "0";
 
-    public string udpIpAddress { get; set; }
+    public string udpIpAddress { get; set; } = "192.168.68.95";
 
-    public string udpReaderPort { get; set; }
+    public string udpReaderPort { get; set; } = "11000";
 
-    public string udpRemoteIpAddress { get; set; }
+    public string udpRemoteIpAddress { get; set; } = "192.168.68.96";
 
-    public string udpRemotePort { get; set; }
+    public string udpRemotePort { get; set; } = "10000";
 
-    public string serialPort { get; set; }
+    public string serialPort { get; set; } = "0";
 
-    public string usbHid { get; set; }
+    public string usbHid { get; set; } = "0";
 
-    public string lineEnd { get; set; }
+    public string lineEnd { get; set; } = "3";
 
-    public string fieldDelim { get; set; }
+    public string fieldDelim { get; set; } = "1";
 
-    public string softwareFilterEnabled { get; set; }
+    public string softwareFilterEnabled { get; set; } = "0";
 
-    public string softwareFilterWindowSec { get; set; }
+    public string softwareFilterWindowSec { get; set; } = "120";
 
-    public string softwareFilterField { get; set; }
+    public string softwareFilterField { get; set; } = "0";
 
-    public string softwareFilterReadCountTimeoutEnabled { get; set; }
+    public string softwareFilterReadCountTimeoutEnabled { get; set; } = "0";
 
-    public string softwareFilterReadCountTimeoutSeenCount { get; set; }
+    public string softwareFilterReadCountTimeoutSeenCount { get; set; } = "0";
 
-    public string softwareFilterReadCountTimeoutIntervalInSec { get; set; }
+    public string softwareFilterReadCountTimeoutIntervalInSec { get; set; } = "0";
 
-    public string includeReaderName { get; set; }
+    public string includeReaderName { get; set; } = "1";
 
-    public string includeAntennaPort { get; set; }
+    public string includeAntennaPort { get; set; } = "1";
 
-    public string includeAntennaZone { get; set; }
+    public string includeAntennaZone { get; set; } = "1";
 
-    public string includeFirstSeenTimestamp { get; set; }
+    public string includeFirstSeenTimestamp { get; set; } = "1";
 
-    public string includePeakRssi { get; set; }
+    public string includePeakRssi { get; set; } = "1";
 
-    public string includeRFPhaseAngle { get; set; }
+    public string includeRFPhaseAngle { get; set; } = "0";
 
-    public string includeRFDopplerFrequency { get; set; }
+    public string includeRFDopplerFrequency { get; set; } = "0";
 
-    public string includeRFChannelIndex { get; set; }
+    public string includeRFChannelIndex { get; set; } = "0";
 
-    public string includeGpiEvent { get; set; }
+    public string includeGpiEvent { get; set; } = "0";
 
-    public string includeInventoryStatusEvent { get; set; }
+    public string includeInventoryStatusEvent { get; set; } = "0";
 
-    public string includeInventoryStatusEventId { get; set; }
+    public string includeInventoryStatusEventId { get; set; } = "0";
 
-    public string includeInventoryStatusEventTotalCount { get; set; }
+    public string includeInventoryStatusEventTotalCount { get; set; } = "0";
 
-    public string includeTid { get; set; }
+    public string includeTid { get; set; } = "0";
 
-    public string tidWordStart { get; set; }
+    public string tidWordStart { get; set; } = "0";
 
-    public string tidWordCount { get; set; }
+    public string tidWordCount { get; set; } = "6";
 
-    public string includeUserMemory { get; set; }
+    public string includeUserMemory { get; set; } = "0";
 
-    public string userMemoryWordStart { get; set; }
+    public string userMemoryWordStart { get; set; } = "0";
 
-    public string userMemoryWordCount { get; set; }
+    public string userMemoryWordCount { get; set; } = "2";
 
-    public string siteEnabled { get; set; }
+    public string siteEnabled { get; set; } = "0";
 
-    public string site { get; set; }
+    public string site { get; set; } = "DEFAULT";
 
-    public string httpPostEnabled { get; set; }
+    public string httpPostEnabled { get; set; } = "0";
 
-    public string httpPostType { get; set; }
+    public string httpPostType { get; set; } = "1";
 
-    public string httpPostIntervalSec { get; set; }
+    public string httpPostIntervalSec { get; set; } = "2";
 
-    public string httpPostURL { get; set; }
+    public string httpPostURL { get; set; } = "http://172.105.22.71:1880/receiver";
 
-    public string httpAuthenticationType { get; set; }
+    public string httpAuthenticationType { get; set; } = "NONE";
 
-    public string httpAuthenticationUsername { get; set; }
+    public string httpAuthenticationUsername { get; set; } = "username";
 
-    public string httpAuthenticationPassword { get; set; }
+    public string httpAuthenticationPassword { get; set; } = "password";
 
-    public string httpAuthenticationTokenApiEnabled { get; set; }
+    public string httpAuthenticationTokenApiEnabled { get; set; } = "0";
 
-    public string httpAuthenticationTokenApiUrl { get; set; }
+    public string httpAuthenticationTokenApiUrl { get; set; } = "https://server/api/Login/Authenticate";
 
-    public string httpAuthenticationTokenApiBody { get; set; }
+    public string httpAuthenticationTokenApiBody { get; set; } = "{\u0022login\u0022: user,\u0022password\u0022: pass}";
 
-    public string httpAuthenticationTokenApiValue { get; set; }
+    public string httpAuthenticationTokenApiValue { get; set; } = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.asd.11ca8lNTSJDMiW19YPxeohAye9YBSwkeKk9aQB3UNoU";
 
-    public string httpAuthenticationHeader { get; set; }
+    public string httpAuthenticationHeader { get; set; } = "Authorization";
 
-    public string httpAuthenticationHeaderValue { get; set; }
+    public string httpAuthenticationHeaderValue { get; set; } = "Basic 5ecee4ddcf70e76084c8973c490bdbb22f0356c90bad0a25aab9easdf";
 
-    public string httpVerifyPostHttpReturnCode { get; set; }
+    public string httpVerifyPostHttpReturnCode { get; set; } = "0";
 
-    public string truncateEpc { get; set; }
+    public string truncateEpc { get; set; } = "0";
 
-    public string truncateStart { get; set; }
+    public string truncateStart { get; set; } = "9";
 
-    public string truncateLen { get; set; }
+    public string truncateLen { get; set; } = "16";
 
-    public string advancedGpoEnabled { get; set; }
+    public string advancedGpoEnabled { get; set; } = "0";
 
-    public string advancedGpoMode1 { get; set; }
+    public string advancedGpoMode1 { get; set; } = "0";
 
-    public string advancedGpoMode2 { get; set; }
+    public string advancedGpoMode2 { get; set; } = "0";
 
-    public string advancedGpoMode3 { get; set; }
+    public string advancedGpoMode3 { get; set; } = "0";
 
-    public string advancedGpoMode4 { get; set; }
+    public string advancedGpoMode4 { get; set; } = "0";
 
-    public string heartbeatEnabled { get; set; }
+    public string heartbeatEnabled { get; set; } = "0";
 
-    public string heartbeatPeriodSec { get; set; }
+    public string heartbeatPeriodSec { get; set; } = "10";
 
-    public string usbFlashDrive { get; set; }
+    public string usbFlashDrive { get; set; } = "0";
 
-    public string lowDutyCycleEnabled { get; set; }
+    public string lowDutyCycleEnabled { get; set; } = "0";
 
-    public string emptyFieldTimeout { get; set; }
+    public string emptyFieldTimeout { get; set; } = "500";
 
-    public string fieldPingInterval { get; set; }
+    public string fieldPingInterval { get; set; } = "200";
 
-    public string baudRate { get; set; }
+    public string baudRate { get; set; } = "9600";
 
-    public string c1g2FilterEnabled { get; set; }
+    public string c1g2FilterEnabled { get; set; } = "0";
 
-    public string c1g2FilterBank { get; set; }
+    public string c1g2FilterBank { get; set; } = "0";
 
-    public string c1g2FilterPointer { get; set; }
+    public string c1g2FilterPointer { get; set; } = "1";
 
-    public string c1g2FilterMask { get; set; }
+    public string c1g2FilterMask { get; set; } = "AAAA";
 
-    public string c1g2FilterLen { get; set; }
+    public string c1g2FilterLen { get; set; } = "16";
 
-    public string dataPrefix { get; set; }
+    public string dataPrefix { get; set; } = "";
 
-    public string dataSuffix { get; set; }
+    public string dataSuffix { get; set; } = "";
 
-    public string backupToFlashDriveOnGpiEventEnabled { get; set; }
+    public string backupToFlashDriveOnGpiEventEnabled { get; set; } = "0";
 
-    public string maxTxPowerOnGpiEventEnabled { get; set; }
+    public string maxTxPowerOnGpiEventEnabled { get; set; } = "0";
 
-    public string backupToInternalFlashEnabled { get; set; }
+    public string backupToInternalFlashEnabled { get; set; } = "0";
 
-    public string tagValidationEnabled { get; set; }
+    public string tagValidationEnabled { get; set; } = "0";
 
-    public string keepFilenameOnDayChange { get; set; }
+    public string keepFilenameOnDayChange { get; set; } = "0";
 
-    public string promptBeforeChanging { get; set; }
+    public string promptBeforeChanging { get; set; } = "1";
 
-    public string connectionStatus { get; set; }
+    public string connectionStatus { get; set; } = "1";
 
-    public string mqttEnabled { get; set; }
+    public string mqttEnabled { get; set; } = "0";
 
-    public string mqttUseSsl { get; set; }
+    public string mqttUseSsl { get; set; } = "0";
 
-    public string mqttSslCaCertificate { get; set; }
+    public string mqttSslCaCertificate { get; set; } = "";
 
-    public string mqttSslClientCertificate { get; set; }
+    public string mqttSslClientCertificate { get; set; } = "";
 
-    public string mqttSslClientCertificatePassword { get; set; }
+    public string mqttSslClientCertificatePassword { get; set; } = "";
 
-    public string mqttBrokerName { get; set; }
+    public string mqttBrokerName { get; set; } = "MQTT-Server";
 
-    public string mqttBrokerDescription { get; set; }
+    public string mqttBrokerDescription { get; set; } = "MQTT Description";
 
-    public string mqttBrokerType { get; set; }
+    public string mqttBrokerType { get; set; } = "MQTT";
 
-    public string mqttBrokerProtocol { get; set; }
+    public string mqttBrokerProtocol { get; set; } = "TCP";
 
-    public string mqttBrokerAddress { get; set; }
+    public string mqttBrokerAddress { get; set; } = "test.mosquitto.org";
 
-    public string mqttBrokerPort { get; set; }
+    public string mqttBrokerPort { get; set; } = "1883";
 
-    public string mqttBrokerCleanSession { get; set; }
+    public string mqttBrokerCleanSession { get; set; } = "1";
 
-    public string mqttBrokerKeepAlive { get; set; }
+    public string mqttBrokerKeepAlive { get; set; } = "30";
 
-    public string mqttBrokerDebug { get; set; }
+    public string mqttBrokerDebug { get; set; } = "0";
 
-    public string mqttTagEventsTopic { get; set; }
+    public string mqttTagEventsTopic { get; set; } = "/tagEvents/{deviceId}";
 
-    public string mqttTagEventsQoS { get; set; }
+    public string mqttTagEventsQoS { get; set; } = "1";
 
-    public string mqttTagEventsRetainMessages { get; set; }
+    public string mqttTagEventsRetainMessages { get; set; } = "false";
 
-    public string mqttManagementEventsTopic { get; set; }
+    public string mqttManagementEventsTopic { get; set; } = "/events/{deviceId}";
 
-    public string mqttManagementEventsQoS { get; set; }
+    public string mqttManagementEventsQoS { get; set; } = "1";
 
-    public string mqttManagementEventsRetainMessages { get; set; }
+    public string mqttManagementEventsRetainMessages { get; set; } = "false";
 
-    public string mqttMetricEventsTopic { get; set; }
+    public string mqttMetricEventsTopic { get; set; } = "/metrics/{deviceId}";
 
-    public string mqttMetricEventsQoS { get; set; }
+    public string mqttMetricEventsQoS { get; set; } = "1";
 
-    public string mqttMetricEventsRetainMessages { get; set; }
+    public string mqttMetricEventsRetainMessages { get; set; } = "false";
 
-    public string mqttManagementCommandTopic { get; set; }
+    public string mqttManagementCommandTopic { get; set; } = "/manage/{deviceId}";
 
-    public string mqttManagementCommandQoS { get; set; }
+    public string mqttManagementCommandQoS { get; set; } = "1";
 
-    public string mqttManagementCommandRetainMessages { get; set; }
+    public string mqttManagementCommandRetainMessages { get; set; } = "false";
 
-    public string mqttManagementResponseTopic { get; set; }
+    public string mqttManagementResponseTopic { get; set; } = "/manageResult/{deviceId}";
 
-    public string mqttManagementResponseQoS { get; set; }
+    public string mqttManagementResponseQoS { get; set; } = "1";
 
-    public string mqttManagementResponseRetainMessages { get; set; }
+    public string mqttManagementResponseRetainMessages { get; set; } = "false";
 
-    public string mqttControlCommandTopic { get; set; }
+    public string mqttControlCommandTopic { get; set; } = "/control/{deviceId}";
 
-    public string mqttControlCommandQoS { get; set; }
+    public string mqttControlCommandQoS { get; set; } = "1";
 
-    public string mqttControlCommandRetainMessages { get; set; }
+    public string mqttControlCommandRetainMessages { get; set; } = "false";
 
-    public string mqttControlResponseTopic { get; set; }
+    public string mqttControlResponseTopic { get; set; } = "/controlResult/{deviceId}";
 
-    public string mqttControlResponseQoS { get; set; }
+    public string mqttControlResponseQoS { get; set; } = "1";
 
-    public string mqttControlResponseRetainMessages { get; set; }
+    public string mqttControlResponseRetainMessages { get; set; } = "false";
 
-    public string mqttUsername { get; set; }
+    public string mqttUsername { get; set; } = "";
 
-    public string mqttPassword { get; set; }
+    public string mqttPassword { get; set; } = "";
 
-    public string mqttProxyUrl { get; set; }
+    public string mqttProxyUrl { get; set; } = "";
 
-    public string mqttProxyUsername { get; set; }
+    public string mqttProxyUsername { get; set; } = "";
 
-    public string mqttProxyPassword { get; set; }
+    public string mqttProxyPassword { get; set; } = "";
 
-    public string mqttPuslishIntervalSec { get; set; }
+    public string mqttPuslishIntervalSec { get; set; } = "2";
 
-    public string isCloudInterface { get; set; }
+    public string isCloudInterface { get; set; } = "1";
 
-    public string applyIpSettingsOnStartup { get; set; }
+    public string applyIpSettingsOnStartup { get; set; } = "1";
 
-    public string ipAddressMode { get; set; }
+    public string ipAddressMode { get; set; } = "Static";
 
-    public string ipAddress { get; set; }
+    public string ipAddress { get; set; } = "10.0.0.221";
 
-    public string ipMask { get; set; }
+    public string ipMask { get; set; } = "255.255.255.0";
 
-    public string gatewayAddress { get; set; }
+    public string gatewayAddress { get; set; } = "10.0.0.1";
 
-    public string broadcastAddress { get; set; }
+    public string broadcastAddress { get; set; } = "10.255.255.255";
 
-    public string parseSgtinEnabled { get; set; }
+    public string parseSgtinEnabled { get; set; } = "1";
 
-    public string gtinOutputType { get; set; }
+    public string gtinOutputType { get; set; } = "0";
 
-    public string parseSgtinIncludeKeyType { get; set; }
+    public string parseSgtinIncludeKeyType { get; set; } = "1";
 
-    public string parseSgtinIncludeSerial { get; set; }
+    public string parseSgtinIncludeSerial { get; set; } = "1";
 
-    public string parseSgtinIncludePureIdentity { get; set; }
+    public string parseSgtinIncludePureIdentity { get; set; } = "0";
 
-    public string httpVerifyPeer { get; set; }
+    public string httpVerifyPeer { get; set; } = "0";
 
-    public string httpVerifyHost { get; set; }
+    public string httpVerifyHost { get; set; } = "0";
 
-    public string jsonFormat { get; set; }
+    public string jsonFormat { get; set; } = "0";
 
-    public string csvFileFormat { get; set; }
+    public string csvFileFormat { get; set; } = "0";
 
-    public string heartbeatUrl { get; set; }
+    public string heartbeatUrl { get; set; } = "";
 
-    public string heartbeatHttpAuthenticationType { get; set; }
+    public string heartbeatHttpAuthenticationType { get; set; } = "";
 
-    public string heartbeatHttpAuthenticationUsername { get; set; }
+    public string heartbeatHttpAuthenticationUsername { get; set; } = "";
 
-    public string heartbeatHttpAuthenticationPassword { get; set; }
+    public string heartbeatHttpAuthenticationPassword { get; set; } = "";
 
-    public string heartbeatHttpAuthenticationTokenApiEnabled { get; set; }
+    public string heartbeatHttpAuthenticationTokenApiEnabled { get; set; } = "0";
 
-    public string heartbeatHttpAuthenticationTokenApiUrl { get; set; }
+    public string heartbeatHttpAuthenticationTokenApiUrl { get; set; } = "";
 
-    public string heartbeatHttpAuthenticationTokenApiBody { get; set; }
+    public string heartbeatHttpAuthenticationTokenApiBody { get; set; } = "";
 
-    public string heartbeatHttpAuthenticationTokenApiUsernameField { get; set; }
+    public string heartbeatHttpAuthenticationTokenApiUsernameField { get; set; } = "";
 
-    public string heartbeatHttpAuthenticationTokenApiUsernameValue { get; set; }
+    public string heartbeatHttpAuthenticationTokenApiUsernameValue { get; set; } = "";
 
-    public string heartbeatHttpAuthenticationTokenApiPasswordField { get; set; }
+    public string heartbeatHttpAuthenticationTokenApiPasswordField { get; set; } = "";
 
-    public string heartbeatHttpAuthenticationTokenApiPasswordValue { get; set; }
+    public string heartbeatHttpAuthenticationTokenApiPasswordValue { get; set; } = "";
 
-    public string heartbeatHttpAuthenticationTokenApiValue { get; set; }
+    public string heartbeatHttpAuthenticationTokenApiValue { get; set; } = "";
 
-    public string httpAuthenticationTokenApiUsernameField { get; set; }
+    public string httpAuthenticationTokenApiUsernameField { get; set; } = "";
 
-    public string httpAuthenticationTokenApiUsernameValue { get; set; }
+    public string httpAuthenticationTokenApiUsernameValue { get; set; } = "";
 
-    public string httpAuthenticationTokenApiPasswordField { get; set; }
+    public string httpAuthenticationTokenApiPasswordField { get; set; } = "";
 
-    public string httpAuthenticationTokenApiPasswordValue { get; set; }
+    public string httpAuthenticationTokenApiPasswordValue { get; set; } = "";
 
-    public string toiValidationEnabled { get; set; }
+    public string toiValidationEnabled { get; set; } = "0";
 
-    public string toiValidationUrl { get; set; }
+    public string toiValidationUrl { get; set; } = "";
 
-    public string toiValidationGpoDuration { get; set; }
+    public string toiValidationGpoDuration { get; set; } = "2";
 
-    public string toiGpoOk { get; set; }
+    public string toiGpoOk { get; set; } = "1";
 
-    public string toiGpoNok { get; set; }
+    public string toiGpoNok { get; set; } = "2";
 
-    public string toiGpoError { get; set; }
+    public string toiGpoError { get; set; } = "3";
 
-    public string toiGpi { get; set; }
+    public string toiGpi { get; set; } = "1";
 
-    public string toiGpoPriority { get; set; }
+    public string toiGpoPriority { get; set; } = "0";
 
-    public string toiGpoMode { get; set; }
+    public string toiGpoMode { get; set; } = "0";
 
-    public string customField1Enabled { get; set; }
+    public string customField1Enabled { get; set; } = "0";
 
-    public string customField1Name { get; set; }
+    public string customField1Name { get; set; } = "customFieldName";
 
-    public string customField1Value { get; set; }
+    public string customField1Value { get; set; } = "customFieldValue";
 
-    public string customField2Enabled { get; set; }
+    public string customField2Enabled { get; set; } = "0";
 
-    public string customField2Name { get; set; }
+    public string customField2Name { get; set; } = "customFieldName";
 
-    public string customField2Value { get; set; }
+    public string customField2Value { get; set; } = "customFieldValue";
 
-    public string customField3Enabled { get; set; }
+    public string customField3Enabled { get; set; } = "0";
 
-    public string customField3Name { get; set; }
+    public string customField3Name { get; set; } = "customFieldName";
 
-    public string customField3Value { get; set; }
+    public string customField3Value { get; set; } = "customFieldValue";
 
-    public string customField4Enabled { get; set; }
+    public string customField4Enabled { get; set; } = "0";
 
-    public string customField4Name { get; set; }
+    public string customField4Name { get; set; } = "customFieldName";
 
-    public string customField4Value { get; set; }
+    public string customField4Value { get; set; } = "customFieldValue";
 
-    public string writeUsbJson { get; set; }
+    public string writeUsbJson { get; set; } = "0";
 
-    public string reportingIntervalSeconds { get; set; }
+    public string reportingIntervalSeconds { get; set; } = "10";
 
-    public string tagCacheSize { get; set; }
+    public string tagCacheSize { get; set; } = "2048";
 
-    public string antennaIdentifier { get; set; }
+    public string antennaIdentifier { get; set; } = "antennaPort";
 
-    public string tagIdentifier { get; set; }
+    public string tagIdentifier { get; set; } = "epc";
 
-    public string positioningEpcsEnabled { get; set; }
+    public string positioningEpcsEnabled { get; set; } = "0";
 
-    public string positioningAntennaPorts { get; set; }
+    public string positioningAntennaPorts { get; set; } = "1,3";
 
-    public string positioningEpcsHeaderList { get; set; }
+    public string positioningEpcsHeaderList { get; set; } = "DD,DE";
 
-    public string positioningEpcsFilter { get; set; }
+    public string positioningEpcsFilter { get; set; } = "CA";
 
-    public string positioningExpirationInSec { get; set; }
+    public string positioningExpirationInSec { get; set; } = "120";
 
-    public string positioningReportIntervalInSec { get; set; }
+    public string positioningReportIntervalInSec { get; set; } = "5";
 
-    public string enableUniqueTagRead { get; set; }
+    public string enableUniqueTagRead { get; set; } = "1";
 
-    public string enableAntennaTask { get; set; }
+    public string enableAntennaTask { get; set; } = "0";
 
-    public string packageHeaders { get; set; }
+    public string packageHeaders { get; set; } = "";
 
-    public string enablePartialValidation { get; set; }
+    public string enablePartialValidation { get; set; } = "0";
 
-    public string validationAcceptanceThreshold { get; set; }
+    public string validationAcceptanceThreshold { get; set; } = "0";
 
-    public string validationAcceptanceThresholdTimeout { get; set; }
+    public string validationAcceptanceThresholdTimeout { get; set; } = "0";
 
-    public string publishFullShipmentValidationListOnAcceptanceThreshold { get; set; }
+    public string publishFullShipmentValidationListOnAcceptanceThreshold { get; set; } = "0";
 
-    public string publishSingleTimeOnAcceptanceThreshold { get; set; }
+    public string publishSingleTimeOnAcceptanceThreshold { get; set; } = "0";
 
-    public string readerSerial { get; set; }
+    public string readerSerial { get; set; } = "";
 
-    public string activePlugin { get; set; }
+    public string activePlugin { get; set; } = "";
 
-    public string pluginServer { get; set; }
+    public string pluginServer { get; set; } = "";
 
-    public string enablePluginShipmentVerification { get; set; }
+    public string enablePluginShipmentVerification { get; set; } = "";
 
-    public string softwareFilterIncludeEpcsHeaderListEnabled { get; set; }
+    public string softwareFilterIncludeEpcsHeaderListEnabled { get; set; } = "0";
 
-    public string softwareFilterIncludeEpcsHeaderList { get; set; }
+    public string softwareFilterIncludeEpcsHeaderList { get; set; } = "0";
 
-    public string isLogFileEnabled { get; set; }
+    public string isLogFileEnabled { get; set; } = "0";
 
-    public string rciSpotReportEnabled { get; set; }
+    public string rciSpotReportEnabled { get; set; } = "0";
 
-    public string rciSpotReportIncludePc { get; set; }
+    public string rciSpotReportIncludePc { get; set; } = "0";
 
-    public string rciSpotReportIncludeScheme { get; set; }
+    public string rciSpotReportIncludeScheme { get; set; } = "0";
 
-    public string rciSpotReportIncludeEpcUri { get; set; }
+    public string rciSpotReportIncludeEpcUri { get; set; } = "0";
 
-    public string rciSpotReportIncludeAnt { get; set; }
+    public string rciSpotReportIncludeAnt { get; set; } = "0";
 
-    public string rciSpotReportIncludeDwnCnt { get; set; }
+    public string rciSpotReportIncludeDwnCnt { get; set; } = "0";
 
-    public string rciSpotReportIncludeInvCnt { get; set; }
+    public string rciSpotReportIncludeInvCnt { get; set; } = "0";
 
-    public string rciSpotReportIncludePhase { get; set; }
+    public string rciSpotReportIncludePhase { get; set; } = "0";
 
-    public string rciSpotReportIncludeProf { get; set; }
+    public string rciSpotReportIncludeProf { get; set; } = "0";
 
-    public string rciSpotReportIncludeRange { get; set; }
+    public string rciSpotReportIncludeRange { get; set; } = "0";
 
-    public string rciSpotReportIncludeRssi { get; set; }
+    public string rciSpotReportIncludeRssi { get; set; } = "0";
 
-    public string rciSpotReportIncludeRz { get; set; }
+    public string rciSpotReportIncludeRz { get; set; } = "0";
 
-    public string rciSpotReportIncludeSpot { get; set; }
+    public string rciSpotReportIncludeSpot { get; set; } = "0";
 
-    public string rciSpotReportIncludeTimeStamp { get; set; }
+    public string rciSpotReportIncludeTimeStamp { get; set; } = "0";
 
-    public string enableOpcUaClient { get; set; }
+    public string enableOpcUaClient { get; set; } = "0";
 
-    public string opcUaConnectionName { get; set; }
+    public string opcUaConnectionName { get; set; } = "";
 
-    public string opcUaConnectionPublisherId { get; set; }
+    public string opcUaConnectionPublisherId { get; set; } = "";
 
-    public string opcUaConnectionUrl { get; set; }
+    public string opcUaConnectionUrl { get; set; } = "";
 
-    public string opcUaConnectionDiscoveryAddress { get; set; }
+    public string opcUaConnectionDiscoveryAddress { get; set; } = "";
 
-    public string opcUaWriterGroupName { get; set; }
+    public string opcUaWriterGroupName { get; set; } = "";
 
-    public string opcUaWriterGroupId { get; set; }
+    public string opcUaWriterGroupId { get; set; } = "";
 
-    public string opcUaWriterPublishingInterval { get; set; }
+    public string opcUaWriterPublishingInterval { get; set; } = "";
 
-    public string opcUaWriterKeepAliveTime { get; set; }
+    public string opcUaWriterKeepAliveTime { get; set; } = "";
 
-    public string opcUaWriterMaxNetworkMessageSize { get; set; }
+    public string opcUaWriterMaxNetworkMessageSize { get; set; } = "";
 
-    public string opcUaWriterHeaderLayoutUri { get; set; }
+    public string opcUaWriterHeaderLayoutUri { get; set; } = "";
 
-    public string opcUaDataSetWriterName { get; set; }
+    public string opcUaDataSetWriterName { get; set; } = "";
 
-    public string opcUaDataSetWriterId { get; set; }
+    public string opcUaDataSetWriterId { get; set; } = "";
 
-    public string opcUaDataSetName { get; set; }
+    public string opcUaDataSetName { get; set; } = "";
 
-    public string opcUaDataSetKeyFrameCount { get; set; }
+    public string opcUaDataSetKeyFrameCount { get; set; } = "";
 
-    public string enablePlugin { get; set; }
+    public string enablePlugin { get; set; } = "0";
 
-    public string enableBarcodeTcp { get; set; }
+    public string enableBarcodeTcp { get; set; } = "0";
 
-    public string enableBarcodeSerial { get; set; }
+    public string enableBarcodeSerial { get; set; } = "0";
 
-    public string groupEventsOnInventoryStatus { get; set; }
+    public string groupEventsOnInventoryStatus { get; set; } = "0";
 
-    public string barcodeTcpAddress { get; set; }
+    public string barcodeTcpAddress { get; set; } = "192.168.68.116";
 
-    public string barcodeTcpPort { get; set; }
+    public string barcodeTcpPort { get; set; } = "2112";
 
-    public string barcodeTcpLen { get; set; }
+    public string barcodeTcpLen { get; set; } = "8";
 
-    public string barcodeTcpNoDataString { get; set; }
+    public string barcodeTcpNoDataString { get; set; } = "NoRead";
 
-    public string barcodeProcessNoDataString { get; set; }
+    public string barcodeProcessNoDataString { get; set; } = "0";
 
-    public string barcodeEnableQueue { get; set; }
+    public string barcodeEnableQueue { get; set; } = "0";
 
-    public string enableValidation { get; set; }
+    public string enableValidation { get; set; } = "0";
 
-    public string requireUniqueProductCode { get; set; }
+    public string requireUniqueProductCode { get; set; } = "0";
 
-    public string enableTagEventStream { get; set; }
+    public string enableTagEventStream { get; set; } = "0";
 
-    public string enableSummaryStream { get; set; }
+    public string enableSummaryStream { get; set; } = "0";
 
-    public string enableExternalApiVerification { get; set; }
+    public string enableExternalApiVerification { get; set; } = "0";
 
-    public string externalApiVerificationSearchOrderUrl { get; set; }
+    public string externalApiVerificationSearchOrderUrl { get; set; } = "";
 
-    public string externalApiVerificationSearchProductUrl { get; set; }
+    public string externalApiVerificationSearchProductUrl { get; set; } = "";
 
-    public string externalApiVerificationPublishDataUrl { get; set; }
+    public string externalApiVerificationPublishDataUrl { get; set; } = "";
 
-    public string externalApiVerificationHttpHeaderName { get; set; }
+    public string externalApiVerificationHttpHeaderName { get; set; } = "";
 
-    public string externalApiVerificationHttpHeaderValue { get; set; }
+    public string externalApiVerificationHttpHeaderValue { get; set; } = "";
 
-    public string operatingRegion { get; set; }
+    public string operatingRegion { get; set; } = "";
 
-    public string systemImageUpgradeUrl { get; set; }
+    public string systemImageUpgradeUrl { get; set; } = "";
+
+    public string enableTagEventsListBatch{ get; set; } = "0";
 
 
     public bool Equals([AllowNull] StandaloneConfigDTO otherStandaloneConfigDTO)
@@ -1348,6 +1350,9 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
         if (!systemImageUpgradeUrl.Equals(otherStandaloneConfigDTO
                 .systemImageUpgradeUrl)) return false;
 
+        if (!enableTagEventsListBatch.Equals(otherStandaloneConfigDTO
+                .enableTagEventsListBatch)) return false;
+
 
         //enableSummaryStream
 
@@ -1949,6 +1954,8 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
             config.operatingRegion =
                 HttpUtility.UrlDecode(config.operatingRegion);
+
+            config.enableTagEventsListBatch = HttpUtility.UrlDecode(config.enableTagEventsListBatch);
 
             return config;
         }

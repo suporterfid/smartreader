@@ -19,10 +19,18 @@ RUN mv /etk/cap/cap_gen.sh /etk/cap_gen.sh
 RUN mv /etk/cap/cap_description.in /etk/cap_description.in
 RUN mv /etk/cap/capcommand.sh /etk/capcommand.sh 
 
+RUN mkdir /etk/cap/wwwroot 
+RUN mv /etk/cap/css /etk/cap/wwwroot/css
+RUN mv /etk/cap/fonts /etk/cap/wwwroot/fonts
+RUN mv /etk/cap/js /etk/cap/wwwroot/js
+RUN mv /etk/cap/*.js /etk/cap/wwwroot/
+RUN mv /etk/cap/*.html /etk/cap/wwwroot/
+RUN mv /etk/cap/*.ico /etk/cap/wwwroot/
+
 RUN rm -rf /etk/cap/config/*
 COPY cap_template/config/smartreader.json /etk/cap/config/
 RUN chmod 755 /etk/cap/start
-RUN chmod 755 /etk/cap/SmartReaderStandalone
+RUN chmod 755 /etk/cap/SmartReaderStandalone*
 RUN chmod 755 /etk/cap/*.so
 RUN chmod 777 /etk/cap/config
 RUN chmod 777 /etk/cap/config/*.json
@@ -33,8 +41,11 @@ RUN dos2unix /etk/cap/*.json
 RUN dos2unix /etk/*.in
 RUN dos2unix /etk/cap/config/*.json
 RUN chmod -R 775 /etk/cap/*
+RUN ls -lh /etk/cap
 RUN /etk/8.1.0_Octane_Embedded_Development_Tools/cap_gen.sh -d /etk/cap_description.in -o /etk/smartreader_cap.upgx
 RUN chmod 777 /etk/smartreader_cap.upgx
+#RUN rm -rf /tmp/etk/*
+#RUN cp /etk/smartreader_cap.upgx /tmp/etk/
 
 #COPY --from=cap_template /etk/smartreader_cap.upgx .
 

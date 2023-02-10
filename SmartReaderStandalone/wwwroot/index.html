@@ -1174,7 +1174,14 @@
            v-bind:true-value="1"
            v-bind:false-value="0">
     <label for="outputMqttEnabled">Enable</label>
+    <br />
     <template v-if="readerConfigs[0].mqttEnabled == '1'">
+        <input id="enableTagEventsListBatch" type="checkbox"
+               v-model="readerConfigs[0].enableTagEventsListBatch"
+               v-bind:true-value="1"
+               v-bind:false-value="0">
+        <label for="enableTagEventsListBatch">Enable Batch List Reporting</label>
+        <br />
         <label for="outputMqttDeviceId">Device ID:</label>
         <input id="outputMqttDeviceId" class="form-control" v-model="readerConfigs[0].readerName">
         <label for="outputMqttUsername">Broker Username:</label>
@@ -1346,6 +1353,12 @@
 <br>
 <template v-if="readerConfigs[0].httpPostEnabled == '1'">
 
+    <input id="enableTagEventsListBatch" type="checkbox"
+           v-model="readerConfigs[0].enableTagEventsListBatch"
+           v-bind:true-value="1"
+           v-bind:false-value="0">
+    <label for="enableTagEventsListBatch">Enable Batch List Reporting</label>
+    <br />
 
     <label for="outputHttpUrl">Remote Server URL:</label>
     <input id="outputHttpUrl" class="form-control" v-model="readerConfigs[0].httpPostURL">

@@ -3052,7 +3052,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
                 else
                 {
-                    while (mqttPublisherTimer.Elapsed.Milliseconds < mqttPublishIntervalInMillis)
+                    while (mqttPublisherTimer.Elapsed.Seconds * 1000 < mqttPublishIntervalInMillis)
                         while (_messageQueueTagSmartReaderTagEventMqtt.TryDequeue(out smartReaderTagReadEvent))
                             try
                             {
@@ -5115,52 +5115,79 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             // Setup and start a managed MQTT client.
             //ManagedMqttClientOptions localMqttClientOptions;
+            int mqttKeepAlivePeriod = 30;
+            int.TryParse(_standaloneConfigDTO.mqttBrokerKeepAlive, out mqttKeepAlivePeriod);
 
+            var localClientId = mqttClientId + "-" + DateTime.Now.ToFileTimeUtc();
             if (string.IsNullOrEmpty(mqttUsername))
             {
-                var localClientId = mqttClientId + "-" + DateTime.Now.ToFileTimeUtc();
-                // Setup and start a managed MQTT client.
-                _mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
+                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerProtocol)
+                    && _standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("ws"))
+                {
+                    var mqttBrokerWebSocketPath = "/mqtt";
+                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerWebSocketPath))
+                    {
+                        mqttBrokerWebSocketPath = _standaloneConfigDTO.mqttBrokerWebSocketPath;
+                    }
+                    _mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
                     .WithClientOptions(new MqttClientOptionsBuilder()
-                        .WithCleanSession()
-                        .WithKeepAlivePeriod(TimeSpan.FromSeconds(30))
-                        .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
+                        //.WithCleanSession()
+                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
+                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
                         .WithClientId(localClientId)
+                        .WithWebSocketServer($"{_standaloneConfigDTO.mqttBrokerProtocol}://{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}")
                         .Build())
                     .Build();
+                }
+                else
+                {
+                    _mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
+                    .WithClientOptions(new MqttClientOptionsBuilder()
+                        //.WithCleanSession()
+                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
+                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
+                        .WithClientId(localClientId)
+                        .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
+                        .Build())
+                    .Build();
+                }
 
-                //_mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
-                //.WithAutoReconnectDelay(TimeSpan.FromSeconds(1))
-                //.WithClientOptions(new MqttClientOptionsBuilder()
-                //    .WithKeepAlivePeriod(TimeSpan.FromSeconds(5))
-                //    .WithClientId(mqttClientId + "-" + DateTime.Now.ToFileTimeUtc())
-                //    .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
-                //    .Build())
-                //.Build();
             }
             else
             {
-                //_mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
 
-                //                    .WithAutoReconnectDelay(TimeSpan.FromSeconds(1))
-                //                    .WithClientOptions(new MqttClientOptionsBuilder()
-                //                        .WithKeepAlivePeriod(TimeSpan.FromSeconds(5))
-                //                        .WithClientId(mqttClientId + "-" + DateTime.Now.ToFileTimeUtc())
-                //                        .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
-                //                        .WithCredentials(mqttUsername, mqttPassword)
-                //                        .Build())
-                //                    .Build();
-                var localClientId = mqttClientId + "-" + DateTime.Now.ToFileTimeUtc();
-                // Setup and start a managed MQTT client.
-                _mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
+                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerProtocol)
+                    && _standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("ws"))
+                {
+                    var mqttBrokerWebSocketPath = "/mqtt";
+                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerWebSocketPath))
+                    {
+                        mqttBrokerWebSocketPath = _standaloneConfigDTO.mqttBrokerWebSocketPath;
+                    }
+                    _mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
                     .WithClientOptions(new MqttClientOptionsBuilder()
-                        .WithCleanSession()
-                        .WithKeepAlivePeriod(TimeSpan.FromSeconds(30))
+                        //.WithCleanSession()
+                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
+                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
+                        .WithClientId(localClientId)
+                        .WithWebSocketServer($"{_standaloneConfigDTO.mqttBrokerProtocol}://{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}")
+                        .WithCredentials(mqttUsername, mqttPassword)
+                        .Build())
+                    .Build();
+                }
+                else
+                {
+                    _mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
+                    .WithClientOptions(new MqttClientOptionsBuilder()
+                        //.WithCleanSession()
+                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
+                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
                         .WithClientId(localClientId)
                         .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
                         .WithCredentials(mqttUsername, mqttPassword)
                         .Build())
                     .Build();
+                }
             }
 
             _mqttCommandClient = new MqttFactory().CreateManagedMqttClient();
@@ -6986,6 +7013,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             {
 
                             }
+                            if (_standaloneConfigDTO != null 
+                                && !string.IsNullOrEmpty(_standaloneConfigDTO.cleanupTagEventsListBatchOnReload)
+                                && string.Equals("1", _standaloneConfigDTO.cleanupTagEventsListBatchOnReload, StringComparison.OrdinalIgnoreCase) )
+                            {
+                                _smartReaderTagEventsListBatch.Clear();
+                            }
+
                             try
                             {
                                 ApplySettingsAsync().RunSynchronously();
@@ -7155,6 +7189,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         try
         {
             var lastWillMessage = BuildMqttLastWillMessage();
+            int mqttKeepAlivePeriod = 30;
+            int.TryParse(_standaloneConfigDTO.mqttBrokerKeepAlive, out mqttKeepAlivePeriod);
+
             //var mqttBrokerAddress = _configuration.GetValue<string>("MQTTInfo:Address");
             //var mqttBrokerPort = _configuration.GetValue<int>("MQTTInfo:Port");
             //var mqttBrokerUsername = _configuration.GetValue<string>("MQTTInfo:username");
@@ -7174,26 +7211,74 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 //string localClientId = mqttClientId + "-" + DateTime.Now.ToFileTimeUtc();
                 var localClientId = mqttClientId; // + "-" + DateTime.Now.ToFileTimeUtc();
+                
 
-                _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
+                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerProtocol)
+                    && _standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("ws"))
+                {
+
+                    var mqttBrokerWebSocketPath = "/mqtt";
+                    if(!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerWebSocketPath))
+                    {
+                        mqttBrokerWebSocketPath = _standaloneConfigDTO.mqttBrokerWebSocketPath;
+                    }
+                    _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
                     .WithClientOptions(new MqttClientOptionsBuilder()
                         //.WithCleanSession()
-                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, 30))
+                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
                         //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
                         .WithClientId(localClientId)
-                        .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
+                        .WithWebSocketServer($"{_standaloneConfigDTO.mqttBrokerProtocol}://{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}")
                         .WithWillMessage(lastWillMessage)
                         .Build())
                     .Build();
+                }
+                else
+                {
+                    _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
+                    .WithClientOptions(new MqttClientOptionsBuilder()
+                        //.WithCleanSession()
+                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
+                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
+                        .WithClientId(localClientId)
+                        .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
+                        //.WithWebSocketServer("wss://mymqttserver:443")
+                        .WithWillMessage(lastWillMessage)
+                        .Build())
+                    .Build();
+                }
+                    
             }
             else
             {
                 var localClientId = mqttClientId; // + "-" + DateTime.Now.ToFileTimeUtc();
 
-                _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
+                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerProtocol)
+                    && _standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("ws"))
+                {
+                    var mqttBrokerWebSocketPath = "/mqtt";
+                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerWebSocketPath))
+                    {
+                        mqttBrokerWebSocketPath = _standaloneConfigDTO.mqttBrokerWebSocketPath;
+                    }
+                    _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
                     .WithClientOptions(new MqttClientOptionsBuilder()
                         //.WithCleanSession()
-                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, 30))
+                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
+                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
+                        .WithClientId(localClientId)
+                        .WithWebSocketServer($"{_standaloneConfigDTO.mqttBrokerProtocol}://{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}")
+                        .WithCredentials(mqttUsername, mqttPassword)
+                        .WithWillMessage(lastWillMessage)
+                        .Build())
+                    .Build();
+                }
+                else
+                {
+                    _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
+                    .WithClientOptions(new MqttClientOptionsBuilder()
+                        //.WithCleanSession()
+                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
                         //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
                         .WithClientId(localClientId)
                         .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
@@ -7201,6 +7286,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         .WithWillMessage(lastWillMessage)
                         .Build())
                     .Build();
+                }
             }
 
 

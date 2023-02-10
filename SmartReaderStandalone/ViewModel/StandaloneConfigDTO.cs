@@ -239,7 +239,9 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
     public string mqttBrokerType { get; set; } = "MQTT";
 
-    public string mqttBrokerProtocol { get; set; } = "TCP";
+    public string mqttBrokerProtocol { get; set; } = "tcp";
+
+    public string mqttBrokerWebSocketPath { get; set; } = "/mqtt";
 
     public string mqttBrokerAddress { get; set; } = "test.mosquitto.org";
 
@@ -566,6 +568,8 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
     public string systemImageUpgradeUrl { get; set; } = "";
 
     public string enableTagEventsListBatch{ get; set; } = "0";
+
+    public string cleanupTagEventsListBatchOnReload { get; set; } = "0";
 
 
     public bool Equals([AllowNull] StandaloneConfigDTO otherStandaloneConfigDTO)
@@ -1353,6 +1357,10 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
         if (!enableTagEventsListBatch.Equals(otherStandaloneConfigDTO
                 .enableTagEventsListBatch)) return false;
 
+        if (!cleanupTagEventsListBatchOnReload.Equals(otherStandaloneConfigDTO
+                .cleanupTagEventsListBatchOnReload)) return false;
+        
+
 
         //enableSummaryStream
 
@@ -1596,6 +1604,8 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
             config.mqttBrokerType = HttpUtility.UrlDecode(config.mqttBrokerType);
 
             config.mqttBrokerProtocol = HttpUtility.UrlDecode(config.mqttBrokerProtocol);
+
+            config.mqttBrokerWebSocketPath = HttpUtility.UrlDecode(config.mqttBrokerWebSocketPath);
 
             config.mqttBrokerCleanSession = HttpUtility.UrlDecode(config.mqttBrokerCleanSession);
 
@@ -1956,6 +1966,10 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
                 HttpUtility.UrlDecode(config.operatingRegion);
 
             config.enableTagEventsListBatch = HttpUtility.UrlDecode(config.enableTagEventsListBatch);
+
+            config.cleanupTagEventsListBatchOnReload = HttpUtility.UrlDecode(config.cleanupTagEventsListBatchOnReload);
+
+            
 
             return config;
         }

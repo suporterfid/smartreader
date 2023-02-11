@@ -1368,3 +1368,4 @@ SmartReaderStandalone/obj/Debug/net6.0/staticwebassets.development.json
 .vs/SmartReaderStandalone/FileContentIndex/a3a5b89c-f339-43ef-84ed-84b3cb331988.vsidx
 .vs/SmartReaderStandalone/FileContentIndex/7cc3622c-8595-47ae-a113-58d1883aeab0.vsidx
 .vs/SmartReaderStandalone/FileContentIndex/273ead7d-41ee-4c12-94ac-9cec6549dce4.vsidx
+*.vsidx

@@ -85,7 +85,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     //private static IMqttClientOptions _mqttClientOptions;
 
-    private static IManagedMqttClient _mqttCommandClient;
+    //private static IManagedMqttClient _mqttCommandClient;
 
     private static ManagedMqttClientOptions _mqttCommandClientOptions;
 
@@ -161,12 +161,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         new();
 
     public readonly ConcurrentDictionary<string, JObject> _smartReaderTagEventsListBatch = new();
+    public readonly ConcurrentDictionary<string, JObject> _smartReaderTagEventsListBatchOnUpdate = new();
 
     private readonly Stopwatch _stopwatchBearerToken = new();
     private readonly Stopwatch _stopwatchKeepalive = new();
     private readonly Stopwatch _stopwatchLastIddleEvent = new();
     private readonly Stopwatch _stopwatchPositioningExpiration = new();
     private readonly Stopwatch _stopwatchStopTriggerDuration = new();
+    private readonly Stopwatch _stopwatchStopTagEventsListBatchOnChange = new();
+    private readonly Stopwatch _mqttPublisherStopwatch = new();
 
     private readonly Timer _timerStopTriggerDuration;
 
@@ -1582,7 +1585,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
 
                     var serializedData = JsonConvert.SerializeObject(eventStatus);
-                    _mqttCommandClient.PublishAsync(mqttManagementEventsTopic, serializedData,
+                    _mqttClient.PublishAsync(mqttManagementEventsTopic, serializedData,
                         mqttQualityOfServiceLevel, retain);
                 }
                 catch (Exception)
@@ -1873,8 +1876,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     && _stopwatchStopTriggerDuration.IsRunning
                     && _stopwatchStopTriggerDuration.ElapsedMilliseconds >= stopTiggerDuration)
                 {
-                    _logger.LogInformation("Ignoring tag event due to StopTriggerDuration on OnTagInventoryEvent ",
-                        SeverityType.Debug);
+                    _logger.LogInformation("Ignoring tag event due to StopTriggerDuration on OnTagInventoryEvent ");
                     return;
                 }
             }
@@ -2980,12 +2982,17 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _timerTagPublisherMqtt.Enabled = false;
         _timerTagPublisherMqtt.Stop();
 
+        //_logger.LogInformation($"OnRunPeriodicTagPublisherMqttTasksEvent: >>>");
+
         JObject smartReaderTagReadEvent;
         JObject smartReaderTagReadEventAggregated = null;
         var smartReaderTagReadEventsArray = new JArray();
-        var mqttPublisherTimer = Stopwatch.StartNew();
+        
         double mqttPublishIntervalInSec = 1;
         double mqttPublishIntervalInMillis = 10;
+        double mqttUpdateTagEventsListBatchOnChangeIntervalInSec = 1;
+        double mqttUpdateTagEventsListBatchOnChangeIntervalInMillis = 10;
+        bool isUpdateTimeForOnChangeEvent = false;
 
 
         if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttPuslishIntervalSec))
@@ -2997,7 +3004,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         else
             mqttPublishIntervalInMillis = mqttPublishIntervalInSec * 1000;
 
-        
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChangeIntervalInSec))
+            double.TryParse(_standaloneConfigDTO.updateTagEventsListBatchOnChangeIntervalInSec, NumberStyles.Float,
+                CultureInfo.InvariantCulture, out mqttUpdateTagEventsListBatchOnChangeIntervalInSec);
+
+        if (mqttUpdateTagEventsListBatchOnChangeIntervalInSec == 0)
+            mqttUpdateTagEventsListBatchOnChangeIntervalInMillis = 5;
+        else
+            mqttUpdateTagEventsListBatchOnChangeIntervalInMillis = mqttUpdateTagEventsListBatchOnChangeIntervalInSec * 1000;
 
         try
         {
@@ -3009,50 +3023,146 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
                             StringComparison.OrdinalIgnoreCase))
                 {
-                    while (mqttPublisherTimer.Elapsed.Seconds * 1000 < mqttPublishIntervalInMillis)
+                    //_logger.LogInformation($"_smartReaderTagEventsListBatchOnUpdate: {_smartReaderTagEventsListBatchOnUpdate.Count}");
+                    //_logger.LogInformation($"_smartReaderTagEventsListBatch: {_smartReaderTagEventsListBatch.Count}");
+                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChange)
+                        && string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange)
+                        && !_stopwatchStopTagEventsListBatchOnChange.IsRunning)
                     {
-                        await Task.Delay(10);
+                            _stopwatchStopTagEventsListBatchOnChange.Start();
                     }
-                    if (_smartReaderTagEventsListBatch.Count > 0)
+                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChange)
+                        && string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange,
+                            StringComparison.OrdinalIgnoreCase) 
+                        && _smartReaderTagEventsListBatchOnUpdate.Count > 0)
                     {
-                        foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
+
+                        //while (_stopwatchStopTagEventsListBatchOnChange.Elapsed.Seconds * 1000 < mqttUpdateTagEventsListBatchOnChangeIntervalInMillis)
+                        //{
+                        //    await Task.Delay(10);
+                        //}
+                        if (_stopwatchStopTagEventsListBatchOnChange.Elapsed.Seconds * 1000 >= mqttUpdateTagEventsListBatchOnChangeIntervalInMillis)
                         {
-                            smartReaderTagReadEvent = smartReaderTagReadEventBatch;
-                            try
+                            if (_stopwatchStopTagEventsListBatchOnChange.IsRunning)
                             {
-                                if (smartReaderTagReadEvent == null)
-                                    continue;
-                                if (smartReaderTagReadEventAggregated == null)
+                                _stopwatchStopTagEventsListBatchOnChange.Stop();
+                                _stopwatchStopTagEventsListBatchOnChange.Reset();
+                            }
+
+                            if (_smartReaderTagEventsListBatchOnUpdate.Count > 0)
+                            {
+                                _logger.LogInformation($"OnRunPeriodicTagPublisherMqttTasksEvent: publishing new events due to OnChange {_smartReaderTagEventsListBatchOnUpdate.Count}");
+                                foreach (var smartReaderTagReadEventBatchKV in _smartReaderTagEventsListBatchOnUpdate)
                                 {
-                                    smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
-                                    smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                        .FirstOrDefault().FirstOrDefault());
+                                    if (!_smartReaderTagEventsListBatch.ContainsKey(smartReaderTagReadEventBatchKV.Key))
+                                    {
+                                        _smartReaderTagEventsListBatch.TryAdd(smartReaderTagReadEventBatchKV.Key, smartReaderTagReadEventBatchKV.Value);
+                                    }
+
                                 }
-                                else
+
+                                _smartReaderTagEventsListBatchOnUpdate.Clear();
+
+                                if (_smartReaderTagEventsListBatch.Count > 0)
                                 {
+                                    foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
+                                    {
+                                        smartReaderTagReadEvent = smartReaderTagReadEventBatch;
+                                        try
+                                        {
+                                            if (smartReaderTagReadEvent == null)
+                                                continue;
+                                            if (smartReaderTagReadEventAggregated == null)
+                                            {
+                                                smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
+                                                smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                                    .FirstOrDefault().FirstOrDefault());
+                                            }
+                                            else
+                                            {
+                                                try
+                                                {
+                                                    smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                                        .FirstOrDefault().FirstOrDefault());
+                                                }
+                                                catch (Exception ex)
+                                                {
+                                                    _logger.LogInformation(ex,
+                                                        "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                                }
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                        }
+                                    }
+                                }
+                            }
+                        }                        
+                    }
+                    else
+                    {
+                        if(_smartReaderTagEventsListBatch.Count > 0 
+                            && _smartReaderTagEventsListBatchOnUpdate.Count == 0)
+                        {
+                            if(!_mqttPublisherStopwatch.IsRunning)
+                            {
+                                _mqttPublisherStopwatch.Start();
+                            }
+                            //while (mqttPublisherTimer.Elapsed.Seconds * 1000 < mqttPublishIntervalInMillis)
+                            //{
+                            //    await Task.Delay(10);
+                            //}
+                            if(_mqttPublisherStopwatch.Elapsed.Seconds * 1000 >= mqttPublishIntervalInMillis)
+                            {
+                                _mqttPublisherStopwatch.Restart();
+                                _logger.LogInformation($"OnRunPeriodicTagPublisherMqttTasksEvent: publishing batch events list due to MqttPublishInterval {_smartReaderTagEventsListBatch.Count}");
+                                foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
+                                {
+                                    smartReaderTagReadEvent = smartReaderTagReadEventBatch;
                                     try
                                     {
-                                        smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                            .FirstOrDefault().FirstOrDefault());
+                                        if (smartReaderTagReadEvent == null)
+                                            continue;
+                                        if (smartReaderTagReadEventAggregated == null)
+                                        {
+                                            smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
+                                            smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                                .FirstOrDefault().FirstOrDefault());
+                                        }
+                                        else
+                                        {
+                                            try
+                                            {
+                                                smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                                    .FirstOrDefault().FirstOrDefault());
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                _logger.LogInformation(ex,
+                                                    "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                            }
+                                        }
                                     }
                                     catch (Exception ex)
                                     {
-                                        _logger.LogInformation(ex,
-                                            "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                        _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
                                     }
                                 }
                             }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                            }
+                            
                         }
                     }
-
                 }
                 else
                 {
-                    while (mqttPublisherTimer.Elapsed.Seconds * 1000 < mqttPublishIntervalInMillis)
+                    if (!_mqttPublisherStopwatch.IsRunning)
+                    {
+                        _mqttPublisherStopwatch.Start();
+                    }
+
+                    while (_mqttPublisherStopwatch.Elapsed.Seconds * 1000 < mqttPublishIntervalInMillis)
                         while (_messageQueueTagSmartReaderTagEventMqtt.TryDequeue(out smartReaderTagReadEvent))
                             try
                             {
@@ -3083,12 +3193,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
                             }
 
-
+                    _mqttPublisherStopwatch.Restart();
                 }
             }
 
             
-            mqttPublisherTimer.Restart();
+            
             try
             {
                 if (smartReaderTagReadEventAggregated != null && smartReaderTagReadEventsArray != null &&
@@ -4333,6 +4443,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         try
                                         {
                                             _smartReaderTagEventsListBatch.Clear();
+                                            _smartReaderTagEventsListBatchOnUpdate.Clear();
                                         }
                                         catch (Exception)
                                         {
@@ -4964,11 +5075,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         _standaloneConfigDTO.mqttPassword, _standaloneConfigDTO.mqttTagEventsTopic,
                         int.Parse(_standaloneConfigDTO.mqttTagEventsQoS), _standaloneConfigDTO);
 
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementCommandTopic))
-                    _ = ConnectToMqttCommandBrokerAsync(DeviceIdMqtt, _standaloneConfigDTO.mqttBrokerAddress,
-                        int.Parse(_standaloneConfigDTO.mqttBrokerPort), _standaloneConfigDTO.mqttUsername,
-                        _standaloneConfigDTO.mqttPassword, _standaloneConfigDTO.mqttManagementCommandTopic,
-                        int.Parse(_standaloneConfigDTO.mqttManagementCommandQoS), _standaloneConfigDTO);
+                //if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementCommandTopic))
+                //    _ = ConnectToMqttCommandBrokerAsync(DeviceIdMqtt, _standaloneConfigDTO.mqttBrokerAddress,
+                //        int.Parse(_standaloneConfigDTO.mqttBrokerPort), _standaloneConfigDTO.mqttUsername,
+                //        _standaloneConfigDTO.mqttPassword, _standaloneConfigDTO.mqttManagementCommandTopic,
+                //        int.Parse(_standaloneConfigDTO.mqttManagementCommandQoS), _standaloneConfigDTO);
             }
 
 
@@ -5095,175 +5206,175 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     //}
 
-    private async Task ConnectToMqttCommandBrokerAsync(string mqttClientId, string mqttBrokerAddress,
-        int mqttBrokerPort, string mqttUsername, string mqttPassword, string mqttTopic, int mqttQos,
-        StandaloneConfigDTO smartReaderSetupData)
-    {
-        try
-        {
-            DeviceIdMqtt = mqttClientId;
-            //var mqttBrokerAddress = _configuration.GetValue<string>("MQTTInfo:Address");
-            //var mqttBrokerPort = _configuration.GetValue<int>("MQTTInfo:Port");
-            //var mqttBrokerUsername = _configuration.GetValue<string>("MQTTInfo:username");
-            //var mqttBrokerPassword = _configuration.GetValue<string>("MQTTInfo:password");
-            // Setup and start a managed MQTT client.
-            // 1 - The managed client is started once and will maintain the connection automatically including reconnecting etc.
-            // 2 - All MQTT application messages are added to an internal queue and processed once the server is available.
-            // 3 - All MQTT application messages can be stored to support sending them after a restart of the application
-            // 4 - All subscriptions are managed across server connections. There is no need to subscribe manually after the connection with the server is lost.
+    //private async Task ConnectToMqttCommandBrokerAsync(string mqttClientId, string mqttBrokerAddress,
+    //    int mqttBrokerPort, string mqttUsername, string mqttPassword, string mqttTopic, int mqttQos,
+    //    StandaloneConfigDTO smartReaderSetupData)
+    //{
+    //    try
+    //    {
+    //        DeviceIdMqtt = mqttClientId;
+    //        //var mqttBrokerAddress = _configuration.GetValue<string>("MQTTInfo:Address");
+    //        //var mqttBrokerPort = _configuration.GetValue<int>("MQTTInfo:Port");
+    //        //var mqttBrokerUsername = _configuration.GetValue<string>("MQTTInfo:username");
+    //        //var mqttBrokerPassword = _configuration.GetValue<string>("MQTTInfo:password");
+    //        // Setup and start a managed MQTT client.
+    //        // 1 - The managed client is started once and will maintain the connection automatically including reconnecting etc.
+    //        // 2 - All MQTT application messages are added to an internal queue and processed once the server is available.
+    //        // 3 - All MQTT application messages can be stored to support sending them after a restart of the application
+    //        // 4 - All subscriptions are managed across server connections. There is no need to subscribe manually after the connection with the server is lost.
 
 
-            // Setup and start a managed MQTT client.
-            //ManagedMqttClientOptions localMqttClientOptions;
-            int mqttKeepAlivePeriod = 30;
-            int.TryParse(_standaloneConfigDTO.mqttBrokerKeepAlive, out mqttKeepAlivePeriod);
+    //        // Setup and start a managed MQTT client.
+    //        //ManagedMqttClientOptions localMqttClientOptions;
+    //        int mqttKeepAlivePeriod = 30;
+    //        int.TryParse(_standaloneConfigDTO.mqttBrokerKeepAlive, out mqttKeepAlivePeriod);
 
-            var localClientId = mqttClientId + "-" + DateTime.Now.ToFileTimeUtc();
-            if (string.IsNullOrEmpty(mqttUsername))
-            {
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerProtocol)
-                    && _standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("ws"))
-                {
-                    var mqttBrokerWebSocketPath = "/mqtt";
-                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerWebSocketPath))
-                    {
-                        mqttBrokerWebSocketPath = _standaloneConfigDTO.mqttBrokerWebSocketPath;
-                    }
-                    _mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
-                    .WithClientOptions(new MqttClientOptionsBuilder()
-                        //.WithCleanSession()
-                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                        .WithClientId(localClientId)
-                        .WithWebSocketServer($"{_standaloneConfigDTO.mqttBrokerProtocol}://{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}")
-                        .Build())
-                    .Build();
-                }
-                else
-                {
-                    _mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
-                    .WithClientOptions(new MqttClientOptionsBuilder()
-                        //.WithCleanSession()
-                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                        .WithClientId(localClientId)
-                        .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
-                        .Build())
-                    .Build();
-                }
+    //        var localClientId = mqttClientId + "-" + DateTime.Now.ToFileTimeUtc();
+    //        if (string.IsNullOrEmpty(mqttUsername))
+    //        {
+    //            if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerProtocol)
+    //                && _standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("ws"))
+    //            {
+    //                var mqttBrokerWebSocketPath = "/mqtt";
+    //                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerWebSocketPath))
+    //                {
+    //                    mqttBrokerWebSocketPath = _standaloneConfigDTO.mqttBrokerWebSocketPath;
+    //                }
+    //                _mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
+    //                .WithClientOptions(new MqttClientOptionsBuilder()
+    //                    //.WithCleanSession()
+    //                    .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
+    //                    //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
+    //                    .WithClientId(localClientId)
+    //                    .WithWebSocketServer($"{_standaloneConfigDTO.mqttBrokerProtocol}://{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}")
+    //                    .Build())
+    //                .Build();
+    //            }
+    //            else
+    //            {
+    //                _mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
+    //                .WithClientOptions(new MqttClientOptionsBuilder()
+    //                    //.WithCleanSession()
+    //                    .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
+    //                    //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
+    //                    .WithClientId(localClientId)
+    //                    .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
+    //                    .Build())
+    //                .Build();
+    //            }
 
-            }
-            else
-            {
+    //        }
+    //        else
+    //        {
 
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerProtocol)
-                    && _standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("ws"))
-                {
-                    var mqttBrokerWebSocketPath = "/mqtt";
-                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerWebSocketPath))
-                    {
-                        mqttBrokerWebSocketPath = _standaloneConfigDTO.mqttBrokerWebSocketPath;
-                    }
-                    _mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
-                    .WithClientOptions(new MqttClientOptionsBuilder()
-                        //.WithCleanSession()
-                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                        .WithClientId(localClientId)
-                        .WithWebSocketServer($"{_standaloneConfigDTO.mqttBrokerProtocol}://{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}")
-                        .WithCredentials(mqttUsername, mqttPassword)
-                        .Build())
-                    .Build();
-                }
-                else
-                {
-                    _mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
-                    .WithClientOptions(new MqttClientOptionsBuilder()
-                        //.WithCleanSession()
-                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                        .WithClientId(localClientId)
-                        .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
-                        .WithCredentials(mqttUsername, mqttPassword)
-                        .Build())
-                    .Build();
-                }
-            }
+    //            if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerProtocol)
+    //                && _standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("ws"))
+    //            {
+    //                var mqttBrokerWebSocketPath = "/mqtt";
+    //                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerWebSocketPath))
+    //                {
+    //                    mqttBrokerWebSocketPath = _standaloneConfigDTO.mqttBrokerWebSocketPath;
+    //                }
+    //                _mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
+    //                .WithClientOptions(new MqttClientOptionsBuilder()
+    //                    //.WithCleanSession()
+    //                    .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
+    //                    //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
+    //                    .WithClientId(localClientId)
+    //                    .WithWebSocketServer($"{_standaloneConfigDTO.mqttBrokerProtocol}://{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}")
+    //                    .WithCredentials(mqttUsername, mqttPassword)
+    //                    .Build())
+    //                .Build();
+    //            }
+    //            else
+    //            {
+    //                _mqttCommandClientOptions = new ManagedMqttClientOptionsBuilder()
+    //                .WithClientOptions(new MqttClientOptionsBuilder()
+    //                    //.WithCleanSession()
+    //                    .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
+    //                    //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
+    //                    .WithClientId(localClientId)
+    //                    .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
+    //                    .WithCredentials(mqttUsername, mqttPassword)
+    //                    .Build())
+    //                .Build();
+    //            }
+    //        }
 
-            _mqttCommandClient = new MqttFactory().CreateManagedMqttClient();
-
-
-            await _mqttCommandClient.StartAsync(_mqttCommandClientOptions);
+    //        _mqttCommandClient = new MqttFactory().CreateManagedMqttClient();
 
 
-            _mqttCommandClient.UseApplicationMessageReceivedHandler(e =>
-            {
-                _logger.LogInformation("### RECEIVED APPLICATION MESSAGE ###");
-                _logger.LogInformation($"+ Topic = {e.ApplicationMessage.Topic}");
-                if (e.ApplicationMessage.Payload != null)
-                    _logger.LogInformation($"+ Payload = {Encoding.UTF8.GetString(e.ApplicationMessage.Payload)}");
-
-                _logger.LogInformation($"+ QoS = {e.ApplicationMessage.QualityOfServiceLevel}");
-                _logger.LogInformation($"+ Retain = {e.ApplicationMessage.Retain}");
-                _logger.LogInformation($"+ ClientId = {e.ClientId}");
-
-                var payload = "";
-                if (e.ApplicationMessage.Payload != null)
-                    payload = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
-                try
-                {
-                    ProcessMqttCommandMessage(e.ClientId, e.ApplicationMessage.Topic, payload);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError("[[COMMAND]] ProcessMqttMessage: Unexpected error. " + ex.Message);
-                }
-
-                _logger.LogInformation(" ");
-            });
+    //        await _mqttCommandClient.StartAsync(_mqttCommandClientOptions);
 
 
-            _ = _mqttCommandClient.UseConnectedHandler(async e =>
-            {
-                Console.WriteLine("### [[COMMAND]] CONNECTED WITH SERVER ###");
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
-                    _logger.LogInformation(
-                        "### [[COMMAND]] CONNECTED WITH SERVER ### " + _standaloneConfigDTO.mqttBrokerAddress,
-                        SeverityType.Debug);
+    //        _mqttCommandClient.UseApplicationMessageReceivedHandler(e =>
+    //        {
+    //            _logger.LogInformation("### RECEIVED APPLICATION MESSAGE ###");
+    //            _logger.LogInformation($"+ Topic = {e.ApplicationMessage.Topic}");
+    //            if (e.ApplicationMessage.Payload != null)
+    //                _logger.LogInformation($"+ Payload = {Encoding.UTF8.GetString(e.ApplicationMessage.Payload)}");
+
+    //            _logger.LogInformation($"+ QoS = {e.ApplicationMessage.QualityOfServiceLevel}");
+    //            _logger.LogInformation($"+ Retain = {e.ApplicationMessage.Retain}");
+    //            _logger.LogInformation($"+ ClientId = {e.ClientId}");
+
+    //            var payload = "";
+    //            if (e.ApplicationMessage.Payload != null)
+    //                payload = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
+    //            try
+    //            {
+    //                ProcessMqttCommandMessage(e.ClientId, e.ApplicationMessage.Topic, payload);
+    //            }
+    //            catch (Exception ex)
+    //            {
+    //                _logger.LogError("[[COMMAND]] ProcessMqttMessage: Unexpected error. " + ex.Message);
+    //            }
+
+    //            _logger.LogInformation(" ");
+    //        });
 
 
-                try
-                {
-                    var mqttTopicFilters = BuildMqttTopicList(smartReaderSetupData);
+    //        _ = _mqttCommandClient.UseConnectedHandler(async e =>
+    //        {
+    //            Console.WriteLine("### [[COMMAND]] CONNECTED WITH SERVER ###");
+    //            if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
+    //                _logger.LogInformation(
+    //                    "### [[COMMAND]] CONNECTED WITH SERVER ### " + _standaloneConfigDTO.mqttBrokerAddress,
+    //                    SeverityType.Debug);
 
 
-                    await _mqttCommandClient.SubscribeAsync(mqttTopicFilters.ToArray());
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "[[COMMAND]] Subscribe: Unexpected error. " + ex.Message);
-                }
+    //            try
+    //            {
+    //                var mqttTopicFilters = BuildMqttTopicList(smartReaderSetupData);
 
-                // Subscribe to a topic
-                //await _mqttClient.SubscribeAsync(new MqttClientSubscribeOptionsBuilder().WithTopic("my/topic").Build());
 
-                //Console.WriteLine("### SUBSCRIBED ###");
-            });
+    //                await _mqttCommandClient.SubscribeAsync(mqttTopicFilters.ToArray());
+    //            }
+    //            catch (Exception ex)
+    //            {
+    //                _logger.LogError(ex, "[[COMMAND]] Subscribe: Unexpected error. " + ex.Message);
+    //            }
 
-            _ = _mqttCommandClient.UseDisconnectedHandler(async e =>
-            {
-                Console.WriteLine("### [[COMMAND]] DISCONNECTED FROM SERVER ###");
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
-                    _logger.LogInformation(
-                        "### [[COMMAND]] DISCONNECTED FROM SERVER ### " + _standaloneConfigDTO.mqttBrokerAddress,
-                        SeverityType.Debug);
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected error. " + ex.Message);
-        }
-    }
+    //            // Subscribe to a topic
+    //            //await _mqttClient.SubscribeAsync(new MqttClientSubscribeOptionsBuilder().WithTopic("my/topic").Build());
+
+    //            //Console.WriteLine("### SUBSCRIBED ###");
+    //        });
+
+    //        _ = _mqttCommandClient.UseDisconnectedHandler(async e =>
+    //        {
+    //            Console.WriteLine("### [[COMMAND]] DISCONNECTED FROM SERVER ###" );
+    //            if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
+    //                _logger.LogInformation(
+    //                    "### [[COMMAND]] DISCONNECTED FROM SERVER ### " + _standaloneConfigDTO.mqttBrokerAddress,
+    //                    SeverityType.Debug);
+    //        });
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        _logger.LogError(ex, "Unexpected error. " + ex.Message);
+    //    }
+    //}
 
     private List<MqttTopicFilter> BuildMqttTopicList(StandaloneConfigDTO smartReaderSetupData)
     {
@@ -5334,57 +5445,63 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                 try
                 {
-                    switch (managementCommandQoslevel)
+                    if (string.Equals("1", smartReaderSetupData.mqttEnableSmartreaderDefaultTopics,
+                                StringComparison.OrdinalIgnoreCase))
                     {
-                        case 1:
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
-                                .WithTopic("smartreader/+/cmd/settings/get").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
-                                .WithTopic("smartreader/+/cmd/settings/post").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
-                                .WithTopic("smartreader/+/cmd/getserial").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
-                                .WithTopic("smartreader/+/cmd/getstatus").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
-                                .WithTopic("smartreader/+/cmd/start-inventory").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
-                                .WithTopic("smartreader/+/cmd/stop-inventory").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                .WithTopic("smartreader/+/api/v1/#").Build());
-                            break;
-                        case 2:
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                .WithTopic("smartreader/+/cmd/settings/get").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                .WithTopic("smartreader/+/cmd/settings/post").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                .WithTopic("smartreader/+/cmd/getserial").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                .WithTopic("smartreader/+/cmd/getstatus").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                .WithTopic("smartreader/+/cmd/start-inventory").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                .WithTopic("smartreader/+/cmd/stop-inventory").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                .WithTopic("smartreader/+/api/v1/#").Build());
-                            break;
-                        default:
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
-                                .WithTopic("smartreader/+/cmd/settings/get").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
-                                .WithTopic("smartreader/+/cmd/settings/post").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
-                                .WithTopic("smartreader/+/cmd/getserial").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
-                                .WithTopic("smartreader/+/cmd/getstatus").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
-                                .WithTopic("smartreader/+/cmd/start-inventory").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
-                                .WithTopic("smartreader/+/cmd/stop-inventory").Build());
-                            mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                .WithTopic("smartreader/+/api/v1/#").Build());
-                            break;
+                        switch (managementCommandQoslevel)
+                        {
+                            case 1:
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/settings/get").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/settings/post").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/getserial").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/getstatus").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/start-inventory").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/stop-inventory").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
+                                    .WithTopic("smartreader/+/api/v1/#").Build());
+                                break;
+                            case 2:
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/settings/get").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/settings/post").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/getserial").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/getstatus").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/start-inventory").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/stop-inventory").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
+                                    .WithTopic("smartreader/+/api/v1/#").Build());
+                                break;
+                            default:
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/settings/get").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/settings/post").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/getserial").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/getstatus").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/start-inventory").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
+                                    .WithTopic("smartreader/+/cmd/stop-inventory").Build());
+                                mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
+                                    .WithTopic("smartreader/+/api/v1/#").Build());
+                                break;
+                        }
                     }
+                        
+                    
                 }
                 catch (Exception ex)
                 {
@@ -5504,7 +5621,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                                                 var mqttCommandResponseTopic =
                                                     $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                                _mqttCommandClient.PublishAsync(mqttCommandResponseTopic,
+                                                _mqttClient.PublishAsync(mqttCommandResponseTopic,
                                                     serializedData, mqttQualityOfServiceLevel, retain);
                                                 return;
                                             }
@@ -5570,7 +5687,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
                             }
                             else if ("stop".Equals(commandValue))
@@ -5626,7 +5743,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
 
 
@@ -5694,7 +5811,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
                             }
                             else if ("mode".Equals(commandValue))
@@ -5768,7 +5885,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
                                 //if ("success".Equals(commandStatus))
                                 //{
@@ -5839,7 +5956,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
                             }
                             else if ("apply-settings".Equals(commandValue))
@@ -5900,7 +6017,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
                             }
                             else if ("upgrade".Equals(commandValue))
@@ -5990,7 +6107,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
                             }
                             else if ("impinj_iot_device_interface".Equals(commandValue))
@@ -6104,7 +6221,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
                             }
                         }
@@ -6193,7 +6310,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                                             var mqttCommandResponseTopic =
                                                 $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                                            _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                            _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                                 mqttQualityOfServiceLevel, retain);
                                             return;
                                         }
@@ -6252,7 +6369,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                                _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
                             }
                             else if ("stop".Equals(commandValue))
@@ -6309,7 +6426,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                                _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
                             }
                             else if ("reboot".Equals(commandValue))
@@ -6374,7 +6491,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                                _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
                             }
                             else if ("mode".Equals(commandValue))
@@ -6447,7 +6564,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                                _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
                                 //if ("success".Equals(commandStatus))
                                 //{
@@ -6566,7 +6683,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                                _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                     mqttQualityOfServiceLevel, retain);
                             }
                         }
@@ -6613,7 +6730,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     var serializedData = JsonConvert.SerializeObject(_standaloneConfigDTO);
                     var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
-                    _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData);
+                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData);
                 }
                 catch (Exception ex)
                 {
@@ -6628,7 +6745,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var serial = GetSerialAsync();
                     var serializedData = JsonConvert.SerializeObject(serial.Result);
                     var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
-                    _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData);
+                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData);
                 }
                 catch (Exception ex)
                 {
@@ -6643,7 +6760,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var status = GetReaderStatusAsync();
                     var serializedData = JsonConvert.SerializeObject(status.Result);
                     var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
-                    _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, serializedData);
+                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData);
                 }
                 catch (Exception ex)
                 {
@@ -6657,7 +6774,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     _ = StartTasksAsync();
                     var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
-                    _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, "OK");
+                    _mqttClient.PublishAsync(mqttCommandResponseTopic, "OK");
                 }
                 catch (Exception ex)
                 {
@@ -6671,7 +6788,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     _ = StopTasksAsync();
                     var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
-                    _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, "OK");
+                    _mqttClient.PublishAsync(mqttCommandResponseTopic, "OK");
                 }
                 catch (Exception ex)
                 {
@@ -6688,7 +6805,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     {
                         _ = SetGpoPortsAsync(deserializedData);
                         var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
-                        _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, "OK");
+                        _mqttClient.PublishAsync(mqttCommandResponseTopic, "OK");
                     }
                 }
                 catch (Exception ex)
@@ -6732,7 +6849,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     _logger.LogError(ex, "Unexpected error" + ex.Message);
                     //_mqttCommandClient.PublishAsync(_standaloneConfigDTO.mqttTopic, ex.Message);
-                    _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, ex.Message);
+                    _mqttClient.PublishAsync(mqttCommandResponseTopic, ex.Message);
                 }
             }
         }
@@ -7018,6 +7135,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 && string.Equals("1", _standaloneConfigDTO.cleanupTagEventsListBatchOnReload, StringComparison.OrdinalIgnoreCase) )
                             {
                                 _smartReaderTagEventsListBatch.Clear();
+                                _smartReaderTagEventsListBatchOnUpdate.Clear();
                             }
 
                             try
@@ -7168,14 +7286,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             requestResult = response.Result.Content.ReadAsStringAsync().Result;
             Log.Debug(requestResult);
             //_mqttCommandClient.PublishAsync(_standaloneConfigDTO.mqttTopic, requestResult);
-            _mqttCommandClient.PublishAsync(mqttCommandResponseTopic, requestResult);
+            _mqttClient.PublishAsync(mqttCommandResponseTopic, requestResult);
         }
         else
         {
             requestResult = response.Result.Content.ReadAsStringAsync().Result;
 
             if (!string.IsNullOrEmpty(requestResult) && publish)
-                _mqttCommandClient.PublishAsync(mqttCommandResponseTopic,
+                _mqttClient.PublishAsync(mqttCommandResponseTopic,
                     response.Result.Content.ReadAsStringAsync().Result);
         }
 
@@ -7310,23 +7428,48 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 mqttManagementEvents.Add("smartreader-mqtt-status", "connected");
                 PublishMqttManagementEvent(mqttManagementEvents);
 
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementCommandTopic))
-                    try
-                    {
-                        //TODO
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "UseConnectedHandler: Unexpected error. " + ex.Message);
-                    }
+                try
+                {
+                    var mqttTopicFilters = BuildMqttTopicList(smartReaderSetupData);
+
+
+                    await _mqttClient.SubscribeAsync(mqttTopicFilters.ToArray());
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Subscribe: Unexpected error. " + ex.Message);
+                }
+                //if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementCommandTopic))
+                //    try
+                //    {
+                //        //TODO
+                //    }
+                //    catch (Exception ex)
+                //    {
+                //        _logger.LogError(ex, "UseConnectedHandler: Unexpected error. " + ex.Message);
+                //    }
             });
 
             _ = _mqttClient.UseDisconnectedHandler(async e =>
             {
                 Console.WriteLine("### DISCONNECTED FROM SERVER ###");
+
+               
+
                 if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
-                    _logger.LogInformation("### DISCONNECTED FROM SERVER ### " + _standaloneConfigDTO.mqttBrokerAddress,
-                        SeverityType.Debug);
+                    _logger.LogInformation($"### DISCONNECTED FROM SERVER ### {_standaloneConfigDTO.mqttBrokerAddress}" );
+
+                try
+                {
+                    var diconnectDetails = $"Disconnection: ConnectResult {e.ConnectResult} \n";
+                    diconnectDetails += $"Disconnection: Reason {e.Reason} \n";
+                    diconnectDetails += $" ClientWasConnected {e.ClientWasConnected} \n";
+                    _logger.LogInformation($"### Details {diconnectDetails}");
+                }
+                catch (Exception)
+                {
+
+                }
             });
         }
         catch (Exception ex)
@@ -7398,8 +7541,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             var mqttManagementEventsTopic = _standaloneConfigDTO.mqttManagementEventsTopic;
             if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase)
-                && _mqttCommandClient != null
-                && _mqttCommandClient.IsConnected)
+                && _mqttClient != null
+                && _mqttClient.IsConnected)
                 if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementEventsTopic))
                 {
                     //Dictionary<string, string> mqttManagementEvents = new Dictionary<string, string>();
@@ -7432,7 +7575,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         }
 
                         var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                        _ = _mqttCommandClient.PublishAsync(mqttManagementEventsTopic, jsonParam,
+                        _ = _mqttClient.PublishAsync(mqttManagementEventsTopic, jsonParam,
                             mqttQualityOfServiceLevel, retain);
                     }
                     catch (Exception)
@@ -7856,7 +7999,17 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     }
                     else
                     {
-                        _smartReaderTagEventsListBatch.TryAdd(tagRead.Epc, dataToPublish);
+                        
+                        if(string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange, StringComparison.OrdinalIgnoreCase)
+                            && !_smartReaderTagEventsListBatchOnUpdate.ContainsKey(tagRead.Epc))
+                        {
+                            _smartReaderTagEventsListBatchOnUpdate.TryAdd(tagRead.Epc, dataToPublish);
+                        }
+                        else
+                        {
+                            _smartReaderTagEventsListBatch.TryAdd(tagRead.Epc, dataToPublish);
+                        }
+                        
                     }
                 }
                 catch (Exception)

@@ -500,7 +500,6 @@
                                     <!--  <option value="5">Network Connection Status</option>-->
                                     <option value="6">Reader Inventory Tags Status</option>
                                     <option value="7">Success on Rule Validation</option>
-                                    n<
                                     <option value="8">Error on Rule Validation<</option>
                                 </select>
 
@@ -1186,14 +1185,29 @@
                                        v-bind:false-value="0">
                                 <label for="enableTagEventsListBatch">Enable Batch List Reporting</label>
                                 <br />
-                                <input id="cleanupTagEventsListBatchOnReload" type="checkbox"
-                                       v-model="readerConfigs[0].cleanupTagEventsListBatchOnReload"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
-                                <label for="cleanupTagEventsListBatchOnReload">Clear Batch List on Reload Operation</label>
-                                <br />
+                                <template v-if="readerConfigs[0].enableTagEventsListBatch == '1'">
+                                    &nbsp;&nbsp;
+                                    <input id="cleanupTagEventsListBatchOnReload" type="checkbox"
+                                           v-model="readerConfigs[0].cleanupTagEventsListBatchOnReload"
+                                           v-bind:true-value="1"
+                                           v-bind:false-value="0">
+                                    <label for="cleanupTagEventsListBatchOnReload">Clear Batch List on Reload Operation</label>
+                                    <br />
+                                    
+                                    <input id="updateTagEventsListBatchOnChange" type="checkbox"
+                                           v-model="readerConfigs[0].updateTagEventsListBatchOnChange"
+                                           v-bind:true-value="1"
+                                           v-bind:false-value="0">
+                                    <label for="updateTagEventsListBatchOnChange">Publish Batch List On-Change</label>
+                                    <br />
+                                    <label for="updateTagEventsListBatchOnChangeIntervalInSec">Publish Batch List On-Change Interval (in seconds):</label>
+                                    &nbsp;&nbsp;
+                                    <input id="updateTagEventsListBatchOnChangeIntervalInSec" class="form-control" v-model="readerConfigs[0].updateTagEventsListBatchOnChangeIntervalInSec">
+                                    <br>
+                                </template>
 
-                                
+
+
                                 <label for="outputMqttDeviceId">Device ID:</label>
                                 <input id="outputMqttDeviceId" class="form-control" v-model="readerConfigs[0].readerName">
                                 <label for="outputMqttUsername">Broker Username:</label>
@@ -1216,8 +1230,18 @@
                                 <input id="outputMqttBrokerAddress" class="form-control" v-model="readerConfigs[0].mqttBrokerAddress">
                                 <label for="outputMqttBrokerPort">Broker Port:</label>
                                 <input id="outputMqttBrokerPort" class="form-control" v-model="readerConfigs[0].mqttBrokerPort">
-
                                 <br />
+                                <label for="mqttBrokerKeepAlive">MQTT Broker Keepalive:</label>
+                                <input id="mqttBrokerKeepAlive" class="form-control" v-model="readerConfigs[0].mqttBrokerKeepAlive">
+                                <br />
+
+                                <input id="mqttBrokerCleanSession" type="checkbox"
+                                       v-model="readerConfigs[0].mqttBrokerCleanSession"
+                                       v-bind:true-value="1"
+                                       v-bind:false-value="0">
+                                <label for="mqttBrokerCleanSession">MQTT Brker Clean Session</label>
+                                <br />
+
                                 <label for="mqttBrokerProtocol">MQTT Broker Protocol:</label>
                                 <select id="mqttBrokerProtocol" class="form-control" v-model="readerConfigs[0].mqttBrokerProtocol">
                                     <option value="tcp">tcp</option>
@@ -1283,6 +1307,7 @@
     <label for="mqttManagementCommandRetainMessages">Retain Messages</label>
     -->
                                 <br />
+
                                 <br />
 
                                 <label for="mqttManagementResponseTopic">Topic for Management Command Response publishing:</label>
@@ -1322,9 +1347,20 @@
                                 <label for="mqttControlResponseRetainMessages">Retain Messages</label>
                                 <br />
                                 <br />
+                                <br />
+                                <label>MQTT internal Topics:</label>
+                                <br/>
+                                <input id="mqttEnableSmartreaderDefaultTopics" type="checkbox"
+                                       v-model="readerConfigs[0].mqttEnableSmartreaderDefaultTopics"
+                                       v-bind:true-value="1"
+                                       v-bind:false-value="0">
+                                <label for="mqttEnableSmartreaderDefaultTopics">Enable Smartreader MQTT internal Topics</label>
+                                <br />
+                                <br />
+                                <br />
 
                             </template>
-                        </template>
+                            </template>
 
                         <h3>Local UDP server</h3>
 
@@ -1384,18 +1420,39 @@
                             <label for="enableTagEventsListBatch">Enable Batch List Reporting</label>
                             <br />
 
+                            <template v-if="readerConfigs[0].enableTagEventsListBatch == '1'">
+                                &nbsp;&nbsp;
+                                <input id="cleanupTagEventsListBatchOnReload" type="checkbox"
+                                       v-model="readerConfigs[0].cleanupTagEventsListBatchOnReload"
+                                       v-bind:true-value="1"
+                                       v-bind:false-value="0">
+                                <label for="cleanupTagEventsListBatchOnReload">Clear Batch List on Reload Operation</label>
+                                <br />
+                                &nbsp;&nbsp;
+                                <input id="updateTagEventsListBatchOnChange" type="checkbox"
+                                       v-model="readerConfigs[0].updateTagEventsListBatchOnChange"
+                                       v-bind:true-value="1"
+                                       v-bind:false-value="0">
+                                <label for="updateTagEventsListBatchOnChange">Publish Batch List On-Change</label>
+                                <br />
+                                <label for="updateTagEventsListBatchOnChangeInterval">Publish Batch List On-Change Interval (in seconds):</label>
+                                &nbsp;&nbsp;
+                                <input id="updateTagEventsListBatchOnChangeInterval" class="form-control" v-model="readerConfigs[0].updateTagEventsListBatchOnChangeInterval">
+                                <br>
+                            </template>
+                            <br />
                             <label for="outputHttpUrl">Remote Server URL:</label>
                             <input id="outputHttpUrl" class="form-control" v-model="readerConfigs[0].httpPostURL">
                             <label for="outputHttpPostInterval">POST interval in seconds:</label>
                             <input id="outputHttpPostInterval" class="form-control" v-model="readerConfigs[0].httpPostIntervalSec">
                             <!--
-                            <h3>HTTP Post Backup on USB Flash Drive</h3>
-                            <input id="outputWriteUsbJsonEnabled" type="checkbox"
-                                   v-model="readerConfigs[0].writeUsbJson"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
-                            <label for="outputWriteUsbJsonEnabled">Enable</label>
-                            -->
+    <h3>HTTP Post Backup on USB Flash Drive</h3>
+    <input id="outputWriteUsbJsonEnabled" type="checkbox"
+           v-model="readerConfigs[0].writeUsbJson"
+           v-bind:true-value="1"
+           v-bind:false-value="0">
+    <label for="outputWriteUsbJsonEnabled">Enable</label>
+    -->
                             <br>
                             <br>
 
@@ -1445,11 +1502,11 @@
                                 <label for="outputHttpAuthenticationTokenApiUrl">Token(BEARER) API URL:</label>
                                 <input id="outputHttpAuthenticationTokenApiUrl" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiUrl">
                                 <!--
-                                <label for="outputHttpAuthenticationTokenApiUsernameField">HTTP Username Field:</label>
-                                <input id="outputHttpAuthenticationTokenApiUsernameField" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiUsernameField">
-                                <label for="outputHttpAuthenticatioTokenApinPasswordValue">HTTP Password Value:</label>
-                                <input type="password" id="outputHttpAuthenticationTokenApiPasswordValue" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiPasswordValue">
-                                -->
+        <label for="outputHttpAuthenticationTokenApiUsernameField">HTTP Username Field:</label>
+        <input id="outputHttpAuthenticationTokenApiUsernameField" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiUsernameField">
+        <label for="outputHttpAuthenticatioTokenApinPasswordValue">HTTP Password Value:</label>
+        <input type="password" id="outputHttpAuthenticationTokenApiPasswordValue" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiPasswordValue">
+        -->
                                 <label for="httpAuthenticationTokenApiBody">Username and Password Body Request for API Value:</label>
                                 <input id="httpAuthenticationTokenApiBody" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiBody">
                                 <label for="outputHttpAuthenticationTokenApiValue">Token(BEARER) API Value:</label>

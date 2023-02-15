@@ -19,7 +19,7 @@ RUN mv /etk/cap/cap_gen.sh /etk/cap_gen.sh
 RUN mv /etk/cap/cap_description.in /etk/cap_description.in
 RUN mv /etk/cap/capcommand.sh /etk/capcommand.sh 
 
-RUN mkdir /etk/cap/wwwroot 
+RUN [ -d /etk/cap/wwwroot ] || mkdir /etk/cap/wwwroot 
 RUN mv /etk/cap/css /etk/cap/wwwroot/css
 RUN mv /etk/cap/fonts /etk/cap/wwwroot/fonts
 RUN mv /etk/cap/js /etk/cap/wwwroot/js

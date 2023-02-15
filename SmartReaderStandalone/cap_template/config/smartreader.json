@@ -149,7 +149,8 @@
   "mqttProxyUrl": "http://localhost:8080/publish-mqtt",
   "mqttProxyUsername": "admin",
   "mqttProxyPassword": "admin",
-  "mqttPuslishIntervalSec": "1",
+  "mqttPuslishIntervalSec": "10",
+  "mqttEnableSmartreaderDefaultTopics": "1",
   "isCloudInterface": "1",
   "applyIpSettingsOnStartup": "1",
   "ipAddressMode": "Static",
@@ -272,7 +273,7 @@
   "requireUniqueProductCode": "0",
   "enableTagEventStream": "0",
   "enableSummaryStream": "0",
-  "enableExternalApiVerification": "0",
+  "enableExternalApiVerification": "1",
   "externalApiVerificationSearchOrderUrl": "",
   "externalApiVerificationSearchProductUrl": "",
   "externalApiVerificationPublishDataUrl": "",
@@ -281,5 +282,7 @@
   "operatingRegion": "BRAZIL 902-907 AND 915-928 MHZ",
   "systemImageUpgradeUrl": "",
   "enableTagEventsListBatch": "1",
-  "cleanupTagEventsListBatchOnReload": "0"
+  "cleanupTagEventsListBatchOnReload": "1",
+  "updateTagEventsListBatchOnChange": "1",
+  "updateTagEventsListBatchOnChangeIntervalInSec": "2"
 }

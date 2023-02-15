@@ -307,6 +307,8 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
     public string mqttPuslishIntervalSec { get; set; } = "2";
 
+    public string mqttEnableSmartreaderDefaultTopics { get; set; } = "1";
+
     public string isCloudInterface { get; set; } = "1";
 
     public string applyIpSettingsOnStartup { get; set; } = "1";
@@ -570,6 +572,13 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
     public string enableTagEventsListBatch{ get; set; } = "0";
 
     public string cleanupTagEventsListBatchOnReload { get; set; } = "0";
+
+    public string updateTagEventsListBatchOnChange { get; set; } = "0";
+
+    public string updateTagEventsListBatchOnChangeIntervalInSec { get; set; } = "0";
+
+    
+
 
 
     public bool Equals([AllowNull] StandaloneConfigDTO otherStandaloneConfigDTO)
@@ -945,6 +954,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
         if (!mqttPuslishIntervalSec.Equals(otherStandaloneConfigDTO.mqttPuslishIntervalSec)) return false;
 
+        if (!mqttEnableSmartreaderDefaultTopics.Equals(otherStandaloneConfigDTO.mqttEnableSmartreaderDefaultTopics)) return false;
 
         if (!isCloudInterface.Equals(otherStandaloneConfigDTO.isCloudInterface)) return false;
 
@@ -1359,7 +1369,15 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
         if (!cleanupTagEventsListBatchOnReload.Equals(otherStandaloneConfigDTO
                 .cleanupTagEventsListBatchOnReload)) return false;
+
+        if (!updateTagEventsListBatchOnChange.Equals(otherStandaloneConfigDTO
+        .updateTagEventsListBatchOnChange)) return false;
+
+        if (!updateTagEventsListBatchOnChangeIntervalInSec.Equals(otherStandaloneConfigDTO
+        .updateTagEventsListBatchOnChangeIntervalInSec)) return false;
         
+
+
 
 
         //enableSummaryStream
@@ -1672,6 +1690,8 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
             config.mqttPuslishIntervalSec = HttpUtility.UrlDecode(config.mqttPuslishIntervalSec);
 
+            config.mqttEnableSmartreaderDefaultTopics = HttpUtility.UrlDecode(config.mqttEnableSmartreaderDefaultTopics);            
+
             config.isCloudInterface = HttpUtility.UrlDecode(config.isCloudInterface);
 
             config.applyIpSettingsOnStartup = HttpUtility.UrlDecode(config.applyIpSettingsOnStartup);
@@ -1969,7 +1989,15 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
             config.cleanupTagEventsListBatchOnReload = HttpUtility.UrlDecode(config.cleanupTagEventsListBatchOnReload);
 
+            config.updateTagEventsListBatchOnChange = HttpUtility.UrlDecode(config.updateTagEventsListBatchOnChange);
+
+            config.updateTagEventsListBatchOnChangeIntervalInSec = HttpUtility.UrlDecode(config.updateTagEventsListBatchOnChangeIntervalInSec);
             
+
+
+
+
+
 
             return config;
         }

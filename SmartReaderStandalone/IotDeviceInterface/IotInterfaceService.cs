@@ -2866,7 +2866,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         try
         {
             JObject smartReaderTagReadEvent;
-            while (_messageQueueTagSmartReaderTagEventSocketServer.TryDequeue(out smartReaderTagReadEvent))
+            var currentSocketQueueData = new ConcurrentQueue<JObject>(_messageQueueTagSmartReaderTagEventSocketServer);
+            _messageQueueTagSmartReaderTagEventSocketServer.Clear();
+            while (currentSocketQueueData.TryDequeue(out smartReaderTagReadEvent))
                 try
                 {
                     await ProcessSocketJsonTagEventDataAsync(smartReaderTagReadEvent);
@@ -3807,8 +3809,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             //{
             //    _logger.LogError(exception, "Unexpected error on ProcessSocketJsonTagEventDataAsync");
             //}
-            _logger.LogError(ex, "Unexpected error on ProcessSocketJsonTagEventDataAsync " + ex.Message,
-                SeverityType.Error);
+            _logger.LogError(ex, "Unexpected error on ProcessSocketJsonTagEventDataAsync " + ex.Message);
         }
     }
 
@@ -3887,19 +3888,34 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             foreach (var tagReads in smartReaderTagEventData.GetValue("tag_reads").ToList())
             {
                 var antennaPort = (string) tagReads["antennaPort"];
-                if (string.Equals("1", _standaloneConfigDTO.includeAntennaPort, StringComparison.OrdinalIgnoreCase) &&
-                    !string.IsNullOrEmpty(antennaPort))
+                if (string.Equals("1", _standaloneConfigDTO.includeAntennaPort, StringComparison.OrdinalIgnoreCase))
                 {
-                    sb.Append(antennaPort);
-                    sb.Append(fieldDelim);
+                    if (!string.IsNullOrEmpty(antennaPort))
+                    {
+                        sb.Append(antennaPort);
+                        sb.Append(fieldDelim);
+                    }
+                    else
+                    {
+                        sb.Append("");
+                        sb.Append(fieldDelim);
+                    }
                 }
+                
 
                 var antennaZone = (string) tagReads["antennaZone"];
-                if (string.Equals("1", _standaloneConfigDTO.includeAntennaZone, StringComparison.OrdinalIgnoreCase) &&
-                    !string.IsNullOrEmpty(antennaZone))
+                if (string.Equals("1", _standaloneConfigDTO.includeAntennaZone, StringComparison.OrdinalIgnoreCase))
                 {
-                    sb.Append(antennaZone);
-                    sb.Append(fieldDelim);
+                    if (!string.IsNullOrEmpty(antennaZone))
+                    {
+                        sb.Append(antennaZone);
+                        sb.Append(fieldDelim);
+                    }
+                    else
+                    {
+                        sb.Append("");
+                        sb.Append(fieldDelim);
+                    }
                 }
 
                 var epc = (string) tagReads["epc"];
@@ -3911,27 +3927,51 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                 var firstSeenTimestamp = (string) tagReads["firstSeenTimestamp"];
                 if (string.Equals("1", _standaloneConfigDTO.includeFirstSeenTimestamp,
-                        StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(firstSeenTimestamp))
+                        StringComparison.OrdinalIgnoreCase))
                 {
-                    sb.Append(firstSeenTimestamp);
-                    sb.Append(fieldDelim);
+                    if (!string.IsNullOrEmpty(firstSeenTimestamp))
+                    {
+                        sb.Append(firstSeenTimestamp);
+                        sb.Append(fieldDelim);
+                    }
+                    else
+                    {
+                        sb.Append("");
+                        sb.Append(fieldDelim);
+                    }
                 }
 
                 var peakRssi = (string) tagReads["peakRssi"];
-                if (string.Equals("1", _standaloneConfigDTO.includePeakRssi, StringComparison.OrdinalIgnoreCase) &&
-                    !string.IsNullOrEmpty(peakRssi))
+                if (string.Equals("1", _standaloneConfigDTO.includePeakRssi, StringComparison.OrdinalIgnoreCase))
                 {
-                    sb.Append(peakRssi);
-                    sb.Append(fieldDelim);
+                    if (!string.IsNullOrEmpty(peakRssi))
+                    {
+                        sb.Append(peakRssi);
+                        sb.Append(fieldDelim);
+                    }
+                    else
+                    {
+                        sb.Append("");
+                        sb.Append(fieldDelim);
+                    }
                 }
+                
 
                 var tid = (string) tagReads["tid"];
-                if (string.Equals("1", _standaloneConfigDTO.includeTid, StringComparison.OrdinalIgnoreCase) &&
-                    !string.IsNullOrEmpty(tid))
+                if (string.Equals("1", _standaloneConfigDTO.includeTid, StringComparison.OrdinalIgnoreCase))
                 {
-                    sb.Append(tid);
-                    sb.Append(fieldDelim);
+                    if (!string.IsNullOrEmpty(tid))
+                    {
+                        sb.Append(tid);
+                        sb.Append(fieldDelim);
+                    }
+                    else
+                    {
+                        sb.Append("");
+                        sb.Append(fieldDelim);
+                    }
                 }
+                
 
                 var rfPhase = (string) tagReads["rfPhase"];
                 if (string.Equals("1", _standaloneConfigDTO.includeRFPhaseAngle, StringComparison.OrdinalIgnoreCase) &&
@@ -4050,15 +4090,31 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 var readerName = (string) smartReaderTagEventData["readerName"];
                 if (!string.IsNullOrEmpty(_standaloneConfigDTO.readerName))
                 {
-                    sb.Append(readerName);
-                    sb.Append(fieldDelim);
+                    if (!string.IsNullOrEmpty(readerName))
+                    {
+                        sb.Append(readerName);
+                        sb.Append(fieldDelim);
+                    }
+                    else
+                    {
+                        sb.Append("");
+                        sb.Append(fieldDelim);
+                    }
                 }
 
                 var site = (string) smartReaderTagEventData["site"];
                 if (!string.IsNullOrEmpty(_standaloneConfigDTO.site))
                 {
-                    sb.Append(site);
-                    sb.Append(fieldDelim);
+                    if (string.IsNullOrEmpty(site))
+                    {
+                        sb.Append(site);
+                        sb.Append(fieldDelim);
+                    }
+                    else
+                    {
+                        sb.Append("");
+                        sb.Append(fieldDelim);
+                    }
                 }
 
                 if (string.Equals("1", _standaloneConfigDTO.customField1Enabled, StringComparison.OrdinalIgnoreCase) &&
@@ -4115,11 +4171,19 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     if ((string.Equals("1", _standaloneConfigDTO.enableBarcodeSerial,
                              StringComparison.OrdinalIgnoreCase)
                          || string.Equals("1", _standaloneConfigDTO.enableBarcodeTcp,
-                             StringComparison.OrdinalIgnoreCase))
-                        && !string.IsNullOrEmpty(receivedBarcode))
+                             StringComparison.OrdinalIgnoreCase)))
                     {
-                        sb.Append(receivedBarcode);
-                        sb.Append(fieldDelim);
+                        
+                        if(!string.IsNullOrEmpty(receivedBarcode))
+                        {
+                            sb.Append(receivedBarcode);
+                            sb.Append(fieldDelim);
+                        }
+                        else
+                        {
+                            sb.Append("");
+                            sb.Append(fieldDelim);
+                        }
                     }
                 }
                 catch (Exception)
@@ -5117,7 +5181,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
 
             _timerTagPublisherSocket.Elapsed += OnRunPeriodicTagPublisherSocketTasksEvent;
-            _timerTagPublisherSocket.Interval = 100;
+            _timerTagPublisherSocket.Interval = 10;
             _timerTagPublisherSocket.AutoReset = false;
             _timerTagPublisherSocket.Start();
 
@@ -7415,7 +7479,34 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             await _mqttClient.StartAsync(_mqttClientOptions);
 
 
-            _mqttClient.UseApplicationMessageReceivedHandler(e => { });
+            //_mqttClient.UseApplicationMessageReceivedHandler(e => { });
+
+            _mqttClient.UseApplicationMessageReceivedHandler(e =>
+            {
+                _logger.LogInformation("### RECEIVED APPLICATION MESSAGE ###");
+                _logger.LogInformation($"+ Topic = {e.ApplicationMessage.Topic}");
+                if (e.ApplicationMessage.Payload != null)
+                    _logger.LogInformation($"+ Payload = {Encoding.UTF8.GetString(e.ApplicationMessage.Payload)}");
+
+                _logger.LogInformation($"+ QoS = {e.ApplicationMessage.QualityOfServiceLevel}");
+                _logger.LogInformation($"+ Retain = {e.ApplicationMessage.Retain}");
+                _logger.LogInformation($"+ ClientId = {e.ClientId}");
+
+                var payload = "";
+                if (e.ApplicationMessage.Payload != null)
+                    payload = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
+                try
+                {
+                    ProcessMqttCommandMessage(e.ClientId, e.ApplicationMessage.Topic, payload);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("ProcessMqttMessage: Unexpected error. " + ex.Message);
+                }
+
+                _logger.LogInformation(" ");
+            });
+
 
 
             _ = _mqttClient.UseConnectedHandler(async e =>
@@ -7434,6 +7525,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
 
                     await _mqttClient.SubscribeAsync(mqttTopicFilters.ToArray());
+                    _logger.LogInformation("### Subscribed to topics. ### ");
                 }
                 catch (Exception ex)
                 {

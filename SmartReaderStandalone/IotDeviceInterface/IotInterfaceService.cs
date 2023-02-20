@@ -8087,6 +8087,29 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     if (_smartReaderTagEventsListBatch.TryGetValue(tagRead.Epc, out JObject retrievedValue))
                     {
 
+                        try
+                        {
+                            var existingEventOnCurrentAntenna = (JObject)(retrievedValue["tag_reads"].FirstOrDefault(q => (long)q["antennaPort"] == tagRead.AntennaPort));
+
+                            // it has been read on a different antenna:
+                            if (existingEventOnCurrentAntenna == null)
+                            {
+                                if (string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange, StringComparison.OrdinalIgnoreCase)
+                                    && !_smartReaderTagEventsListBatchOnUpdate.ContainsKey(tagRead.Epc))
+                                {
+                                    _smartReaderTagEventsListBatchOnUpdate.TryAdd(tagRead.Epc, dataToPublish);
+                                }
+                            }
+                            //else
+                            //{
+                            //    _logger.LogInformation($"EPC {tagRead.Epc} was already on antenna port {tagRead.AntennaPort}");
+                            //}
+                        }
+                        catch (Exception)
+                        {
+
+                            
+                        }
                         _smartReaderTagEventsListBatch.TryUpdate(tagRead.Epc, dataToPublish, retrievedValue);
                     }
                     else

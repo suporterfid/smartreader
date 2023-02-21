@@ -1,4 +1,5 @@
-﻿using System.Collections.ObjectModel;
+﻿using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Security;
@@ -56,6 +57,9 @@ internal class R700IotReader : IR700IotReader
 
     public bool IsAntennaHubEnabled { get; private set; }
 
+    public List<string> IpAddresses { get; private set; }
+     
+
     public async Task<ReaderStatus> GetStatusAsync()
     {
         var statusAsync = await _r700IotEventProcessor.GetStatusAsync();
@@ -71,6 +75,27 @@ internal class R700IotReader : IR700IotReader
                 {
                     var selectedIface = selectedIfaces.FirstOrDefault();
                     MacAddress = selectedIface.HardwareAddress;
+                }
+            }
+            if(IpAddresses == null)
+            {
+                IpAddresses = new List<string>();
+            }
+            else
+            {
+                IpAddresses.Clear();
+            }
+            foreach (var netInterface in iFaces)
+            {
+                if(netInterface != null 
+                    && netInterface.NetworkAddress != null 
+                    && netInterface.NetworkAddress.Count > 0)
+                {
+                    foreach (var networkAddress in netInterface.NetworkAddress)
+                    {
+                        IpAddresses.Add(networkAddress.Address);
+                    }
+                    
                 }
             }
         }

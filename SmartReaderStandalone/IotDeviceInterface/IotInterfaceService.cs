@@ -1395,6 +1395,196 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         return presets;
     }
 
+    private async void ProcessAppStatus()
+    {
+        Dictionary<string, string> statusEvent = new Dictionary<string, string>();
+
+        statusEvent.Add("eventType", "status");
+        
+        statusEvent.Add("component", "smartreader");
+        statusEvent.Add("readerName", _standaloneConfigDTO.readerName);       
+        statusEvent.Add("serialNumber", $"{_iotDeviceInterfaceClient.UniqueId}");
+        statusEvent.Add("timestamp", DateTime.Now.ToUniversalTime().ToString("o"));
+        //statusEvent.Add("timestamp", $"{currentReaderStatus.Time.Value.ToUniversalTime().ToString("o")}");
+        //statusEvent.Add("displayName", _iotDeviceInterfaceClient.DisplayName);
+        //statusEvent.Add("hostname", _iotDeviceInterfaceClient.Hostname);
+        statusEvent.Add("macAddress", _iotDeviceInterfaceClient.MacAddress);
+
+        try
+        {
+            if(_iotDeviceInterfaceClient.IpAddresses != null 
+                && _iotDeviceInterfaceClient.IpAddresses.Any())
+            {
+                string ipAddresses = "";
+                foreach (var ipAddress in _iotDeviceInterfaceClient.IpAddresses)
+                {
+                    ipAddresses += $"{ipAddress};";
+                }
+                statusEvent.Add("ipAddresses", ipAddresses);
+            }
+            var currentReaderStatus = await _iotDeviceInterfaceClient.GetStatusAsync();
+            if (currentReaderStatus != null)
+            {                             
+                statusEvent.Add("status", $"{currentReaderStatus.Status.Value}");
+                if (currentReaderStatus.ActivePreset != null)
+                {
+                    statusEvent.Add("activePreset", $"{currentReaderStatus.ActivePreset.Id}");
+                }
+                else
+                {
+                    statusEvent.Add("activePreset", "");
+                }
+
+            }
+            else
+            {
+                statusEvent.Add("status", "unknown");
+            }
+        }
+        catch (Exception)
+        {
+            statusEvent.Add("status", "unknown");
+        }
+
+        try
+        {
+            var currentSystemInfo = await _iotDeviceInterfaceClient.GetSystemInfoAsync();
+            if (currentSystemInfo != null)
+            {
+                statusEvent.Add("manufacturer", $"{currentSystemInfo.Manufacturer}");
+                statusEvent.Add("productHla", $"{currentSystemInfo.ProductHla}");
+                statusEvent.Add("productModel", $"{currentSystemInfo.ProductModel}");
+                statusEvent.Add("productSku", $"{currentSystemInfo.ProductSku}");
+                statusEvent.Add("productDescription", $"{currentSystemInfo.ProductDescription}");
+            }
+        }
+        catch (Exception)
+        {
+
+        }
+
+        statusEvent.Add("isAntennaHubEnabled", $"{_iotDeviceInterfaceClient.IsAntennaHubEnabled}");
+        statusEvent.Add("readerOperatingRegion", $"{_iotDeviceInterfaceClient.ReaderOperatingRegion}");
+
+        if (string.Equals("1", _standaloneConfigDTO.siteEnabled, StringComparison.OrdinalIgnoreCase))
+        {
+            statusEvent.Add("site", _standaloneConfigDTO.site);
+        }
+            
+
+
+        if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent, StringComparison.OrdinalIgnoreCase))
+        {
+            if (_gpiPortStates.ContainsKey(0))
+            {
+                if (_gpiPortStates[0])
+                    statusEvent.Add("gpi1", "1");
+                else
+                    statusEvent.Add("gpi1", "0");
+            }
+
+            if (_gpiPortStates.ContainsKey(1) && _gpiPortStates[1])
+            {
+                if (_gpiPortStates[1])
+                    statusEvent.Add("gpi2", "1");
+                else
+                    statusEvent.Add("gpi2", "0");
+            }
+        }
+
+
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.customField1Enabled)
+            && string.Equals("1", _standaloneConfigDTO.customField1Enabled, StringComparison.OrdinalIgnoreCase))
+        {
+            statusEvent.Add(_standaloneConfigDTO.customField1Name, _standaloneConfigDTO.customField1Value);
+        }
+
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.customField2Enabled)
+            && string.Equals("1", _standaloneConfigDTO.customField2Enabled, StringComparison.OrdinalIgnoreCase))
+        {
+            statusEvent.Add(_standaloneConfigDTO.customField2Name, _standaloneConfigDTO.customField2Value);
+        }
+
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.customField3Enabled)
+            && string.Equals("1", _standaloneConfigDTO.customField3Enabled, StringComparison.OrdinalIgnoreCase))
+        {
+            statusEvent.Add(_standaloneConfigDTO.customField3Name, _standaloneConfigDTO.customField3Value);
+        }
+
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.customField4Enabled)
+            && string.Equals("1", _standaloneConfigDTO.customField4Enabled, StringComparison.OrdinalIgnoreCase))
+        {
+            statusEvent.Add(_standaloneConfigDTO.customField4Name, _standaloneConfigDTO.customField4Value);
+        }
+
+        var jsonData = JsonConvert.SerializeObject(statusEvent);
+        var dataToPublish = JObject.Parse(jsonData);
+
+        if (string.Equals("1", _standaloneConfigDTO.httpPostEnabled, StringComparison.OrdinalIgnoreCase))
+            try
+            {
+                _messageQueueTagSmartReaderTagEventHttpPost.Enqueue(dataToPublish);
+            }
+            catch (Exception)
+            {
+            }
+
+        if (string.Equals("1", _standaloneConfigDTO.socketServer, StringComparison.OrdinalIgnoreCase))
+            try
+            {
+                _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(dataToPublish);
+            }
+            catch (Exception)
+            {
+            }
+
+        if (string.Equals("1", _standaloneConfigDTO.usbFlashDrive, StringComparison.OrdinalIgnoreCase))
+            try
+            {
+                _messageQueueTagSmartReaderTagEventUsbDrive.Enqueue(dataToPublish);
+            }
+            catch (Exception)
+            {
+            }
+
+
+        if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
+            try
+            {
+                var mqttManagementEventsTopic = _standaloneConfigDTO.mqttManagementEventsTopic;
+                if (!string.IsNullOrEmpty(mqttManagementEventsTopic))
+                    if (mqttManagementEventsTopic.Contains("{{deviceId}}"))
+                        mqttManagementEventsTopic =
+                            mqttManagementEventsTopic.Replace("{{deviceId}}", _standaloneConfigDTO.readerName);
+                var qos = 0;
+                var retain = false;
+                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                try
+                {
+                    int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
+                    bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
+
+                    mqttQualityOfServiceLevel = qos switch
+                    {
+                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                        _ => MqttQualityOfServiceLevel.AtMostOnce
+                    };
+                }
+                catch (Exception)
+                {
+                }
+
+
+                //_messageQueueTagSmartReaderTagEventMqtt.Enqueue(dataToPublish);
+                var mqttCommandResponseTopic = $"{mqttManagementEventsTopic}";
+                var serializedData = JsonConvert.SerializeObject(dataToPublish);
+                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
+            }
+            catch (Exception)
+            {
+            }
+    }
 
     private async void ProcessKeepalive()
     {
@@ -1470,7 +1660,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 _standaloneConfigDTO.customField4Value);
             dataToPublish.Add(newPropertyData);
         }
-
+        
         if (string.Equals("1", _standaloneConfigDTO.httpPostEnabled, StringComparison.OrdinalIgnoreCase))
             try
             {
@@ -5812,6 +6002,61 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
 
                             }
+                            else if ("status".Equals(commandValue))
+                            {
+                                try
+                                {
+                                    ProcessAppStatus();
+                                }
+                                catch (Exception e)
+                                {
+                                    commandStatus = "error";
+                                    _logger.LogError(e, "Unexpected error");
+                                }
+
+                                if (deserializedCmdData.ContainsKey("response"))
+                                {
+                                    deserializedCmdData["response"] = commandStatus;
+                                }
+                                else
+                                {
+                                    var commandResponse = new JProperty("response", commandStatus);
+                                    deserializedCmdData.Add(commandResponse);
+                                }
+
+                                var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
+
+                                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
+                                    if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
+                                        _standaloneConfigDTO.mqttManagementResponseTopic =
+                                            _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
+                                                _standaloneConfigDTO.readerName);
+                                var qos = 0;
+                                var retain = false;
+                                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                                try
+                                {
+                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                        out retain);
+
+                                    mqttQualityOfServiceLevel = qos switch
+                                    {
+                                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                                        _ => MqttQualityOfServiceLevel.AtMostOnce
+                                    };
+                                }
+                                catch (Exception)
+                                {
+                                }
+
+                                var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
+                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                    mqttQualityOfServiceLevel, retain);
+
+
+                            }
                             else if ("reboot".Equals(commandValue))
                             {
                                 var resultPayload = "";
@@ -5886,7 +6131,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     if (deserializedCmdData.ContainsKey("payload"))
                                         try
                                         {
-                                            modeCmdResult = ProcessMqttModeJsonCommand(mqttMessage);
+                                            modeCmdResult = ProcessModeJsonCommand(mqttMessage);
                                             if (!"success".Equals(modeCmdResult)) commandStatus = "error";
                                         }
                                         catch (Exception ex)
@@ -6566,7 +6811,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     if (deserializedCmdData.ContainsKey("payload"))
                                         try
                                         {
-                                            modeCmdResult = ProcessMqttModeJsonCommand(mqttMessage);
+                                            modeCmdResult = ProcessModeJsonCommand(mqttMessage);
                                             if (!"success".Equals(modeCmdResult)) commandStatus = "error";
                                         }
                                         catch (Exception ex)
@@ -6923,12 +7168,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
-    private string ProcessMqttModeJsonCommand(string mqttMessage)
+    private string ProcessModeJsonCommand(string modeCommandPayload)
     {
         var commandResult = "success";
         try
         {
-            var deserializedConfigData = JsonConvert.DeserializeObject<JObject>(mqttMessage);
+            var deserializedConfigData = JsonConvert.DeserializeObject<JObject>(modeCommandPayload);
             if (deserializedConfigData != null)
                 try
                 {
@@ -6945,6 +7190,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         var transmitPowerCdbm = 3000;
                         var rssiThreshold = -92;
                         double groupIntervalInMs = 400;
+                        var softwareFilterTagIdValue = "E280";
+                        var softwareFilterTagIdMatch = "prefix";
+                        var softwareFilterTagIdOperation = "include";
+                        var softwareFilterTagIdEnabled = "0";
+                        var softwareFilterIncludeEpcHeaderListEnabled = "0";
+                        var softwareFilterIncludeEpcHeaderListValue = "E280,3031";
+
 
                         var newAntennaZoneConfigLine = _standaloneConfigDTO.antennaZones;
                         var newAntennaStatesConfigLine = _standaloneConfigDTO.antennaStates;
@@ -6952,6 +7204,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         var newAntennaReceiveSensitivityConfigLine = _standaloneConfigDTO.receiveSensitivity;
                         var newMqttPuslishIntervalSec = _standaloneConfigDTO.mqttPuslishIntervalSec;
                         var newReaderModeConfigLine = _standaloneConfigDTO.readerMode;
+                        var newSearchModeConfigLine = _standaloneConfigDTO.searchMode;
+                        var newSessionConfigLine = _standaloneConfigDTO.session;
+                        var newTagPopulationConfigLine = _standaloneConfigDTO.tagPopulation;
+                        var newSoftwareFilterTagIdValueLine = _standaloneConfigDTO.softwareFilterTagIdValueOrPattern;
+                        var newSoftwareFilterTagIdMatchLine = _standaloneConfigDTO.softwareFilterTagIdMatch;
+                        var newSoftwareFilterTagIdOperationLine = _standaloneConfigDTO.softwareFilterTagIdOperation;
+                        var newSoftwareFilterTagIdEnabledLine = _standaloneConfigDTO.softwareFilterTagIdEnabled;
+                        var newSoftwareFilterIncludeEpcsHeaderListEnabledLine = _standaloneConfigDTO.softwareFilterIncludeEpcsHeaderListEnabled;
+                        var newSoftwareFilterIncludeEpcsHeaderListLine = _standaloneConfigDTO.softwareFilterIncludeEpcsHeaderList;
 
                         var commandType = commandPayloadJObject["type"].Value<string>();
                         if (!string.IsNullOrEmpty(commandType)
@@ -7176,11 +7437,202 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     return commandResult;
                                 }
 
+                            if (commandPayloadJObject.ContainsKey("session"))
+                                try
+                                {
+                                    var receivedSession = commandPayloadJObject["session"].Value<string>();
+                                    int convertedSession = -1;
+
+                                    int.TryParse(receivedSession, out convertedSession);
+
+                                    if(convertedSession >= 0 && convertedSession < 4)
+                                    {
+                                        newSearchModeConfigLine = receivedSession;
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    commandResult = "error setting session.";
+                                    _logger.LogError(ex,
+                                        "ProcessMqttModeJsonCommand (session): Unexpected error" +
+                                        ex.Message);
+                                    return commandResult;
+                                }
+
+                            if (commandPayloadJObject.ContainsKey("tagPopulation"))
+                                try
+                                {
+                                    var receivedTagPopulation = commandPayloadJObject["tagPopulation"].Value<int>();
+
+                                    if (receivedTagPopulation >= 0 && receivedTagPopulation < 65000)
+                                    {
+                                        newTagPopulationConfigLine = receivedTagPopulation.ToString();
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    commandResult = "error setting tag population.";
+                                    _logger.LogError(ex,
+                                        "ProcessMqttModeJsonCommand (tagPopulation): Unexpected error" +
+                                        ex.Message);
+                                    return commandResult;
+                                }
+
+
+                            //newTagPopulationConfigLine
+
+                            if (commandPayloadJObject.ContainsKey("searchMode"))
+                                try
+                                {
+                                    var searchMode = commandPayloadJObject["searchMode"].Value<string>();
+
+                                    if (string.Equals("reader-selected", searchMode, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals("readerselected", searchMode, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals("0", searchMode, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        newSearchModeConfigLine = "1";
+                                    }
+                                    else if (string.Equals("single-target", searchMode, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals("singletarget", searchMode, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals("1", searchMode, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        newSearchModeConfigLine = "1";
+                                    }
+                                    else if (string.Equals("dual-target", searchMode, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals("dualtarget", searchMode, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals("2", searchMode, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        newSearchModeConfigLine = "2";
+                                    }
+                                    else if (string.Equals("single-target-with-tagfocus", searchMode, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals("singletargetwithtagfocus", searchMode, StringComparison.OrdinalIgnoreCase)
+                                         || string.Equals("single-target-with-suppression", searchMode, StringComparison.OrdinalIgnoreCase)
+                                         || string.Equals("singletargetwithsuppression", searchMode, StringComparison.OrdinalIgnoreCase)
+                                         || string.Equals("tagfocus", searchMode, StringComparison.OrdinalIgnoreCase)
+                                         || string.Equals("tag-focus", searchMode, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals("3", searchMode, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        newSearchModeConfigLine = "3";
+                                    }
+                                    else if (string.Equals("single-target-b-to-a", searchMode, StringComparison.OrdinalIgnoreCase)                                        
+                                        || string.Equals("singletargetbtoa", searchMode, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals("single-target-reset", searchMode, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals("singletargetreset", searchMode, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals("5", searchMode, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        newSearchModeConfigLine = "5";
+                                    }
+                                    else if (string.Equals("dual-target-with-b-to-a-select", searchMode, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals("dualtargetwithbtoaselect", searchMode, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals("dual-target-with-b-to-a", searchMode, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals("dualtargetwithbtoa", searchMode, StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals("6", searchMode, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        newSearchModeConfigLine = "6";
+                                    }
+
+
+                                }
+                                catch (Exception ex)
+                                {
+                                    commandResult = "error setting searchMode.";
+                                    _logger.LogError(ex,
+                                        "ProcessMqttModeJsonCommand (searchMode): Unexpected error" +
+                                        ex.Message);
+                                    return commandResult;
+                                }
+
+
+                            if (commandPayloadJObject.ContainsKey("filter"))
+                                try
+                                {
+                                    var softwareFilterJObject = commandPayloadJObject["filter"].Value<JObject>();
+                                    if (softwareFilterJObject != null && softwareFilterJObject.ContainsKey("value"))
+                                    {
+                                        newSoftwareFilterTagIdValueLine = softwareFilterJObject["value"].Value<string>();
+
+                                        if (softwareFilterJObject != null && softwareFilterJObject.ContainsKey("status"))
+                                        {
+                                            var currentSoftwareFilterTagIdStatus = softwareFilterJObject["status"].Value<string>();
+                                            if(string.Equals("1", currentSoftwareFilterTagIdStatus,StringComparison.OrdinalIgnoreCase)
+                                                || string.Equals("enabled", currentSoftwareFilterTagIdStatus, StringComparison.OrdinalIgnoreCase)
+                                                || string.Equals("true", currentSoftwareFilterTagIdStatus, StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                newSoftwareFilterTagIdEnabledLine = "1";
+                                            }
+                                            else
+                                            {
+                                                newSoftwareFilterTagIdEnabledLine = "0";
+                                            }
+                                        }
+
+                                        if (softwareFilterJObject != null && softwareFilterJObject.ContainsKey("match"))
+                                        {
+                                            newSoftwareFilterTagIdMatchLine = softwareFilterJObject["match"].Value<string>();
+                                        }
+
+                                        if (softwareFilterJObject != null && softwareFilterJObject.ContainsKey("operation"))
+                                        {
+                                            newSoftwareFilterTagIdOperationLine = softwareFilterJObject["operation"].Value<string>();
+                                        }
+                                    }                                   
+                                }
+                                catch (Exception ex)
+                                {
+                                    commandResult = "error setting filter.";
+                                    _logger.LogError(ex,
+                                        "ProcessMqttModeJsonCommand (filter): Unexpected error" +
+                                        ex.Message);
+                                    return commandResult;
+                                }
+
+                            if (commandPayloadJObject.ContainsKey("filterIncludeEpcHeaderList"))
+                                try
+                                {
+                                    var softwareFilterJObject = commandPayloadJObject["filterIncludeEpcHeaderList"].Value<JObject>();
+                                    if (softwareFilterJObject != null && softwareFilterJObject.ContainsKey("value"))
+                                    {
+                                        newSoftwareFilterIncludeEpcsHeaderListLine = softwareFilterJObject["value"].Value<string>();
+
+                                        if (softwareFilterJObject != null && softwareFilterJObject.ContainsKey("status"))
+                                        {
+                                            var currentSoftwareFilterTagIdStatus = softwareFilterJObject["status"].Value<string>();
+                                            if (string.Equals("1", currentSoftwareFilterTagIdStatus, StringComparison.OrdinalIgnoreCase)
+                                                || string.Equals("enabled", currentSoftwareFilterTagIdStatus, StringComparison.OrdinalIgnoreCase)
+                                                || string.Equals("true", currentSoftwareFilterTagIdStatus, StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                newSoftwareFilterIncludeEpcsHeaderListEnabledLine = "1";
+                                            }
+                                            else
+                                            {
+                                                newSoftwareFilterIncludeEpcsHeaderListEnabledLine = "0";
+                                            }
+                                        }
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    commandResult = "error setting filter header list.";
+                                    _logger.LogError(ex,
+                                        "ProcessMqttModeJsonCommand (filter epc header list): Unexpected error" +
+                                        ex.Message);
+                                    return commandResult;
+                                }
+
                             _standaloneConfigDTO.transmitPower = newAntennaTransmitPowerCdbmConfigLine;
                             _standaloneConfigDTO.receiveSensitivity = newAntennaReceiveSensitivityConfigLine;
                             _standaloneConfigDTO.antennaStates = newAntennaStatesConfigLine;
                             _standaloneConfigDTO.mqttPuslishIntervalSec = newMqttPuslishIntervalSec;
                             _standaloneConfigDTO.readerMode = newReaderModeConfigLine;
+                            _standaloneConfigDTO.session = newSessionConfigLine;
+                            _standaloneConfigDTO.searchMode = newSearchModeConfigLine;
+                            _standaloneConfigDTO.tagPopulation = newTagPopulationConfigLine;
+                            _standaloneConfigDTO.softwareFilterTagIdValueOrPattern = newSoftwareFilterTagIdValueLine;
+                            _standaloneConfigDTO.softwareFilterTagIdMatch = newSoftwareFilterTagIdMatchLine;
+                            _standaloneConfigDTO.softwareFilterTagIdOperation = newSoftwareFilterTagIdOperationLine;
+                            _standaloneConfigDTO.softwareFilterIncludeEpcsHeaderListEnabled = newSoftwareFilterIncludeEpcsHeaderListEnabledLine;
+                            _standaloneConfigDTO.softwareFilterIncludeEpcsHeaderList = newSoftwareFilterIncludeEpcsHeaderListLine;
+
                             ConfigFileHelper.SaveFile(_standaloneConfigDTO);
                             SaveConfigDtoToDb(_standaloneConfigDTO);
                             LoadConfig();
@@ -7740,6 +8192,20 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     return;
                 }
             }
+
+            if (string.Equals("1", _standaloneConfigDTO.softwareFilterTagIdEnabled,
+                    StringComparison.InvariantCultureIgnoreCase))
+            {
+                var shouldProceed = FilterMatchingEpcforSoftwareFilter(epc).Result;
+                if (!shouldProceed)
+                {
+                    _logger.LogInformation("Excluding EPC due filter: " + epc, SeverityType.Debug);
+                    return;
+                }
+            }
+
+
+            
 
 
             if (string.Equals("1", _standaloneConfigDTO.parseSgtinEnabled, StringComparison.OrdinalIgnoreCase))
@@ -8344,6 +8810,77 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             var epcsHeaderList = _standaloneConfigDTO.softwareFilterIncludeEpcsHeaderList.Split(",");
 
             if (epcsHeaderList.Any(p => epc.ToUpper().StartsWith(p.ToUpper()))) return true;
+        }
+
+        return false;
+    }
+
+    public async Task<bool> FilterTagIdForSoftwareFilter(string epc)
+    {
+        if (_standaloneConfigDTO != null
+            && string.Equals("1", _standaloneConfigDTO.softwareFilterTagIdEnabled,
+                StringComparison.InvariantCultureIgnoreCase))
+        {
+            if(string.Equals("prefix", _standaloneConfigDTO.softwareFilterTagIdMatch,
+                StringComparison.InvariantCultureIgnoreCase))
+            {
+                if (string.Equals("include", _standaloneConfigDTO.softwareFilterTagIdOperation,
+                StringComparison.InvariantCultureIgnoreCase))
+                {
+                    if(epc.StartsWith(_standaloneConfigDTO.softwareFilterTagIdValueOrPattern))
+                    {
+                        return true;
+                    }
+                }
+                else
+                {
+                    if (!epc.StartsWith(_standaloneConfigDTO.softwareFilterTagIdValueOrPattern))
+                    {
+                        return true;
+                    }
+                }
+            }
+            else if (string.Equals("suffix", _standaloneConfigDTO.softwareFilterTagIdMatch,
+                StringComparison.InvariantCultureIgnoreCase))
+            {
+                if (string.Equals("include", _standaloneConfigDTO.softwareFilterTagIdOperation,
+                StringComparison.InvariantCultureIgnoreCase))
+                {
+                    if (epc.EndsWith(_standaloneConfigDTO.softwareFilterTagIdValueOrPattern))
+                    {
+                        return true;
+                    }
+                }
+                else
+                {
+                    if (!epc.EndsWith(_standaloneConfigDTO.softwareFilterTagIdValueOrPattern))
+                    {
+                        return true;
+                    }
+                }
+            }
+            else if (string.Equals("regex", _standaloneConfigDTO.softwareFilterTagIdMatch,
+                StringComparison.InvariantCultureIgnoreCase))
+            {
+
+                bool regexMatches = Regex.IsMatch(epc, _standaloneConfigDTO.softwareFilterTagIdValueOrPattern);
+
+                if (string.Equals("include", _standaloneConfigDTO.softwareFilterTagIdOperation,
+                StringComparison.InvariantCultureIgnoreCase))
+                {                   
+                    if(regexMatches)
+                    {
+                        return true;
+                    }
+                }
+                else
+                {
+                    if (!regexMatches)
+                    {
+                        return true;
+                    }
+                }
+            }
         }
 
         return false;

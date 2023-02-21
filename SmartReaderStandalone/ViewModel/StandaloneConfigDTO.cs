@@ -205,6 +205,8 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
     public string c1g2FilterLen { get; set; } = "16";
 
+    public string c1g2FilterMatchOption { get; set; } = "include";
+
     public string dataPrefix { get; set; } = "";
 
     public string dataSuffix { get; set; } = "";
@@ -464,6 +466,14 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
     public string softwareFilterIncludeEpcsHeaderListEnabled { get; set; } = "0";
 
     public string softwareFilterIncludeEpcsHeaderList { get; set; } = "0";
+
+    public string softwareFilterTagIdEnabled { get; set; } = "0";
+
+    public string softwareFilterTagIdMatch { get; set; } = "prefix"; // "prefix" "suffix" "regex"
+
+    public string softwareFilterTagIdOperation { get; set; } = "include"; // "include" "exclude"
+
+    public string softwareFilterTagIdValueOrPattern { get; set; } = "FFFF";
 
     public string isLogFileEnabled { get; set; } = "0";
 
@@ -1207,10 +1217,20 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
         if (!softwareFilterIncludeEpcsHeaderListEnabled.Equals(otherStandaloneConfigDTO
                 .softwareFilterIncludeEpcsHeaderListEnabled)) return false;
 
-
         if (!softwareFilterIncludeEpcsHeaderList.Equals(otherStandaloneConfigDTO.softwareFilterIncludeEpcsHeaderList))
             return false;
 
+        if (!softwareFilterTagIdEnabled.Equals(otherStandaloneConfigDTO.softwareFilterTagIdEnabled))
+            return false;
+
+        if (!softwareFilterTagIdMatch.Equals(otherStandaloneConfigDTO.softwareFilterTagIdMatch))
+            return false;
+
+        if (!softwareFilterTagIdOperation.Equals(otherStandaloneConfigDTO.softwareFilterTagIdOperation))
+            return false;
+
+        if (!softwareFilterTagIdValueOrPattern.Equals(otherStandaloneConfigDTO.softwareFilterTagIdValueOrPattern))
+            return false;
 
         if (!isLogFileEnabled.Equals(otherStandaloneConfigDTO.isLogFileEnabled)) return false;
 
@@ -1863,6 +1883,19 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
             config.softwareFilterIncludeEpcsHeaderList =
                 HttpUtility.UrlDecode(config.softwareFilterIncludeEpcsHeaderList);
 
+
+            config.softwareFilterTagIdEnabled =
+                HttpUtility.UrlDecode(config.softwareFilterTagIdEnabled);
+
+            config.softwareFilterTagIdMatch =
+                HttpUtility.UrlDecode(config.softwareFilterTagIdMatch);
+
+            config.softwareFilterTagIdOperation =
+                HttpUtility.UrlDecode(config.softwareFilterTagIdOperation);
+
+            config.softwareFilterTagIdValueOrPattern =
+                HttpUtility.UrlDecode(config.softwareFilterTagIdValueOrPattern);
+            
             config.isLogFileEnabled = HttpUtility.UrlDecode(config.isLogFileEnabled);
 
             config.rciSpotReportEnabled = HttpUtility.UrlDecode(config.rciSpotReportEnabled);

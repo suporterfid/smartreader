@@ -339,6 +339,68 @@ app.MapPost("/api/settings", [AuthorizeBasicAuth] async ([FromBody] StandaloneCo
     }
 });
 
+app.MapPost("/api/rshell", [AuthorizeBasicAuth] async ([FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
+{
+    string result = "";
+
+    try
+    {
+
+        var jsonDocumentStr = "";
+        using (var stream = new MemoryStream())
+        {
+            var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            jsonDocument.WriteTo(writer);
+            writer.Flush();
+            jsonDocumentStr = Encoding.UTF8.GetString(stream.ToArray());
+        }
+
+        if (logger != null)
+        {
+            logger.LogInformation("jsonDocumentStr -> ");
+            logger.LogInformation(jsonDocumentStr);
+        }
+
+        
+        JsonElement commandNode = jsonDocument.RootElement.GetProperty("command");
+        var rshellCommand = commandNode.GetString();
+        Console.WriteLine($"Wind speed = {commandNode.GetString()}");
+        logger.LogInformation($"rshellCommand: {rshellCommand}");
+
+        try
+        {
+            if (!string.IsNullOrEmpty(rshellCommand))
+            {
+                Process process = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = "/usr/bin/rshell",
+                        RedirectStandardInput = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = true
+                    }
+                };
+                process.Start();
+                await process.StandardInput.WriteLineAsync(" -c '"+ rshellCommand + "'");
+                result = await process.StandardOutput.ReadLineAsync();
+            }
+        }
+        catch (Exception exDb)
+        {
+            File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
+        }
+
+
+        return Results.Ok(result);
+    }
+    catch (Exception)
+    {
+        return Results.NotFound();
+    }
+});
+
 app.MapGet("/api/query/external/product/{gtin}", [AuthorizeBasicAuth]
     async (HttpRequest readerRequest, string gtin, RuntimeDb db) =>
     {

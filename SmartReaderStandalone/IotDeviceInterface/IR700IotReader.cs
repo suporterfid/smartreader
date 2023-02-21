@@ -27,6 +27,8 @@ public interface IR700IotReader
 
     bool IsAntennaHubEnabled { get; }
 
+    List<string> IpAddresses { get; }
+
     Task StartAsync(string presetId);
 
     Task StartPresetAsync(string presetId);

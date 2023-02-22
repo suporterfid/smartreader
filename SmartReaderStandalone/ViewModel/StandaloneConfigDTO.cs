@@ -581,13 +581,22 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
     public string enableTagEventsListBatch{ get; set; } = "0";
 
+    public string enableTagEventsListBatchPublishing { get; set; } = "0";
+
     public string cleanupTagEventsListBatchOnReload { get; set; } = "0";
 
     public string updateTagEventsListBatchOnChange { get; set; } = "0";
 
     public string updateTagEventsListBatchOnChangeIntervalInSec { get; set; } = "0";
 
-    
+    public string filterTagEventsListBatchOnChangeBasedOnAntennaZone { get; set; } = "0";
+
+    public string tagPresenceTimeoutEnabled { get; set; } = "0";
+
+    public string tagPresenceTimeoutInSec { get; set; } = "2";
+
+
+
 
 
 
@@ -1395,15 +1404,11 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
         if (!updateTagEventsListBatchOnChangeIntervalInSec.Equals(otherStandaloneConfigDTO
         .updateTagEventsListBatchOnChangeIntervalInSec)) return false;
+
+        if (!filterTagEventsListBatchOnChangeBasedOnAntennaZone.Equals(otherStandaloneConfigDTO.filterTagEventsListBatchOnChangeBasedOnAntennaZone)) return false;
+
+        if (!enableTagEventsListBatchPublishing.Equals(otherStandaloneConfigDTO.enableTagEventsListBatchPublishing)) return false;
         
-
-
-
-
-        //enableSummaryStream
-
-        //
-        //httpAuthenticationHeader
 
         return true;
     }
@@ -2025,11 +2030,11 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
             config.updateTagEventsListBatchOnChange = HttpUtility.UrlDecode(config.updateTagEventsListBatchOnChange);
 
             config.updateTagEventsListBatchOnChangeIntervalInSec = HttpUtility.UrlDecode(config.updateTagEventsListBatchOnChangeIntervalInSec);
+
+            config.filterTagEventsListBatchOnChangeBasedOnAntennaZone = HttpUtility.UrlDecode(config.filterTagEventsListBatchOnChangeBasedOnAntennaZone);
+
+            config.enableTagEventsListBatchPublishing = HttpUtility.UrlDecode(config.enableTagEventsListBatchPublishing);
             
-
-
-
-
 
 
             return config;

@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -1560,6 +1561,111 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             && string.Equals("1", _standaloneConfigDTO.customField4Enabled, StringComparison.OrdinalIgnoreCase))
         {
             statusEvent.Add(_standaloneConfigDTO.customField4Name, _standaloneConfigDTO.customField4Value);
+        }
+
+        try
+        {
+            var rshell = new RShellUtil(_readerAddress, "root", "impinj");
+            try
+            {
+                var resultRfidStat = rshell.SendCommand("show rfid stat");
+                var lines = resultRfidStat.Split("\n");
+                foreach (var line in lines)
+                {
+                    if (line.StartsWith("status") || line.StartsWith("Status"))
+                    {
+                        continue;
+                    }
+                    var values = line.Split("=");
+                    try
+                    {
+                        statusEvent.Add(values[0], values[1].Replace("'", String.Empty));
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                var resultRfidStat = rshell.SendCommand("show system platform");
+                var lines = resultRfidStat.Split("\n");
+                foreach (var line in lines)
+                {
+                    if (line.StartsWith("status") || line.StartsWith("Status"))
+                    {
+                        continue;
+                    }
+                    var values = line.Split("=");
+                    try
+                    {
+                        statusEvent.Add(values[0], values[1].Replace("'", String.Empty));
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                var resultSystemCpu = rshell.SendCommand("show system cpu");
+                var lines = resultSystemCpu.Split("\n");
+                foreach (var line in lines)
+                {
+                    if (line.StartsWith("status") || line.StartsWith("Status"))
+                    {
+                        continue;
+                    }
+                    var values = line.Split("=");
+                    try
+                    {
+                        statusEvent.Add(values[0], values[1].Replace("'", String.Empty));
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                var resultSystemPower = rshell.SendCommand("show system power");
+                var lines = resultSystemPower.Split("\n");
+                foreach (var line in lines)
+                {
+                    if (line.StartsWith("status") || line.StartsWith("Status"))
+                    {
+                        continue;
+                    }
+                    var values = line.Split("=");
+                    try
+                    {
+                        statusEvent.Add(values[0], values[1].Replace("'", String.Empty));
+                    }
+                    catch (Exception)
+                    {
+                    }
+                    
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+        catch (Exception)
+        {
+
         }
 
         var jsonData = JsonConvert.SerializeObject(statusEvent);

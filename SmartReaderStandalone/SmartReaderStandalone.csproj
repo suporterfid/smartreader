@@ -25,6 +25,7 @@
     <PackageReference Include="Newtonsoft.Json.Bson" Version="1.0.2" />
     <PackageReference Include="RestSharp" Version="107.0.2" />
     <PackageReference Include="SimpleUdp" Version="1.0.0.5" />
+    <PackageReference Include="SSH.NET" Version="2020.0.2" />
     <PackageReference Include="SuperSimpleTcp" Version="2.5.0.2" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.2.3" />
 	  <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />

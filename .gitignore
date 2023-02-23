@@ -1371,3 +1371,13 @@ SmartReaderStandalone/obj/Debug/net6.0/staticwebassets.development.json
 *.vsidx
 SmartReaderStandalone/obj/Release/net6.0/SmartReaderStandalone.csproj.BuildWithSkipAnalyzers
 ConsoleAppHash/obj/Release/net6.0/ConsoleAppHash.csproj.FileListAbsolute.txt
+SmartReaderStandalone/bin/Release/net6.0/SshNet.Security.Cryptography.dll
+SmartReaderStandalone/bin/Release/net6.0/Renci.SshNet.dll
+SmartReaderStandalone/bin/Release/net6.0/publish/SshNet.Security.Cryptography.dll
+SmartReaderStandalone/bin/Release/net6.0/publish/Renci.SshNet.dll
+SmartReaderStandalone/bin/Release/net6.0/linux-arm/SshNet.Security.Cryptography.dll
+SmartReaderStandalone/bin/Release/net6.0/linux-arm/Renci.SshNet.dll
+SmartReaderStandalone/bin/Debug/net6.0/SshNet.Security.Cryptography.dll
+SmartReaderStandalone/bin/Debug/net6.0/Renci.SshNet.dll
+SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/SshNet.Security.Cryptography.dll
+SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/Renci.SshNet.dll

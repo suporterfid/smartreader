@@ -81,6 +81,8 @@ var app = builder.Build();
 
 ILogger logger = app.Services.GetService<ILogger<Program>>();
 
+var readerAddress = app.Configuration["ReaderInfo:Address"] ?? "127.0.0.1";
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -342,6 +344,7 @@ app.MapPost("/api/settings", [AuthorizeBasicAuth] async ([FromBody] StandaloneCo
 app.MapPost("/api/rshell", [AuthorizeBasicAuth] async ([FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
 {
     string result = "";
+    Dictionary<string, string> keyValuePairs = new Dictionary<string, string>();
 
     try
     {
@@ -361,30 +364,34 @@ app.MapPost("/api/rshell", [AuthorizeBasicAuth] async ([FromBody] JsonDocument j
             logger.LogInformation(jsonDocumentStr);
         }
 
-        
+        JsonElement usernameNode = jsonDocument.RootElement.GetProperty("username");
+        var rshellUsername = usernameNode.GetString();
+        logger.LogInformation($"rshellUsername: {rshellUsername}");
+        JsonElement passwordNode = jsonDocument.RootElement.GetProperty("password");
+        var rshellPassword = passwordNode.GetString();
+        logger.LogInformation($"rshellPassword: {rshellPassword}");
         JsonElement commandNode = jsonDocument.RootElement.GetProperty("command");
         var rshellCommand = commandNode.GetString();
-        Console.WriteLine($"Wind speed = {commandNode.GetString()}");
         logger.LogInformation($"rshellCommand: {rshellCommand}");
 
         try
         {
             if (!string.IsNullOrEmpty(rshellCommand))
             {
-                Process process = new Process
+                var rshell = new RShellUtil(readerAddress, rshellUsername, rshellPassword);
+                var tempResult = rshell.SendCommand(rshellCommand);
+                logger.LogInformation($"rshellResult: {tempResult}");
+                var lines = tempResult.Split("\n");
+                
+                foreach (var line in lines)
                 {
-                    StartInfo = new ProcessStartInfo
-                    {
-                        FileName = "/usr/bin/rshell",
-                        RedirectStandardInput = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = true
-                    }
-                };
-                process.Start();
-                await process.StandardInput.WriteLineAsync(" -c '"+ rshellCommand + "'");
-                result = await process.StandardOutput.ReadLineAsync();
+                    var values = line.Split("=");
+                    keyValuePairs.Add(values[0], values[1]);
+                }
+
+                
+
+
             }
         }
         catch (Exception exDb)
@@ -393,7 +400,7 @@ app.MapPost("/api/rshell", [AuthorizeBasicAuth] async ([FromBody] JsonDocument j
         }
 
 
-        return Results.Ok(result);
+        return Results.Ok(keyValuePairs);
     }
     catch (Exception)
     {

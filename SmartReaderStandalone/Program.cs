@@ -874,26 +874,61 @@ app.MapGet("/api/getcapabilities", [AuthorizeBasicAuth] async (RuntimeDb db) =>
 
 app.MapGet("/api/getrfidstatus", [AuthorizeBasicAuth] async (RuntimeDb db) =>
 {
+    var rfidStatus = new List<object>();
+    var statusEvent = new Dictionary<string, string>();
+    try
+    {
+        var rshell = new RShellUtil(readerAddress, "root", "impinj");
+        try
+        {
+            var resultRfidStat = rshell.SendCommand("show rfid stat");
+            rshell.Disconnect();
+            var lines = resultRfidStat.Split("\n");
+            foreach (var line in lines)
+            {
+                if (line.StartsWith("status") || line.StartsWith("Status"))
+                {
+                    continue;
+                }
+                var values = line.Split("=");
+                try
+                {
+                    statusEvent.Add(values[0], values[1].Replace("'", String.Empty));
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+        catch (Exception)
+        {
+        }
+    }
+    catch (Exception)
+    {
 
-    var rfidStatus = new List<SmartReaderRfidStatus>();
-    var statusRf = new SmartReaderRfidStatus();
-    statusRf.Status = "0,Success";
-    statusRf.ReaderAdministrativeStatus = "enabled";
-    statusRf.ReaderOperationalStatus = "enabled";
-    statusRf.Antenna1AdministrativeStatus = "1";
-    statusRf.Antenna1OperationalStatus = "1";
-    statusRf.Antenna1LastPowerLevel = "0";
-    statusRf.Antenna2AdministrativeStatus = "1";
-    statusRf.Antenna2OperationalStatus = "1";
-    statusRf.Antenna2LastPowerLevel = "0";
-    statusRf.Antenna3AdministrativeStatus = "1";
-    statusRf.Antenna3OperationalStatus = "1";
-    statusRf.Antenna3LastPowerLevel = "0";
-    statusRf.Antenna4AdministrativeStatus = "1";
-    statusRf.Antenna4OperationalStatus = "1";
-    statusRf.Antenna4LastPowerLevel = "0";
+    }
+    rfidStatus.Add(statusEvent);
 
-    rfidStatus.Add(statusRf);
+    //var rfidStatus = new List<SmartReaderRfidStatus>();
+    //var statusRf = new SmartReaderRfidStatus();
+    //statusRf.Status = "0,Success";
+    //statusRf.ReaderAdministrativeStatus = "enabled";
+    //statusRf.ReaderOperationalStatus = "enabled";
+    //statusRf.Antenna1AdministrativeStatus = "1";
+    //statusRf.Antenna1OperationalStatus = "1";
+    //statusRf.Antenna1LastPowerLevel = "0";
+    //statusRf.Antenna2AdministrativeStatus = "1";
+    //statusRf.Antenna2OperationalStatus = "1";
+    //statusRf.Antenna2LastPowerLevel = "0";
+    //statusRf.Antenna3AdministrativeStatus = "1";
+    //statusRf.Antenna3OperationalStatus = "1";
+    //statusRf.Antenna3LastPowerLevel = "0";
+    //statusRf.Antenna4AdministrativeStatus = "1";
+    //statusRf.Antenna4OperationalStatus = "1";
+    //statusRf.Antenna4LastPowerLevel = "0";
+
+    //rfidStatus.Add(statusRf);
  
     return Results.Ok(rfidStatus);
 });
@@ -1012,8 +1047,59 @@ app.MapPost("/api/test", [AuthorizeBasicAuth] async ([FromBody] BearerDTO bearer
     }
 });
 
+app.MapPost("/mode", [AuthorizeBasicAuth]
+async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
+{
+    var requestResult = new Dictionary<object, object>();
+    var payload = new Dictionary<object, object>();
+    payload.Add("", "");
 
-app.MapPost("/control", [AuthorizeBasicAuth]
+    try
+    {
+        var jsonDocumentStr = "";
+        try
+        {
+            JsonElement commandIdNode = jsonDocument.RootElement.GetProperty("command_id");
+            var commandId = commandIdNode.GetString();
+            requestResult.Add("command_id", commandId);
+            requestResult.Add("response", "queued");
+            requestResult.Add("payload", payload);
+        }
+        catch (Exception ex)
+        {
+            requestResult.Add("response", "error");
+            requestResult.Add("detail", ex.Message);
+            requestResult.Add("payload", payload);
+            return Results.BadRequest(requestResult);
+
+        }
+        
+
+        using (var stream = new MemoryStream())
+        {
+            var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            jsonDocument.WriteTo(writer);
+            writer.Flush();
+            jsonDocumentStr = Encoding.UTF8.GetString(stream.ToArray());
+            //request a start command
+            var command = new ReaderCommands();
+            command.Id = "MODE_COMMAND";
+            command.Value = jsonDocumentStr;
+            command.Timestamp = DateTime.Now;
+            db.ReaderCommands.Add(command);
+            await db.SaveChangesAsync();
+        }
+
+        return Results.Ok(requestResult);
+    }
+    catch (Exception exDb)
+    {
+        File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
+        return Results.BadRequest(requestResult);
+    }
+});
+
+app.MapPost("/mqtt", [AuthorizeBasicAuth]
     async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
     {
         var requestResult = "";
@@ -1029,7 +1115,7 @@ app.MapPost("/control", [AuthorizeBasicAuth]
         }
     });
 
-app.MapPut("/control", [AuthorizeBasicAuth]
+app.MapPut("/mqtt", [AuthorizeBasicAuth]
     async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
     {
         var requestResult = "";
@@ -1045,7 +1131,7 @@ app.MapPut("/control", [AuthorizeBasicAuth]
         }
     });
 
-app.MapGet("/control", [AuthorizeBasicAuth] async (HttpRequest readerRequest, RuntimeDb db) =>
+app.MapGet("/mqtt", [AuthorizeBasicAuth] async (HttpRequest readerRequest, RuntimeDb db) =>
 {
     var operationResult = new Dictionary<string, object>();
     var endPointList = new List<MqttConfigurationDto>();

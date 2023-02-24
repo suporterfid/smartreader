@@ -1651,6 +1651,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var values = line.Split("=");
                     try
                     {
+                        
                         statusEvent.Add(values[0], values[1].Replace("'", String.Empty));
                     }
                     catch (Exception)
@@ -5007,6 +5008,22 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         //Console.WriteLine("Unexpected error. " + ex.Message);
                                     }
 
+                                    await StopPresetAsync();
+                                    dbContext.ReaderCommands.Remove(commands[i]);
+                                    await dbContext.SaveChangesAsync();
+                                }
+
+                                if (string.Equals("MODE_COMMAND", commands[i].Id, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    try
+                                    {
+                                        ProcessModeJsonCommand(commands[i].Value);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogError(ex, "Unexpected error. " + ex.Message);
+
+                                    }
                                     await StopPresetAsync();
                                     dbContext.ReaderCommands.Remove(commands[i]);
                                     await dbContext.SaveChangesAsync();

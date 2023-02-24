@@ -380,6 +380,7 @@ app.MapPost("/api/rshell", [AuthorizeBasicAuth] async ([FromBody] JsonDocument j
             {
                 var rshell = new RShellUtil(readerAddress, rshellUsername, rshellPassword);
                 var tempResult = rshell.SendCommand(rshellCommand);
+                rshell.Disconnect();
                 logger.LogInformation($"rshellResult: {tempResult}");
                 var lines = tempResult.Split("\n");
                 

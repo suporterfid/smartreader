@@ -38,5 +38,10 @@ namespace SmartReaderStandalone.Utils
             }
             return result;
         }
+
+        public void Disconnect()
+        {
+            sshClient.Disconnect();
+        }
     }
 }

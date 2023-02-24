@@ -848,12 +848,7 @@ SmartReaderStandalone/bin/Release/net6.0/Swashbuckle.AspNetCore.SwaggerGen.dll
 SmartReaderStandalone/bin/Release/net6.0/Swashbuckle.AspNetCore.SwaggerUI.dll
 SmartReaderStandalone/bin/Release/net6.0/System.IO.Ports.dll
 SmartReaderStandalone/bin/Release/net6.0/TagDataTranslation.dll
-SmartReaderStandalone/build-cap-docker.txt
 SmartReaderStandalone/cap_deploy/smartreader_cap.upgx
-SmartReaderStandalone/cap_template/cap_description.in
-SmartReaderStandalone/docker-compose.yml
-SmartReaderStandalone/Dockerfile.BuildCap
-SmartReaderStandalone/IotDeviceInterface/IotInterfaceService.cs
 SmartReaderStandalone/obj/publish/linux-arm/project.assets.json
 SmartReaderStandalone/obj/publish/linux-arm/project.nuget.cache
 SmartReaderStandalone/obj/publish/linux-arm/SmartReaderStandalone.csproj.nuget.dgspec.json
@@ -1381,3 +1376,5 @@ SmartReaderStandalone/bin/Debug/net6.0/SshNet.Security.Cryptography.dll
 SmartReaderStandalone/bin/Debug/net6.0/Renci.SshNet.dll
 SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/SshNet.Security.Cryptography.dll
 SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/Renci.SshNet.dll
+SmartReaderStandalone/obj/SmartReaderStandalone.csproj.EntityFrameworkCore.targets
+SmartReaderStandalone/.config/dotnet-tools.json

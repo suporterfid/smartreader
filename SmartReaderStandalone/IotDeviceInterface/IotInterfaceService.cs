@@ -1408,7 +1408,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         statusEvent.Add("component", "smartreader");
         statusEvent.Add("readerName", _standaloneConfigDTO.readerName);
-        statusEvent.Add("serialNumber", $"{_iotDeviceInterfaceClient.UniqueId}");
+        //statusEvent.Add("serialNumber", $"{_iotDeviceInterfaceClient.UniqueId}");
         statusEvent.Add("timestamp", DateTime.Now.ToUniversalTime().ToString("o"));
         //statusEvent.Add("timestamp", $"{currentReaderStatus.Time.Value.ToUniversalTime().ToString("o")}");
         //statusEvent.Add("displayName", _iotDeviceInterfaceClient.DisplayName);
@@ -1661,6 +1661,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             catch (Exception)
             {
+            }
+
+            try
+            {
+                rshell.Disconnect();
+            }
+            catch (Exception)
+            {
+
+               
             }
         }
         catch (Exception)

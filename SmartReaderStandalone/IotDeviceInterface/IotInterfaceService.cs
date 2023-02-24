@@ -1681,35 +1681,36 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         var jsonData = JsonConvert.SerializeObject(statusEvent);
         var dataToPublish = JObject.Parse(jsonData);
 
-        if (string.Equals("1", _standaloneConfigDTO.httpPostEnabled, StringComparison.OrdinalIgnoreCase))
-            try
-            {
-                _messageQueueTagSmartReaderTagEventHttpPost.Enqueue(dataToPublish);
-            }
-            catch (Exception)
-            {
-            }
+        //if (string.Equals("1", _standaloneConfigDTO.httpPostEnabled, StringComparison.OrdinalIgnoreCase))
+        //    try
+        //    {
+        //        _messageQueueTagSmartReaderTagEventHttpPost.Enqueue(dataToPublish);
+        //    }
+        //    catch (Exception)
+        //    {
+        //    }
 
-        if (string.Equals("1", _standaloneConfigDTO.socketServer, StringComparison.OrdinalIgnoreCase))
-            try
-            {
-                _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(dataToPublish);
-            }
-            catch (Exception)
-            {
-            }
+        //if (string.Equals("1", _standaloneConfigDTO.socketServer, StringComparison.OrdinalIgnoreCase))
+        //    try
+        //    {
+        //        _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(dataToPublish);
+        //    }
+        //    catch (Exception)
+        //    {
+        //    }
 
-        if (string.Equals("1", _standaloneConfigDTO.usbFlashDrive, StringComparison.OrdinalIgnoreCase))
-            try
-            {
-                _messageQueueTagSmartReaderTagEventUsbDrive.Enqueue(dataToPublish);
-            }
-            catch (Exception)
-            {
-            }
+        //if (string.Equals("1", _standaloneConfigDTO.usbFlashDrive, StringComparison.OrdinalIgnoreCase))
+        //    try
+        //    {
+        //        _messageQueueTagSmartReaderTagEventUsbDrive.Enqueue(dataToPublish);
+        //    }
+        //    catch (Exception)
+        //    {
+        //    }
 
-
+        
         if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
+        {
             try
             {
                 var mqttManagementEventsTopic = _standaloneConfigDTO.mqttManagementEventsTopic;
@@ -1745,6 +1746,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             catch (Exception)
             {
             }
+        }
+            
     }
 
     private async void ProcessKeepalive()
@@ -9016,6 +9019,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     if (_messageQueueTagSmartReaderTagEventUdpServer.Count < 1000)
                         _messageQueueTagSmartReaderTagEventUdpServer.Enqueue(dataToPublish);
+                }
+                catch (Exception)
+                {
+                }
+
+            if (string.Equals("1", _standaloneConfigDTO.httpPostEnabled, StringComparison.OrdinalIgnoreCase))
+                try
+                {
+                    if (_messageQueueTagSmartReaderTagEventHttpPost.Count < 1000)
+                        _messageQueueTagSmartReaderTagEventHttpPost.Enqueue(dataToPublish);
                 }
                 catch (Exception)
                 {

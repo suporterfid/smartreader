@@ -1408,7 +1408,11 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
         if (!filterTagEventsListBatchOnChangeBasedOnAntennaZone.Equals(otherStandaloneConfigDTO.filterTagEventsListBatchOnChangeBasedOnAntennaZone)) return false;
 
         if (!enableTagEventsListBatchPublishing.Equals(otherStandaloneConfigDTO.enableTagEventsListBatchPublishing)) return false;
-        
+
+        if (!tagPresenceTimeoutEnabled.Equals(otherStandaloneConfigDTO.tagPresenceTimeoutEnabled)) return false;
+
+        if (!tagPresenceTimeoutInSec.Equals(otherStandaloneConfigDTO.tagPresenceTimeoutInSec)) return false;
+
 
         return true;
     }
@@ -2034,7 +2038,12 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
             config.filterTagEventsListBatchOnChangeBasedOnAntennaZone = HttpUtility.UrlDecode(config.filterTagEventsListBatchOnChangeBasedOnAntennaZone);
 
             config.enableTagEventsListBatchPublishing = HttpUtility.UrlDecode(config.enableTagEventsListBatchPublishing);
-            
+
+
+            config.tagPresenceTimeoutEnabled = HttpUtility.UrlDecode(config.tagPresenceTimeoutEnabled);
+
+            config.tagPresenceTimeoutInSec = HttpUtility.UrlDecode(config.tagPresenceTimeoutInSec);
+
 
 
             return config;

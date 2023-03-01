@@ -2217,6 +2217,27 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 tagEvent.LastSeenTime);
 
 
+            if(string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
+                            StringComparison.OrdinalIgnoreCase))
+            {
+                if(_smartReaderTagEventsListBatch.ContainsKey(tagEvent.EpcHex))
+                {
+                    try
+                    {
+                        var updatedCurrentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now) * 1000;
+                        _smartReaderTagEventsListBatch[tagEvent.EpcHex]["firstSeenTimestamp"] = updatedCurrentEventTimestamp;
+                    }
+                    catch (KeyNotFoundException)
+                    {
+                        // epc already expired
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "error updating last seen time for the tag presence timeout.");
+                    }
+                    
+                }
+            }
             if (!string.IsNullOrEmpty(_standaloneConfigDTO.stopTriggerDuration))
             {
                 long stopTiggerDuration = 100;
@@ -3032,7 +3053,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                             
                                             if(_smartReaderTagEventsListBatch.TryRemove(expiredEpc, out eventToRemove))
                                             {
-                                                _logger.LogInformation($"Expired EPC detected: {expiredEpc} - firstSeenTimestamp: {firstSeenTimestamp}, current timestamp: {currentEventTimestamp}");
+                                                _logger.LogInformation($"Expired EPC detected {timeDiff.TotalSeconds}: {expiredEpc} - firstSeenTimestamp: {dateTimeOffsetLastSeenTimestamp.ToString("o")}, current timestamp: {dateTimeOffsetCurrentEventTimestamp.ToString("o")} current timeout set {expirationInSec}");
                                             }
                                         }
                                         
@@ -3040,12 +3061,108 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         {
                                             _logger.LogInformation($"On-Change event requested for expired EPC: {expiredEpc}");
                                             _smartReaderTagEventsAbsence.TryAdd(expiredEpc, eventToRemove);
+
                                         }
                                         
                                     }
                                 }
                             }
                         }
+                    }
+
+                    if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
+                            StringComparison.OrdinalIgnoreCase) && _smartReaderTagEventsAbsence.Any())
+                    {
+                        JObject smartReaderTagReadEvent;
+                        JObject smartReaderTagReadEventAggregated = null;
+                        var smartReaderTagReadEventsArray = new JArray();
+
+                        foreach (var tagEpcToRemove in _smartReaderTagEventsAbsence.Keys)
+                        {
+                            JObject expiredTagEvent = null;
+
+                            if (_smartReaderTagEventsListBatch.ContainsKey(tagEpcToRemove))
+                            {
+                                _smartReaderTagEventsListBatch.TryRemove(tagEpcToRemove, out expiredTagEvent);
+                            }
+
+                        }
+
+                        _smartReaderTagEventsAbsence.Clear();
+
+                        if (_smartReaderTagEventsListBatch.Count > 0)
+                        {
+                            foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
+                            {
+                                smartReaderTagReadEvent = smartReaderTagReadEventBatch;
+                                try
+                                {
+                                    if (smartReaderTagReadEvent == null)
+                                        continue;
+                                    if (smartReaderTagReadEventAggregated == null)
+                                    {
+                                        smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
+                                        smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                            .FirstOrDefault().FirstOrDefault());
+                                    }
+                                    else
+                                    {
+                                        try
+                                        {
+                                            smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                                .FirstOrDefault().FirstOrDefault());
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            _logger.LogInformation(ex,
+                                                "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                        }
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                }
+                            }
+                            try
+                            {
+                                if (smartReaderTagReadEventAggregated != null && smartReaderTagReadEventsArray != null &&
+                                    smartReaderTagReadEventsArray.Count > 0)
+                                {
+                                    smartReaderTagReadEventAggregated["tag_reads"] = smartReaderTagReadEventsArray;
+
+                                    await ProcessMqttJsonTagEventDataAsync(smartReaderTagReadEventAggregated);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                            }
+                        }
+                        else
+                        {
+                            // generate empty event...
+                          
+                            
+                            var emptyTagData = new SmartReaderTagReadEvent();
+                            emptyTagData.ReaderName = _standaloneConfigDTO.readerName;
+                            emptyTagData.Mac = _iotDeviceInterfaceClient.MacAddress;
+                            emptyTagData.TagReads = new List<TagRead>();
+                            JObject emptyTagDataObject = JObject.FromObject(emptyTagData);
+                            smartReaderTagReadEventsArray.Add(emptyTagDataObject);
+
+                            try
+                            {
+
+                                    await ProcessMqttJsonTagEventDataAsync(emptyTagDataObject);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                            }
+                        }
+
+                       
                     }
 
 
@@ -3459,57 +3576,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         _stopwatchStopTagEventsListBatchOnChange.Start();
                     }
 
-                    if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
-                            StringComparison.OrdinalIgnoreCase) && _smartReaderTagEventsAbsence.Any())
-                    {
-                        foreach (var tagEpcToRemove in _smartReaderTagEventsAbsence.Keys)
-                        {
-                            JObject expiredTagEvent = null;
-                            if(_smartReaderTagEventsListBatch.ContainsKey(tagEpcToRemove))
-                            {
-                                _smartReaderTagEventsListBatch.TryRemove(tagEpcToRemove, out expiredTagEvent);
-                            }
-                            
-                        }
-
-
-                        foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
-                        {
-                            smartReaderTagReadEvent = smartReaderTagReadEventBatch;
-                            try
-                            {
-                                if (smartReaderTagReadEvent == null)
-                                    continue;
-                                if (smartReaderTagReadEventAggregated == null)
-                                {
-                                    smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
-                                    smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                        .FirstOrDefault().FirstOrDefault());
-                                }
-                                else
-                                {
-                                    try
-                                    {
-                                        smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                            .FirstOrDefault().FirstOrDefault());
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        _logger.LogInformation(ex,
-                                            "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                            }
-                        }
-
-                        _smartReaderTagEventsAbsence.Clear();
-
-                    }
-                    else if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChange)
+                    
+                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChange)
                         && string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange,
                             StringComparison.OrdinalIgnoreCase)
                         && _smartReaderTagEventsListBatchOnUpdate.Count > 0)

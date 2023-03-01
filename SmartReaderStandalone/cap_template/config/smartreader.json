@@ -206,7 +206,7 @@
   "customField4Name": "customField4Name",
   "customField4Value": "customField4Value",
   "writeUsbJson": "0",
-  "reportingIntervalSeconds": "10",
+  "reportingIntervalSeconds": "0",
   "tagCacheSize": "2048",
   "antennaIdentifier": "antennaPort",
   "tagIdentifier": "epc",

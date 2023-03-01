@@ -10,13 +10,12 @@ var vueApplication = new Vue({
 		},
 		authenticated: true,
 		adminAccount: {
-			username: "admin",
-			password: "1234"
+			username: "",
+			password: ""
 		},
-		applicationLabel: 'version 3.0.0.112',
+		applicationLabel: 'version 3.0.0.115',
 		applicationBy: 'Smartreader R700',
-		//applicationBy: 'xConnect R700',
-		//applicationBy: 'R700 SoLink',
+
 		applicationLogo: 'none',
 		selectTxPowerOptions: [],
         selectRxSensitivityOptions: [],
@@ -39,10 +38,6 @@ var vueApplication = new Vue({
 
 	},
 
-	// created () {
-    //     this.timer = setInterval(this.fetchReaderStatus, 2000);
-        
-    // },
 
 	ready: function () {
 		this.fetchReaderCap();
@@ -50,7 +45,6 @@ var vueApplication = new Vue({
 		this.fetchReaderConfig();		
 		this.fetchReaderStatus();
 		this.fetchReaderSerial();
-		//this.fetchDiskSpace();
 		this.populateTxList();
 		this.parseAntennaConfig();
 		this.timer = setInterval(this.fetchReaderStatus, 2000);
@@ -73,16 +67,10 @@ var vueApplication = new Vue({
 			var txPowerOptions = [];
 			if(this.readerCapabilitiesList != null && this.readerCapabilitiesList[0].hasOwnProperty('txTable'))
 			{
-				//var txList = this.readerCapabilitiesList[0].txTable.split(",");
 				var txList = this.readerCapabilitiesList[0].txTable;
 				
 				var txListLength = txList.length;
 				for (var i = 0; i < txListLength; i++) {
-					//var txPowerPart1 = txList[i].substring( 0, 2 );
-					//var txPowerPart2 = txList[i].substring( 2, 4 );
-					//var adjustedTxPowerInDbm = txPowerPart1+','+txPowerPart2;
-					//console.log('selectTxPowerOptions['+i+']: '+txList[i] + '  adjusted:'+adjustedTxPowerInDbm);
-					//text: adjustedTxPowerInDbm,
 					txPowerOptions.push({
 						text: txList[i],
 						value: parseInt(txList[i])
@@ -96,35 +84,16 @@ var vueApplication = new Vue({
 			var rxSensitivityOptions = [];
 			if(this.readerCapabilitiesList != null && this.readerCapabilitiesList[0].hasOwnProperty('rxTable'))
 			{
-				//rxSensitivityOptions.push({
-				//        text: 'MAX',
-				//		value: parseInt(-92)
-				//});
-				//var rxList = this.readerCapabilitiesList[0].rxTable.split(",");
 				var rxList = this.readerCapabilitiesList[0].rxTable;
 				
 				var rxListLength = rxList.length;
 				for (var i = 0; i < rxList.length; i++) {
-					//var rxSensitivityInDbm = -80.0 + parseInt(rxList[i], 10);
+
 					rxSensitivityOptions.push({
 						text: rxList[i],
 						value: parseInt(rxList[i])
 					});	
-					//console.log('rxSensitivityOptions['+i+']: '+rxList[i] + ' >> '+rxSensitivityInDbm);
-					//if(rxSensitivityInDbm != -80.0)
-					//{						
-					//	rxSensitivityOptions.push({
-					//        text: rxSensitivityInDbm,
-					//        value:i
-					//    });	
-					//}
-					//else
-					//{
-					//	rxSensitivityOptions.push({
-					//        text: '-84',
-					//        value:i
-					//    });						
-					//}
+
 								
 				}
 
@@ -145,7 +114,6 @@ var vueApplication = new Vue({
 					console.log("readerConfigs[0] " + JSON.stringify(readerConfigs[0]));
 					var fileURL = window.URL.createObjectURL(new Blob([JSON.stringify(readerConfigs[0])], { type: "text/json;charset=utf-8" }));
 					
-					//var fileURL = window.URL.createObjectURL(readerConfigs[0]);
 					var fURL = document.createElement('a');
 
 					fURL.href = fileURL;
@@ -158,7 +126,7 @@ var vueApplication = new Vue({
 				});
 		},
 		readConfigFile(event) {
-			//this.file = this.$refs.configFileInput.files[0];
+
 			this.file = event.target.files[0];
 			const reader = new FileReader();
 			if (this.file.name.includes(".json")) {
@@ -209,19 +177,7 @@ var vueApplication = new Vue({
 		onFilePicked() {
 			this.readConfigFile();
 		},
-		//login() {
-		//	if (this.input.username != "" && this.input.password != "") {
-		//		if (this.input.username == this.adminAccount.username && this.input.password == this.adminAccount.password) {
-		//			this.$emit("authenticated", true);
-		//			this.authenticated = true;
-					
-		//		} else {
-		//			console.log("The username and / or password is incorrect");
-		//		}
-		//	} else {
-		//		console.log("A username and password must be present");
-		//	}
-		//},
+
 
 		alertSettingsApplied: function (event) {
 		      alert('Settings applied, please stop and then reload the application.');
@@ -733,14 +689,7 @@ var vueApplication = new Vue({
 			  this.alertSettingsNotApplied();
 		  });
 			  
-//			this.$http.post('/apply-settings', this.readerConfigs[0])
-//			.success(function (res) {
-//				//this.readerConfigs.push(this.readerConfigs[0]);
-//				console.log('Settings applied!!');
-//			})
-//			.error(function (err) {
-//				console.log('Error applying settings:'+err);
-//			});
+
 
 		},
 

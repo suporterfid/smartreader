@@ -1,0 +1,97 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>yTem Plugin</title>
+    <meta name="description" content="Streaming requests with the fetch API">
+    <link id="favicon" rel="icon" href="https://web.dev/images/favicon.ico" type="image/x-icon">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/css/bootstrap.min.css">
+    <script src="/js/sweetalert.min.js"></script>
+    <script src="/js/ag-grid-community.min.noStyle.js"></script>
+    <link rel="stylesheet" href="/css/ag-grid.css">
+    <link rel="stylesheet" href="/css/ag-theme-alpine.css">
+    <script defer src="/js/fontawesome.min.js"></script>
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/ytem-es.js" defer></script>
+</head>
+<body>
+<style>
+    #data-table {
+        height: 500px;
+        width: 100%;
+    }
+</style>
+<h1>yTem Plugin</h1>
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12 col-lg-10 col-xl-8 col-xxl-6">
+            <div class="alert alert-ambient alert-dismissible fade show mt-5"
+                 role="alert" id="demoalert" hidden>
+                <i class="fas fa-exclamation-triangle animate-breathing me-2"></i>
+                Could not connect to API
+                <button type="button" class="btn-close" data-bs-dismiss="alert"
+                        aria-label="Close">
+                </button>
+            </div>
+            <div class="row">
+                <div class="col-md-12 mb-3">
+                    <table class="table table-hover text-left">
+                        <tbody>
+                        <tr>
+
+                            <td class="align-left" colspan="2">
+                                <h3>Productos:&nbsp;&nbsp;<a id="tagCount">0</a>&nbsp;&nbsp;&nbsp;&nbsp;Recuento de etiquetas:&nbsp;&nbsp;&nbsp;&nbsp;<a id="itemCount">0</a></h3>
+                            </td>
+                        </tr>
+                        <tr>
+
+                            <td class="align-left">
+                                <button class="btn btn-danger btn-lg" role="button" id="cleanBtn" onclick="clean()">Limpiar Pantalla</button>
+                                &nbsp;&nbsp;&nbsp;<button class="btn btn-primary btn-lg" role="button" id="startBtn" onclick="start()">Comenzar</button>
+                                &nbsp;&nbsp;&nbsp;<button class="btn btn-primary btn-lg" role="button" id="stopBtn" onclick="stop()">Detener</button>
+                            </td>
+                            <td class="align-left">
+                                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                                &nbsp;&nbsp; &nbsp;<button class="btn btn-success btn-lg" onclick="confirmData()">Publicar</button>
+                            </td>
+                        </tr>
+                        <tr>
+
+                            <td class="align-left" colspan="2">
+                                <p>
+                                    &nbsp;&nbsp;<input class="form-control" id="orderBarcode" type="text" placeholder="Informar a la ASN" value="7069942790160287"/> <br/> &nbsp;<button class="btn btn-info btn-lg" onclick="searchOrder()">Buscar</button>
+                                </p>
+                            </td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!---->
+<p class="output"></p>
+<div style="display: flex; flex-direction: row">
+    <div style="flex-grow: 1; overflow: hidden;">
+        <div id="data-table" class="ag-theme-alpine" style="height: 400px; width: 100%;"></div>
+    </div>
+</div>
+<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<button class="btn btn-danger btn-lg" role="button" id="cleanEpcBtn" onclick="cleanFilter()">Limpiar Memoria</button>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<button class="btn btn-primary btn-lg" role="button" id="getSelectedRowData">Detalles</button>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<button class="btn btn-primary btn-lg" role="button" id="gpo1btn" aria-pressed="false" onclick="gpo1()">GPO 1</button>
+&nbsp;&nbsp;&nbsp;<button class="btn btn-primary btn-lg" role="button" id="gpo2btn" aria-pressed="false" onclick="gpo2()">GPO 2</button>
+&nbsp;&nbsp;&nbsp;<button class="btn btn-primary btn-lg" role="button" id="gpo3btn" aria-pressed="false" onclick="gpo3()">GPO 3</button>
+
+
+</body>
+</html>
+<!-- Copyright 2018 Google LLC.
+SPDX-License-Identifier: Apache-2.0 -->

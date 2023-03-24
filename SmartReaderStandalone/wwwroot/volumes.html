@@ -1,0 +1,66 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>R700 X-Plugin SKUs</title>
+    <meta name="description" content="Streaming requests with the fetch API">
+    <link id="favicon" rel="icon" href="https://web.dev/images/favicon.ico" type="image/x-icon">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/css/bootstrap.min.css">
+
+    <script src="/js/sweetalert.min.js"></script>
+    <script src="/js/ag-grid-community.min.noStyle.js"></script>
+    <link rel="stylesheet" href="/css/ag-grid.css">
+    <link rel="stylesheet" href="/css/ag-theme-alpine.css">
+    <script defer src="/js/fontawesome.min.js"></script>
+    <script src="/js/bootstrap.bundle.min.js"></script>
+    <script src="/volumes.js" defer></script>
+</head>
+<body>
+<style>
+    #data-table {
+        height: 500px;
+        width: 100%;
+    }
+</style>
+<h1>R700 X-Plugin SKUs</h1>
+<p>
+    <h2>SKUs: <a id="tagCount">0</a></h2>
+</p>
+<button class="btn btn-primary btn-lg" role="button" id="cleanBtn" onclick="clean()">Limpar Tela</button>
+<button class="btn btn-primary btn-lg" role="button" id="startBtn" onclick="start()">Iniciar</button>
+<button class="btn btn-primary btn-lg" role="button" id="stopBtn" onclick="stop()">Parar</button>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<button class="btn btn-primary btn-lg" role="button" id="cleanEpcBtn" onclick="cleanFilter()">Limpar Memória</button>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<button class="btn btn-primary btn-lg" role="button" id="getSelectedRowData">Detalhes</button>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<button class="btn btn-primary btn-lg" role="button" id="gpo1btn" aria-pressed="false" onclick="gpo1()">GPO 1</button>
+<button class="btn btn-primary btn-lg" role="button" id="gpo2btn" aria-pressed="false" onclick="gpo2()">GPO 2</button>
+<button class="btn btn-primary btn-lg" role="button" id="gpo3btn" aria-pressed="false" onclick="gpo3()">GPO 3</button>
+<!---->
+<p class="output"></p>
+<div style="display: flex; flex-direction: row">
+    <div style="flex-grow: 1; overflow: hidden;">
+        <div id="data-table" class="ag-theme-alpine" style="height: 500px; width: 100%;"></div>
+    </div>
+</div>
+
+
+<!--
+
+
+<p>
+    <input class="input" type="text" placeholder="Focus this and type some stuff" /> <button class="close">Close stream</button>
+</p>
+<p>
+    It won't appear in the text box. Instead, it'll be streamed to the server, and streamed from the server, and output below.
+    If you don't see text below as you type, then the streaming request isn't working correctly.
+</p>
+-->
+
+</body>
+</html>
+<!-- Copyright 2018 Google LLC.
+SPDX-License-Identifier: Apache-2.0 -->

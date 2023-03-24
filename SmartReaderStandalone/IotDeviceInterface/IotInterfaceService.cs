@@ -180,6 +180,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private readonly Timer _timerTagFilterLists;
 
+    private readonly Timer _timerKeepalive;
+
     private readonly Timer _timerTagPublisherHttp;
 
     //private readonly Timer _timer;
@@ -241,6 +243,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _httpUtil = new HttpUtil(HttpClientFactory, serverUrl, serverToken);
 
         _timerTagFilterLists = new Timer(100);
+
+        _timerKeepalive = new Timer(100);
 
         _timerStopTriggerDuration = new Timer(100);
 
@@ -1426,7 +1430,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 var antennaStatusDescription = $"antenna{antennaPorts[i]}Enabled";
                 var currentAntennaStatus = false;
-                if(antennaPortStates[i] != "0")
+                if (antennaPortStates[i] != "0")
                 {
                     currentAntennaStatus = true;
                 }
@@ -1453,7 +1457,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         catch (Exception)
         {
 
-           
+
         }
 
         try
@@ -1651,13 +1655,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var values = line.Split("=");
                     try
                     {
-                        
+
                         statusEvent.Add(values[0], values[1].Replace("'", String.Empty));
                     }
                     catch (Exception)
                     {
                     }
-                    
+
                 }
             }
             catch (Exception)
@@ -1671,7 +1675,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             catch (Exception)
             {
 
-               
+
             }
         }
         catch (Exception)
@@ -1709,7 +1713,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         //    {
         //    }
 
-        
+
         if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
         {
             try
@@ -1748,7 +1752,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
             }
         }
-            
+
     }
 
     private async void ProcessKeepalive()
@@ -2217,10 +2221,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 tagEvent.LastSeenTime);
 
 
-            if(string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
+            if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
                             StringComparison.OrdinalIgnoreCase))
             {
-                if(_smartReaderTagEventsListBatch.ContainsKey(tagEvent.EpcHex))
+                if (_smartReaderTagEventsListBatch.ContainsKey(tagEvent.EpcHex))
                 {
                     try
                     {
@@ -2235,7 +2239,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     {
                         _logger.LogError(ex, "error updating last seen time for the tag presence timeout.");
                     }
-                    
+
                 }
             }
             if (!string.IsNullOrEmpty(_standaloneConfigDTO.stopTriggerDuration))
@@ -3042,28 +3046,28 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
                             if (timeDiff.TotalSeconds > expirationInSec)
                             {
-                           
+
                                 JObject eventToRemove = null;
                                 if (_smartReaderTagEventsListBatch.TryGetValue(expiredEpc, out eventToRemove))
                                 {
                                     if (eventToRemove != null)
                                     {
-                                        if(_smartReaderTagEventsListBatch.ContainsKey(expiredEpc))
+                                        if (_smartReaderTagEventsListBatch.ContainsKey(expiredEpc))
                                         {
-                                            
-                                            if(_smartReaderTagEventsListBatch.TryRemove(expiredEpc, out eventToRemove))
+
+                                            if (_smartReaderTagEventsListBatch.TryRemove(expiredEpc, out eventToRemove))
                                             {
                                                 _logger.LogInformation($"Expired EPC detected {timeDiff.TotalSeconds}: {expiredEpc} - firstSeenTimestamp: {dateTimeOffsetLastSeenTimestamp.ToString("o")}, current timestamp: {dateTimeOffsetCurrentEventTimestamp.ToString("o")} current timeout set {expirationInSec}");
                                             }
                                         }
-                                        
-                                        if(!_smartReaderTagEventsAbsence.ContainsKey(expiredEpc))
+
+                                        if (!_smartReaderTagEventsAbsence.ContainsKey(expiredEpc))
                                         {
                                             _logger.LogInformation($"On-Change event requested for expired EPC: {expiredEpc}");
                                             _smartReaderTagEventsAbsence.TryAdd(expiredEpc, eventToRemove);
 
                                         }
-                                        
+
                                     }
                                 }
                             }
@@ -3142,8 +3146,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         else
                         {
                             // generate empty event...
-                          
-                            
+
+
                             var emptyTagData = new SmartReaderTagReadEvent();
                             emptyTagData.ReaderName = _standaloneConfigDTO.readerName;
                             emptyTagData.Mac = _iotDeviceInterfaceClient.MacAddress;
@@ -3154,7 +3158,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             try
                             {
 
-                                    await ProcessMqttJsonTagEventDataAsync(emptyTagDataObject);
+                                await ProcessMqttJsonTagEventDataAsync(emptyTagDataObject);
                             }
                             catch (Exception ex)
                             {
@@ -3162,7 +3166,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             }
                         }
 
-                       
+
                     }
 
 
@@ -3181,6 +3185,37 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         _timerTagFilterLists.Enabled = true;
         _timerTagFilterLists.Start();
+    }
+
+    private async void OnRunPeriodicKeepaliveCheck(object sender, ElapsedEventArgs e)
+    {
+        //_timerKeepalive.Enabled = false;
+        //_timerKeepalive.Stop();
+
+        try
+        {
+            if (string.Equals("1", _standaloneConfigDTO.heartbeatEnabled, StringComparison.OrdinalIgnoreCase))
+            {
+                if (_stopwatchKeepalive.Elapsed.TotalMilliseconds > double.Parse(_standaloneConfigDTO.heartbeatPeriodSec) * 1000)
+                {
+
+                    //_stopwatchKeepalive.Stop();
+                    //_stopwatchKeepalive.Reset();
+                    _stopwatchKeepalive.Restart();
+                    //ProcessKeepalive();
+                    Task.Run(() => { ProcessKeepalive(); });                  
+                }
+            }
+
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                    "Unexpected error running keepalive manager on OnRunPeriodicKeepaliveCheck. " + ex.Message);
+        }
+
+        //_timerKeepalive.Enabled = true;
+        //_timerKeepalive.Start();
     }
 
     private async void OnRunPeriodicStopTriggerDurationEvent(object sender, ElapsedEventArgs e)
@@ -3576,7 +3611,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         _stopwatchStopTagEventsListBatchOnChange.Start();
                     }
 
-                    
+
                     if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChange)
                         && string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange,
                             StringComparison.OrdinalIgnoreCase)
@@ -5243,22 +5278,22 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             //    }
             //}
 
-            try
-            {
-                if (string.Equals("1", _standaloneConfigDTO.heartbeatEnabled, StringComparison.OrdinalIgnoreCase))
-                    if (_stopwatchKeepalive.Elapsed.Seconds > int.Parse(_standaloneConfigDTO.heartbeatPeriodSec))
-                    {
-                        ProcessKeepalive();
-                        _stopwatchKeepalive.Stop();
-                        _stopwatchKeepalive.Reset();
-                        _stopwatchKeepalive.Start();
-                    }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "Unexpected error running keepalive manager on OnRunPeriodicTasksJobManagerEvent. " + ex.Message);
-            }
+            //    try
+            //    {
+            //        if (string.Equals("1", _standaloneConfigDTO.heartbeatEnabled, StringComparison.OrdinalIgnoreCase))
+            //            if (_stopwatchKeepalive.Elapsed.Seconds > int.Parse(_standaloneConfigDTO.heartbeatPeriodSec))
+            //            {
+            //                ProcessKeepalive();
+            //                _stopwatchKeepalive.Stop();
+            //                _stopwatchKeepalive.Reset();
+            //                _stopwatchKeepalive.Start();
+            //            }
+            //    }
+            //    catch (Exception ex)
+            //    {
+            //        _logger.LogError(ex,
+            //            "Unexpected error running keepalive manager on OnRunPeriodicTasksJobManagerEvent. " + ex.Message);
+            //    }
         }
         catch (Exception)
         {
@@ -5750,6 +5785,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _timerTagFilterLists.AutoReset = false;
             _timerTagFilterLists.Start();
 
+            _timerKeepalive.Elapsed += OnRunPeriodicKeepaliveCheck;
+            _timerKeepalive.Interval = 100;
+            _timerKeepalive.AutoReset = true;
+            _timerKeepalive.Start();
+
             _timerStopTriggerDuration.Elapsed += OnRunPeriodicStopTriggerDurationEvent;
             _timerStopTriggerDuration.Interval = 100;
             _timerStopTriggerDuration.AutoReset = false;
@@ -5796,7 +5836,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             while (!stoppingToken.IsCancellationRequested)
                 //_logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
-                await Task.Delay(100);
+                await Task.Delay(10);
         }
         catch (Exception ex)
         {

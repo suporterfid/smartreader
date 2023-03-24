@@ -1122,13 +1122,23 @@
                         <label for="barcodeTcpPort">Barcode Scanner IP Port:</label>
                         <input id="barcodeTcpPort" class="form-control" v-model="readerConfigs[0].barcodeTcpPort">
                         <br />
+
+                        <br />
+                        <h3>Barcode Scanner Settings (Applies to Serial and TCP/IP interfaces):</h3>
+                        <label for="lineEnding">Barcode Line Ending:</label>
+                        <select id="lineEnding" class="form-control" v-model="readerConfigs[0].barcodeLineEnd">
+                            <option value="0">Data Length</option>
+                            <option value="1">LF</option>
+                            <option value="2">CRLF</option>
+                            <option value="3">CR</option>
+                        </select>
+
                         <label for="barcodeTcpLen">Data Len:</label>
                         <input id="barcodeTcpLen" class="form-control" v-model="readerConfigs[0].barcodeTcpLen">
                         <br />
                         <label for="barcodeTcpNoDataString">String when Barcode Scanner detects no data:</label>
                         <input id="barcodeTcpNoDataString" class="form-control" v-model="readerConfigs[0].barcodeTcpNoDataString">
                         <br />
-
 
                         <br>
                         <br>
@@ -1252,7 +1262,7 @@
                                 <label for="outputMqttPassword">Broker Password:</label>
                                 <input type="password" id="outputMqttPassword" class="form-control" v-model="readerConfigs[0].mqttPassword">
                                 <br />
-                                <template v-if="readerConfigs[0].enableTagEventsListBatchPublishing == '0'">
+                                <template v-if="readerConfigs[0].enableTagEventsListBatch == '0'">
                                     <label for="outputMqttPuslishInterval">Publish Interval (in seconds):</label>
                                     <input id="outputMqttPuslishInterval" class="form-control" v-model="readerConfigs[0].mqttPuslishIntervalSec">
                                     <br>

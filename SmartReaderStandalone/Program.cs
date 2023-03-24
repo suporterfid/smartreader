@@ -818,7 +818,7 @@ app.MapGet("/api/reload", [AuthorizeBasicAuth] async (RuntimeDb db) =>
             command.Timestamp = DateTime.Now;
             db.ReaderCommands.Add(command);
             await db.SaveChangesAsync();
-            await Task.Delay(1000);
+            await Task.Delay(100);
         }
         catch (Exception)
         {

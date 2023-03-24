@@ -1378,3 +1378,11 @@ SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/SshNet.Security.Cr
 SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/Renci.SshNet.dll
 SmartReaderStandalone/obj/SmartReaderStandalone.csproj.EntityFrameworkCore.targets
 SmartReaderStandalone/.config/dotnet-tools.json
+SmartReaderStandalone/bin/Release/net6.0/publish/wwwroot/volumes.html
+SmartReaderStandalone/bin/Release/net6.0/publish/wwwroot/volumes.js
+SmartReaderStandalone/bin/Release/net6.0/publish/wwwroot/ytem.html
+SmartReaderStandalone/bin/Release/net6.0/publish/wwwroot/ytem.js
+SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/wwwroot/volumes.html
+SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/wwwroot/volumes.js
+SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/wwwroot/ytem.html
+SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/wwwroot/ytem.js

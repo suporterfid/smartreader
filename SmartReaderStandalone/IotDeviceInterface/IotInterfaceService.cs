@@ -12,11 +12,13 @@ using System.Reflection;
 using System.Runtime;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Timers;
 using Impinj.Atlas;
 using Impinj.Utils.DebugLogger;
+using McMaster.NETCore.Plugins;
 using MQTTnet;
 using MQTTnet.Client.Options;
 using MQTTnet.Extensions.ManagedClient;
@@ -41,6 +43,8 @@ using TagDataTranslation;
 using DataReceivedEventArgs = SimpleTcp.DataReceivedEventArgs;
 using ReaderStatus = SmartReaderStandalone.Entities.ReaderStatus;
 using Timer = System.Timers.Timer;
+using McMaster.NETCore.Plugins;
+using SmartReaderStandalone.Plugins;
 
 namespace SmartReader.IotDeviceInterface;
 
@@ -110,6 +114,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     public readonly ConcurrentDictionary<string, int> _currentSkus = new();
 
+    private readonly List<string> _currentSkuReadEpcs = new();
+
     private readonly CancellationTokenSource _gpiCts;
 
     public readonly ConcurrentDictionary<int, bool> _gpiPortStates = new();
@@ -168,6 +174,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     public readonly ConcurrentDictionary<string, JObject> _smartReaderTagEventsAbsence = new();
 
+    public readonly ConcurrentDictionary<string, int> _expectedItems = new();
+
     private readonly Stopwatch _stopwatchBearerToken = new();
     private readonly Stopwatch _stopwatchKeepalive = new();
     private readonly Stopwatch _stopwatchLastIddleEvent = new();
@@ -225,6 +233,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     private string DeviceIdWithDashes;
 
     protected Timer PeriodicTasksTimerInventoryData = new();
+
+    private string ExternalApiToken;
+
+    public static Dictionary<string, IPlugin> _plugins = new();
 
 
     public IotInterfaceService(IServiceProvider services, IConfiguration configuration,
@@ -454,9 +466,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     _socketBarcodeClient = new SimpleTcpClient(_standaloneConfigDTO.barcodeTcpAddress,
                         int.Parse(_standaloneConfigDTO.barcodeTcpPort));
                     // set events
-                    _socketBarcodeClient.Events.DataReceived += SocketClient_Events_DataReceived;
-                    _socketBarcodeClient.Events.Connected += SocketClient_Events_Connected;
-                    _socketBarcodeClient.Events.Disconnected += SocketClient_Events_Disconnected;
+                    _socketBarcodeClient.Events.DataReceived += BarcodeSocketClientEventsDataReceived;
+                    _socketBarcodeClient.Events.Connected += BarcodeSocketClientEventsConnected;
+                    _socketBarcodeClient.Events.Disconnected += BarcodeSocketClientEventsDisconnected;
 
                     _socketBarcodeClient.ConnectWithRetries(1000);
                 }
@@ -474,9 +486,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (_socketBarcodeClient != null)
             {
-                _socketBarcodeClient.Events.DataReceived -= SocketClient_Events_DataReceived;
-                _socketBarcodeClient.Events.Connected -= SocketClient_Events_Connected;
-                _socketBarcodeClient.Events.Disconnected -= SocketClient_Events_Disconnected;
+                _socketBarcodeClient.Events.DataReceived -= BarcodeSocketClientEventsDataReceived;
+                _socketBarcodeClient.Events.Connected -= BarcodeSocketClientEventsConnected;
+                _socketBarcodeClient.Events.Disconnected -= BarcodeSocketClientEventsDisconnected;
                 _socketBarcodeClient.Disconnect();
             }
         }
@@ -487,19 +499,19 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
-    private void SocketClient_Events_Disconnected(object? sender, ConnectionEventArgs e)
+    private void BarcodeSocketClientEventsDisconnected(object? sender, ConnectionEventArgs e)
     {
         //_logger.LogInformation("Events_Disconnected ", SeverityType.Debug);
         _logger.LogInformation("Events_Disconnected  ");
     }
 
-    private void SocketClient_Events_Connected(object? sender, ConnectionEventArgs e)
+    private void BarcodeSocketClientEventsConnected(object? sender, ConnectionEventArgs e)
     {
         //_logger.LogInformation("Events_Connected ", SeverityType.Debug);
         _logger.LogInformation("Events_Connected  ");
     }
 
-    private void SocketClient_Events_DataReceived(object? sender, DataReceivedEventArgs e)
+    private void BarcodeSocketClientEventsDataReceived(object? sender, DataReceivedEventArgs e)
     {
         try
         {
@@ -569,75 +581,180 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 return "";
             }
 
-            if (_standaloneConfigDTO != null
-                && !string.IsNullOrEmpty(_standaloneConfigDTO.barcodeTcpNoDataString)
-                && messageData.ToUpper().Contains(_standaloneConfigDTO.barcodeTcpNoDataString.ToUpper()))
+            if (_standaloneConfigDTO != null)
             {
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.barcodeProcessNoDataString)
-                    && "0".Equals(_standaloneConfigDTO.barcodeProcessNoDataString))
+                if ("0".Equals(_standaloneConfigDTO.barcodeLineEnd))
                 {
-                    //Console.WriteLine("ReceiveBarcode - ignoring NoDataString [" + messageData + "] ");
-                    _logger.LogInformation("ReceiveBarcode: - ignoring NoDataString [" + messageData + "]   ");
-                    return "";
-                }
 
-                _logger.LogInformation("ReceiveBarcode: - PROCESSING NoDataString [" + messageData + "]   ");
-                //Console.WriteLine("ReceiveBarcode - PROCESSING NoDataString [" + messageData + "] ");
+                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.barcodeTcpLen))
+                    {
+                        var messageExpectedLen = int.Parse(_standaloneConfigDTO.barcodeTcpLen);
+                        if (messageData.Length == messageExpectedLen)
+                        {
+                            if (!string.IsNullOrEmpty(_standaloneConfigDTO.barcodeTcpNoDataString)
+                        && messageData.ToUpper().Contains(_standaloneConfigDTO.barcodeTcpNoDataString.ToUpper()))
+                            {
+                                if (!string.IsNullOrEmpty(_standaloneConfigDTO.barcodeProcessNoDataString)
+                                    && "0".Equals(_standaloneConfigDTO.barcodeProcessNoDataString))
+                                {
+                                    //Console.WriteLine("ReceiveBarcode - ignoring NoDataString [" + messageData + "] ");
+                                    _logger.LogInformation("ReceiveBarcode: - ignoring NoDataString [" + messageData + "]   ");
+                                    return "";
+                                }
+
+                                _logger.LogInformation("ReceiveBarcode: - PROCESSING NoDataString [" + messageData + "]   ");
+                                //Console.WriteLine("ReceiveBarcode - PROCESSING NoDataString [" + messageData + "] ");
+                            }
+                        }
+                        else
+                        {
+                            //Console.WriteLine("ReceiveBarcode - ignoring [" + messageData + "] " + messageData.Length);
+                            _logger.LogInformation("ReceiveBarcode: - ignoring [" + messageData + "] " +
+                                                   messageData.Length);
+                            return "";
+                        }
+
+
+                    }
+                    else if ("2".Equals(_standaloneConfigDTO.barcodeLineEnd))
+                    {
+                        if (messageData.Contains("\r\n"))
+                        {
+                            messageData = messageData.Replace("\r\n", "");
+                        }
+                        else
+                        {
+                            _logger.LogInformation("ReceiveBarcode: - ignoring [" + messageData + "] ");
+                            return "";
+                        }
+                    }
+                    else if ("1".Equals(_standaloneConfigDTO.barcodeLineEnd))
+                    {
+                        if (messageData.Contains("\n"))
+                        {
+                            messageData = messageData.Replace("\n", "");
+                        }
+                        else
+                        {
+                            _logger.LogInformation("ReceiveBarcode: - ignoring [" + messageData + "] ");
+                            return "";
+                        }
+                    }
+                    else if ("3".Equals(_standaloneConfigDTO.barcodeLineEnd))
+                    {
+                        if (messageData.Contains("\r"))
+                        {
+                            messageData = messageData.Replace("\r", "");
+                        }
+                        else
+                        {
+                            _logger.LogInformation("ReceiveBarcode: - ignoring [" + messageData + "] ");
+                            return "";
+                        }
+                    }
+                }
             }
 
 
+
             if (_standaloneConfigDTO != null)
-                if (_standaloneConfigDTO != null && !string.IsNullOrEmpty(_standaloneConfigDTO.barcodeTcpLen))
+            {
+                if (!string.IsNullOrEmpty(_standaloneConfigDTO.barcodeProcessNoDataString)
+                         && "1".Equals(_standaloneConfigDTO.barcodeProcessNoDataString)
+                         && messageData.ToUpper().Contains(_standaloneConfigDTO.barcodeTcpNoDataString.ToUpper()
+                         ))
                 {
-                    var messageExpectedLen = int.Parse(_standaloneConfigDTO.barcodeTcpLen);
-                    if (messageData.Length == messageExpectedLen)
-                    {
-                        //Console.WriteLine("ReceiveBarcode ======================================== ");
-                        _logger.LogInformation("ReceiveBarcode: ========================================");
-                        _logger.LogInformation("ReceiveBarcode: - Events_DataReceived - setting barcode [" +
-                                               messageData + "]   ");
-                        //_logger.LogInformation("Events_DataReceived - setting barcode " + messageData, SeverityType.Debug);
-                        //Console.WriteLine("ReceiveBarcode - setting barcode [" + messageData + "]");
-                        _logger.LogInformation("ReceiveBarcode: - setting barcode [" + messageData + "]   ");
-                        //currentBarcode = messageData;
-                        if (_standaloneConfigDTO != null
-                            && !string.IsNullOrEmpty(_standaloneConfigDTO.barcodeEnableQueue)
-                            && "1".Equals(_standaloneConfigDTO.barcodeEnableQueue))
-                            _messageQueueBarcode.Enqueue(messageData);
-                        else
-                            LastValidBarcode = messageData;
-                        //Console.WriteLine("ReceiveBarcode ======================================== ");
-                        _logger.LogInformation("ReceiveBarcode: ========================================");
-                        //_readEpcs.Clear();
-                    }
-                    else if (!string.IsNullOrEmpty(_standaloneConfigDTO.barcodeProcessNoDataString)
-                             && "1".Equals(_standaloneConfigDTO.barcodeProcessNoDataString)
-                             && messageData.ToUpper().Contains(_standaloneConfigDTO.barcodeTcpNoDataString.ToUpper()
-                             ))
-                    {
-                        //Console.WriteLine("ReceiveBarcode NOREAD  ======================================== ");
-                        _logger.LogInformation("ReceiveBarcode: NOREAD ========================================");
-                        //_logger.LogInformation("Events_DataReceived - setting NOREAD barcode " + messageData, SeverityType.Debug);
-                        _logger.LogInformation("ReceiveBarcode: - setting NOREAD barcode [" + messageData + "]   ");
-                        //Console.WriteLine("ReceiveBarcode - setting NOREAD barcode [" + messageData + "]");
-                        //currentBarcode = messageData;
-                        if (_standaloneConfigDTO != null
-                            && !string.IsNullOrEmpty(_standaloneConfigDTO.barcodeEnableQueue)
-                            && "1".Equals(_standaloneConfigDTO.barcodeEnableQueue))
-                            _messageQueueBarcode.Enqueue(messageData);
-                        else
-                            LastValidBarcode = messageData;
-                        //Console.WriteLine("ReceiveBarcode NOREAD  ======================================== ");
-                        _logger.LogInformation("ReceiveBarcode: NOREAD ========================================");
-                    }
+                    //Console.WriteLine("ReceiveBarcode NOREAD  ======================================== ");
+                    _logger.LogInformation("ReceiveBarcode: NOREAD ========================================");
+                    //_logger.LogInformation("Events_DataReceived - setting NOREAD barcode " + messageData, SeverityType.Debug);
+                    _logger.LogInformation("ReceiveBarcode: - setting NOREAD barcode [" + messageData + "]   ");
+                    //Console.WriteLine("ReceiveBarcode - setting NOREAD barcode [" + messageData + "]");
+                    //currentBarcode = messageData;
+                    if (_standaloneConfigDTO != null
+                        && !string.IsNullOrEmpty(_standaloneConfigDTO.barcodeEnableQueue)
+                        && "1".Equals(_standaloneConfigDTO.barcodeEnableQueue))
+                        _messageQueueBarcode.Enqueue(messageData);
                     else
-                    {
-                        //Console.WriteLine("ReceiveBarcode - ignoring [" + messageData + "] " + messageData.Length);
-                        _logger.LogInformation("ReceiveBarcode: - ignoring [" + messageData + "] " +
-                                               messageData.Length);
-                        return "";
-                    }
+                        LastValidBarcode = messageData;
+                    //Console.WriteLine("ReceiveBarcode NOREAD  ======================================== ");
+                    _logger.LogInformation("ReceiveBarcode: NOREAD ========================================");
                 }
+                else
+                {
+                    //Console.WriteLine("ReceiveBarcode ======================================== ");
+                    _logger.LogInformation("ReceiveBarcode: ========================================");
+                    _logger.LogInformation("ReceiveBarcode: - Events_DataReceived - setting barcode [" +
+                                           messageData + "]   ");
+                    //_logger.LogInformation("Events_DataReceived - setting barcode " + messageData, SeverityType.Debug);
+                    //Console.WriteLine("ReceiveBarcode - setting barcode [" + messageData + "]");
+                    _logger.LogInformation("ReceiveBarcode: - setting barcode [" + messageData + "]   ");
+                    //currentBarcode = messageData;
+                    if (_standaloneConfigDTO != null
+                        && !string.IsNullOrEmpty(_standaloneConfigDTO.barcodeEnableQueue)
+                        && "1".Equals(_standaloneConfigDTO.barcodeEnableQueue))
+                        _messageQueueBarcode.Enqueue(messageData);
+                    else
+                        LastValidBarcode = messageData;
+                    //Console.WriteLine("ReceiveBarcode ======================================== ");
+
+                    if (_standaloneConfigDTO != null 
+                        && string.Equals("1", _standaloneConfigDTO.enableExternalApiVerification)
+                                && string.Equals("1", _standaloneConfigDTO.enableValidation))
+                    {
+                        try
+                        {
+                            //_logger.LogInformation("Processing data: " + epc, SeverityType.Debug);
+                            if (_plugins != null
+                                && _plugins.Count > 0
+                                && !string.IsNullOrEmpty(_standaloneConfigDTO.activePlugin)
+                                && _plugins.ContainsKey(_standaloneConfigDTO.activePlugin)
+                                && _plugins[_standaloneConfigDTO.activePlugin].IsProcessingExternalValidation())
+                            {
+                                if(!string.IsNullOrEmpty(_standaloneConfigDTO.externalApiVerificationSearchOrderUrl))
+                                {
+                                    _expectedItems.Clear();
+                                    string[] epcArray = Array.Empty<string>();
+                                    Dictionary<string, SkuSummary> skuSummaryList = new Dictionary<string, SkuSummary>();
+                                    var itemsFromExternalApi = _plugins[_standaloneConfigDTO.activePlugin].ExternalApiSearch(LastValidBarcode, skuSummaryList, epcArray);
+                                    if (itemsFromExternalApi.Any())
+                                    {
+                                        foreach (KeyValuePair<string, int> entry in itemsFromExternalApi)
+                                        {
+                                            _expectedItems.TryAdd(entry.Key, entry.Value);
+                                        }
+                                    }
+                                    return messageData;
+                                }
+                                else if(!string.IsNullOrEmpty(_standaloneConfigDTO.externalApiVerificationAuthLoginUrl))
+                                {
+                                    try
+                                    {
+                                        _plugins[_standaloneConfigDTO.activePlugin].ExternalApiLogin();
+                                    }
+                                    catch (Exception)
+                                    {
+
+                                        
+                                    }
+                                }
+                                
+                            }
+                        }
+                        catch (Exception)
+                        {
+
+                        }
+
+                    }
+
+
+                    _logger.LogInformation("ReceiveBarcode: ========================================");
+                    //_readEpcs.Clear();
+
+                }
+            }
+
+
         }
         catch (Exception)
         {
@@ -1412,6 +1529,241 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         statusEvent.Add("component", "smartreader");
         statusEvent.Add("readerName", _standaloneConfigDTO.readerName);
+        statusEvent.Add("serialNumber", $"{_iotDeviceInterfaceClient.UniqueId}");
+        statusEvent.Add("timestamp", DateTime.Now.ToUniversalTime().ToString("o"));
+        //statusEvent.Add("timestamp", $"{currentReaderStatus.Time.Value.ToUniversalTime().ToString("o")}");
+        //statusEvent.Add("displayName", _iotDeviceInterfaceClient.DisplayName);
+        //statusEvent.Add("hostname", _iotDeviceInterfaceClient.Hostname);
+        statusEvent.Add("macAddress", _iotDeviceInterfaceClient.MacAddress);
+        try
+        {
+            var antennaPorts = _standaloneConfigDTO.antennaPorts.Split(",");
+            var antennaPortStates = _standaloneConfigDTO.antennaStates.Split(",");
+            var antennaZones = _standaloneConfigDTO.antennaZones.Split(",");
+            var txPower = _standaloneConfigDTO.transmitPower.Split(",");
+            var rxSensitivity = _standaloneConfigDTO.receiveSensitivity.Split(",");
+
+            for (int i = 0; i < antennaPorts.Length; i++)
+            {
+                var antennaStatusDescription = $"antenna{antennaPorts[i]}Enabled";
+                var currentAntennaStatus = false;
+                if (antennaPortStates[i] != "0")
+                {
+                    currentAntennaStatus = true;
+                }
+                var antennaStatusValue = $"{currentAntennaStatus}";
+                statusEvent.Add(antennaStatusDescription, antennaStatusValue);
+
+                var antennaZoneDescription = $"antenna{antennaPorts[i]}Zone";
+                var antennaZoneValue = $"{antennaZones[i]}";
+                statusEvent.Add(antennaZoneDescription, antennaZoneValue);
+
+                var antennaTxPowerDescription = $"antenna{antennaPorts[i]}TxPower";
+                double txPowerValuecDbm = 30.00;
+                double.TryParse(txPower[i], NumberStyles.Float, CultureInfo.InvariantCulture, out txPowerValuecDbm);
+                double txPowerValue = txPowerValuecDbm / 100;
+                var antennaTxPowerValue = $"{txPowerValue}";
+                statusEvent.Add(antennaTxPowerDescription, antennaTxPowerValue);
+
+                var antennaRxSensitivityDescription = $"antenna{antennaPorts[i]}RxSensitivity";
+                var antennaRxSensitivityValue = $"{rxSensitivity[i]}";
+                statusEvent.Add(antennaRxSensitivityDescription, antennaRxSensitivityValue);
+            }
+
+        }
+        catch (Exception)
+        {
+
+
+        }
+
+        try
+        {
+            if (_iotDeviceInterfaceClient.IpAddresses != null
+                && _iotDeviceInterfaceClient.IpAddresses.Any())
+            {
+                string ipAddresses = "";
+                foreach (var ipAddress in _iotDeviceInterfaceClient.IpAddresses)
+                {
+                    ipAddresses += $"{ipAddress};";
+                }
+                statusEvent.Add("ipAddresses", ipAddresses);
+            }
+            var currentReaderStatus = await _iotDeviceInterfaceClient.GetStatusAsync();
+            if (currentReaderStatus != null)
+            {
+                statusEvent.Add("status", $"{currentReaderStatus.Status.Value}");
+                if (currentReaderStatus.ActivePreset != null)
+                {
+                    statusEvent.Add("activePreset", $"{currentReaderStatus.ActivePreset.Id}");
+                }
+                else
+                {
+                    statusEvent.Add("activePreset", "");
+                }
+
+            }
+            else
+            {
+                statusEvent.Add("status", "unknown");
+            }
+        }
+        catch (Exception)
+        {
+            statusEvent.Add("status", "unknown");
+        }
+
+        try
+        {
+            var currentSystemInfo = await _iotDeviceInterfaceClient.GetSystemInfoAsync();
+            if (currentSystemInfo != null)
+            {
+                statusEvent.Add("manufacturer", $"{currentSystemInfo.Manufacturer}");
+                statusEvent.Add("productHla", $"{currentSystemInfo.ProductHla}");
+                statusEvent.Add("productModel", $"{currentSystemInfo.ProductModel}");
+                statusEvent.Add("productSku", $"{currentSystemInfo.ProductSku}");
+                statusEvent.Add("productDescription", $"{currentSystemInfo.ProductDescription}");
+            }
+        }
+        catch (Exception)
+        {
+
+        }
+
+        statusEvent.Add("isAntennaHubEnabled", $"{_iotDeviceInterfaceClient.IsAntennaHubEnabled}");
+        statusEvent.Add("readerOperatingRegion", $"{_iotDeviceInterfaceClient.ReaderOperatingRegion}");
+
+        if (string.Equals("1", _standaloneConfigDTO.siteEnabled, StringComparison.OrdinalIgnoreCase))
+        {
+            statusEvent.Add("site", _standaloneConfigDTO.site);
+        }
+
+
+
+        if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent, StringComparison.OrdinalIgnoreCase))
+        {
+            if (_gpiPortStates.ContainsKey(0))
+            {
+                if (_gpiPortStates[0])
+                    statusEvent.Add("gpi1", "1");
+                else
+                    statusEvent.Add("gpi1", "0");
+            }
+
+            if (_gpiPortStates.ContainsKey(1) && _gpiPortStates[1])
+            {
+                if (_gpiPortStates[1])
+                    statusEvent.Add("gpi2", "1");
+                else
+                    statusEvent.Add("gpi2", "0");
+            }
+        }
+
+
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.customField1Enabled)
+            && string.Equals("1", _standaloneConfigDTO.customField1Enabled, StringComparison.OrdinalIgnoreCase))
+        {
+            statusEvent.Add(_standaloneConfigDTO.customField1Name, _standaloneConfigDTO.customField1Value);
+        }
+
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.customField2Enabled)
+            && string.Equals("1", _standaloneConfigDTO.customField2Enabled, StringComparison.OrdinalIgnoreCase))
+        {
+            statusEvent.Add(_standaloneConfigDTO.customField2Name, _standaloneConfigDTO.customField2Value);
+        }
+
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.customField3Enabled)
+            && string.Equals("1", _standaloneConfigDTO.customField3Enabled, StringComparison.OrdinalIgnoreCase))
+        {
+            statusEvent.Add(_standaloneConfigDTO.customField3Name, _standaloneConfigDTO.customField3Value);
+        }
+
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.customField4Enabled)
+            && string.Equals("1", _standaloneConfigDTO.customField4Enabled, StringComparison.OrdinalIgnoreCase))
+        {
+            statusEvent.Add(_standaloneConfigDTO.customField4Name, _standaloneConfigDTO.customField4Value);
+        }
+
+        var jsonData = JsonConvert.SerializeObject(statusEvent);
+        var dataToPublish = JObject.Parse(jsonData);
+
+        //if (string.Equals("1", _standaloneConfigDTO.httpPostEnabled, StringComparison.OrdinalIgnoreCase))
+        //    try
+        //    {
+        //        _messageQueueTagSmartReaderTagEventHttpPost.Enqueue(dataToPublish);
+        //    }
+        //    catch (Exception)
+        //    {
+        //    }
+
+        //if (string.Equals("1", _standaloneConfigDTO.socketServer, StringComparison.OrdinalIgnoreCase))
+        //    try
+        //    {
+        //        _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(dataToPublish);
+        //    }
+        //    catch (Exception)
+        //    {
+        //    }
+
+        //if (string.Equals("1", _standaloneConfigDTO.usbFlashDrive, StringComparison.OrdinalIgnoreCase))
+        //    try
+        //    {
+        //        _messageQueueTagSmartReaderTagEventUsbDrive.Enqueue(dataToPublish);
+        //    }
+        //    catch (Exception)
+        //    {
+        //    }
+
+
+        if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var mqttManagementEventsTopic = _standaloneConfigDTO.mqttManagementEventsTopic;
+                if (!string.IsNullOrEmpty(mqttManagementEventsTopic))
+                    if (mqttManagementEventsTopic.Contains("{{deviceId}}"))
+                        mqttManagementEventsTopic =
+                            mqttManagementEventsTopic.Replace("{{deviceId}}", _standaloneConfigDTO.readerName);
+                var qos = 0;
+                var retain = false;
+                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                try
+                {
+                    int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
+                    bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
+
+                    mqttQualityOfServiceLevel = qos switch
+                    {
+                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                        _ => MqttQualityOfServiceLevel.AtMostOnce
+                    };
+                }
+                catch (Exception)
+                {
+                }
+
+
+                //_messageQueueTagSmartReaderTagEventMqtt.Enqueue(dataToPublish);
+                var mqttCommandResponseTopic = $"{mqttManagementEventsTopic}";
+                var serializedData = JsonConvert.SerializeObject(dataToPublish);
+                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+    }
+
+    private async void ProcessAppStatusDetailed()
+    {
+        Dictionary<string, string> statusEvent = new Dictionary<string, string>();
+
+        statusEvent.Add("eventType", "status");
+
+        statusEvent.Add("component", "smartreader");
+        statusEvent.Add("readerName", _standaloneConfigDTO.readerName);
         //statusEvent.Add("serialNumber", $"{_iotDeviceInterfaceClient.UniqueId}");
         statusEvent.Add("timestamp", DateTime.Now.ToUniversalTime().ToString("o"));
         //statusEvent.Add("timestamp", $"{currentReaderStatus.Time.Value.ToUniversalTime().ToString("o")}");
@@ -1830,7 +2182,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             dataToPublish.Add(newPropertyData);
         }
 
-        if (string.Equals("1", _standaloneConfigDTO.httpPostEnabled, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals("1", _standaloneConfigDTO.httpPostEnabled, StringComparison.OrdinalIgnoreCase) 
+            && !string.IsNullOrEmpty(_standaloneConfigDTO.httpPostURL))
             try
             {
                 _messageQueueTagSmartReaderTagEventHttpPost.Enqueue(dataToPublish);
@@ -1858,7 +2211,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
 
 
-        if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase) )
             try
             {
                 var mqttManagementEventsTopic = _standaloneConfigDTO.mqttManagementEventsTopic;
@@ -2510,21 +2863,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     {
         try
         {
-            try
-            {
-                if (string.Equals("1", _standaloneConfigDTO.enableValidation, StringComparison.OrdinalIgnoreCase))
-                    if (string.Equals("1", _standaloneConfigDTO.requireUniqueProductCode,
-                            StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (_currentSkus.Keys.Count > 1)
-                            _ = SetGpoPortValidationAsync(false);
-                        else if (_currentSkus.Keys.Count == 0 || _currentSkus.Keys.Count == 1)
-                            _ = SetGpoPortValidationAsync(true);
-                    }
-            }
-            catch (Exception)
-            {
-            }
+            var dataListToPublish = _messageQueueTagSmartReaderTagEventGroupToValidate.ToArray().ToList();
+            _messageQueueTagSmartReaderTagEventGroupToValidate.Clear();
+
+            
 
             _logger.LogInformation("ProcessBarcodeQueue -  =============================================");
             _logger.LogInformation("ProcessBarcodeQueue - Processing barcode...");
@@ -2550,10 +2892,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _logger.LogInformation("ProcessBarcodeQueue - using barcode [" + barcode + "]");
             //dataToPublish.Add(newPropertyData);
             _logger.LogInformation(
-                "ProcessValidationTagQueue - _messageQueueTagSmartReaderTagEventGroupToValidate events size [" +
-                _messageQueueTagSmartReaderTagEventGroupToValidate.Count + "]");
+                "ProcessValidationTagQueue - dataListToPublish events size [" +
+                dataListToPublish.Count + "]");
             var skuSummaryList = new Dictionary<string, SkuSummary>();
-            if (_messageQueueTagSmartReaderTagEventGroupToValidate.Count == 0)
+            if (dataListToPublish.Count == 0)
             {
                 _logger.LogInformation(
                     "ProcessBarcodeQueue - NO DATA FOUND TO PROCESS, processing empty event to barcode [" + barcode +
@@ -2579,8 +2921,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 return;
             }
 
-            var dataListToPublish = _messageQueueTagSmartReaderTagEventGroupToValidate.ToArray().ToList();
-            _messageQueueTagSmartReaderTagEventGroupToValidate.Clear();
+            
             //_readEpcs.Clear();
             _logger.LogInformation("ProcessValidationTagQueue - Processing data [" + dataListToPublish.Count +
                                    "] barcode [" + barcode + "]");
@@ -2892,6 +3233,187 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 shouldPublish = true;
                             }
 
+                            try
+                            {
+                                bool isValidated = false;
+
+
+
+                                if (string.Equals("1", _standaloneConfigDTO.enableValidation, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    if (string.Equals("1", _standaloneConfigDTO.requireUniqueProductCode,
+                                            StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        if (skuSummaryList.Keys.Count > 1)
+                                            isValidated = false;
+                                        else if (skuSummaryList.Keys.Count == 0 || skuSummaryList.Keys.Count == 1)
+                                            isValidated = true;
+                                    }
+
+
+                                }
+
+                                if (string.Equals("1", _standaloneConfigDTO.enableExternalApiVerification,
+                                            StringComparison.OrdinalIgnoreCase)
+                                    && _expectedItems.Count > 0
+                                    && string.Equals("1", _standaloneConfigDTO.enableValidation, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    var skusToValidate = new ConcurrentDictionary<string, int>();
+
+                                    foreach (KeyValuePair<string, SkuSummary> skuEntry in skuSummaryList)
+                                    {
+                                        try
+                                        {
+                                            skusToValidate.TryAdd(skuEntry.Key, unchecked((int)skuEntry.Value.Qty.Value));
+                                        }
+                                        catch (Exception ex)
+                                        {
+
+                                            _logger.LogError(ex, "ValidateCurrentProductContent error (skusToValidate). ");
+                                        }
+                                        
+                                    }
+
+                                    if (_plugins != null
+                                                        && _plugins.Count > 0
+                                                        && !string.IsNullOrEmpty(_standaloneConfigDTO.activePlugin)
+                                                        && _plugins.ContainsKey(_standaloneConfigDTO.activePlugin)
+                                                        && _plugins[_standaloneConfigDTO.activePlugin].IsProcessingExternalValidation())
+                                    {
+                                        isValidated = _plugins[_standaloneConfigDTO.activePlugin].ValidateCurrentProductContent(_expectedItems, skusToValidate);
+                                    }
+                                    else
+                                    {
+                                        try
+                                        {
+                                            if (_expectedItems.Any())
+                                            {
+                                                _logger.LogInformation($"ValidateCurrentProductContent - Starting validation: {_expectedItems.Count} expected SKUs, {skusToValidate.Count} SKUs read. ");
+
+                                                foreach (KeyValuePair<string, int> entry in _expectedItems)
+                                                {
+
+                                                    try
+                                                    {
+                                                        _logger.LogInformation($"ValidateCurrentProductContent - SKU:{entry.Key}");
+                                                        if (skusToValidate.ContainsKey(entry.Key))
+                                                        {
+                                                            _logger.LogInformation($"ValidateCurrentProductContent - SKU:{entry.Key}, {entry.Value} , {skusToValidate[entry.Key]}");
+                                                            if (entry.Value != skusToValidate[entry.Key])
+                                                            {
+                                                                _logger.LogError($"ValidateCurrentProductContent - SKU: {entry.Key}, qty error {entry.Value} vs {skusToValidate[entry.Key]}.");
+                                                                isValidated = false;
+                                                                break;
+                                                            }
+                                                        }
+                                                        else
+                                                        {
+                                                            _logger.LogError($"ValidateCurrentProductContent - error: {entry.Key} not found on read items.");
+                                                            isValidated = false;
+                                                            break;
+                                                        }
+                                                    }
+                                                    catch (Exception ex)
+                                                    {
+                                                        _logger.LogError(ex, "ValidateCurrentProductContent error. ");
+                                                        isValidated = false;
+                                                    }
+
+
+                                                }
+                                                if (_expectedItems.Count != skusToValidate.Count)
+                                                {
+                                                    _logger.LogError($"ValidateCurrentProductContent - Expected: {_expectedItems.Count}  Found: {skusToValidate.Count}.");
+                                                    isValidated = false;
+                                                }
+
+                                                if (_expectedItems.Keys.Except(skusToValidate.Keys).Any())
+                                                {
+                                                    _logger.LogError($"ValidateCurrentProductContent - SKU divergency.");
+                                                    isValidated = false;
+                                                }
+
+                                                if (skusToValidate.Keys.Except(_expectedItems.Keys).Any())
+                                                {
+                                                    _logger.LogError($"ValidateCurrentProductContent - SKU divergency..");
+                                                    isValidated = false;
+                                                }
+
+                                            }
+                                            else
+                                            {
+                                                _logger.LogError($"ValidateCurrentProductContent - Expected content was not found.");
+                                                isValidated = false;
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            _logger.LogError(ex, "ValidateCurrentProductContent error. ");
+                                            isValidated = false;
+
+                                        }
+                                    }
+
+
+                                    //int detected = _currentSkus.Values.Sum();
+                                    //int exptected = _expectedItems.Values.Sum();
+
+                                    //if (detected != exptected)
+                                    //{
+                                    //    isValidated = false;
+                                    //}
+                                    //else
+                                    //{
+                                    //    isValidated = true;
+                                    //}
+                                }
+
+
+
+
+                                if (string.Equals("1", _standaloneConfigDTO.enableValidation, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    if (isValidated)
+                                    {
+                                        _ = SetGpoPortValidationAsync(true);
+                                    }
+                                    else
+                                    {
+                                        _ = SetGpoPortValidationAsync(false);
+                                    }
+                                }
+
+                            }
+                            catch (Exception)
+                            {
+                            }
+
+                            if (string.Equals("1", _standaloneConfigDTO.enableExternalApiVerification)
+                                && string.Equals("1", _standaloneConfigDTO.enableValidation))
+                            {
+
+                                try
+                                {
+                                    //_logger.LogInformation("Processing data: " + epc, SeverityType.Debug);
+                                    if (_plugins != null
+                                        && _plugins.Count > 0
+                                        && !string.IsNullOrEmpty(_standaloneConfigDTO.activePlugin)
+                                        && _plugins.ContainsKey(_standaloneConfigDTO.activePlugin)
+                                        && _plugins[_standaloneConfigDTO.activePlugin].IsProcessingExternalValidation())
+                                    {
+                                        _logger.LogInformation("Publishing data to external API...");
+                                        string[] epcArray = Array.Empty<string>();
+                                        _plugins[_standaloneConfigDTO.activePlugin].ExternalApiPublish(barcode, skuSummaryList , epcArray);
+                                        return;
+                                    }
+                                }
+                                catch (Exception)
+                                {
+
+                                }
+                                
+                            }
+
                             if (shouldPublish) EnqueueToExternalPublishers(smartReaderTagReadEventAggregated);
                         }
                         catch (Exception ex)
@@ -2916,7 +3438,21 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
         }
 
-        _currentSkus.Clear();
+        try
+        {
+            _logger.LogInformation(
+                "ProcessValidationTagQueue - Final Check: _messageQueueTagSmartReaderTagEventGroupToValidate events size [" +
+                _messageQueueTagSmartReaderTagEventGroupToValidate.Count + "]");
+            _currentSkus.Clear();
+            _currentSkuReadEpcs.Clear();
+            _messageQueueTagSmartReaderTagEventGroupToValidate.Clear();
+        }
+        catch (Exception)
+        {
+
+
+        }
+        
     }
 
     private async void OnRunPeriodicTagFilterListsEvent(object sender, ElapsedEventArgs e)
@@ -3203,7 +3739,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     //_stopwatchKeepalive.Reset();
                     _stopwatchKeepalive.Restart();
                     //ProcessKeepalive();
-                    Task.Run(() => { ProcessKeepalive(); });                  
+                    Task.Run(() => { ProcessKeepalive(); });
                 }
             }
 
@@ -4850,13 +5386,19 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             try
             {
                 var licenseToSet = "";
-                try
+                if (_plugins != null
+                       && _plugins.Count > 0
+                       && !_plugins.ContainsKey("LICENSE"))
                 {
-                    licenseToSet = GetLicenseFromDb().Result;
+                    try
+                    {
+                        licenseToSet = GetLicenseFromDb().Result;
+                    }
+                    catch (Exception)
+                    {
+                    }
                 }
-                catch (Exception)
-                {
-                }
+                
 
                 try
                 {
@@ -5538,7 +6080,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         SaveConfigDtoToDb(_standaloneConfigDTO);
                         await Task.Delay(1000);
                     }
-
+                    
                     if (_readerRegionInfo.Result.OperatingRegion.ToUpper().Contains("ETSI"))
                         if (_standaloneConfigDTO != null
                             && !string.IsNullOrEmpty(_standaloneConfigDTO.readerMode)
@@ -5560,6 +6102,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             SaveConfigDtoToDb(_standaloneConfigDTO);
                             //await Task.Delay(1000);
                         }
+
+                    try
+                    {
+                        DeviceId = _iotDeviceInterfaceClient.GetStatusAsync().Result.SerialNumber;
+                    }
+                    catch (Exception)
+                    {
+
+                        
+                    }
                 }
             }
             catch (Exception)
@@ -5702,7 +6254,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                 var baudrate = int.Parse(_standaloneConfigDTO.baudRate);
                 _serial_tty = new SerialPort(serialPortName, baudrate);
-                _serial_tty.DataReceived += SerialDataReceivedHandler;
+                _serial_tty.DataReceived += BarcodeSerialDataReceivedHandler;
                 if (!_serial_tty.IsOpen)
                     try
                     {
@@ -5779,6 +6331,83 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
             }
 
+            try
+            {
+                if(_standaloneConfigDTO != null
+                    && string.Equals("1", _standaloneConfigDTO.enablePlugin, StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        var pluginLoaders = new List<PluginLoader>();
+
+                        // create plugin loaders
+                        var pluginsDir = Path.Combine(AppContext.BaseDirectory, "plugins");
+                        var files = Directory.GetFiles(pluginsDir);
+                        if(files != null && files.Any())
+                        {
+                            foreach (var file in files)
+                            {
+                                if (file.EndsWith(".dll"))
+                                {
+                                    //var dirName = Path.GetFileName(file);
+                                    //var pluginDll = Path.Combine(dirName, file + ".dll");
+                                    var pluginDll = file;
+                                    if (File.Exists(pluginDll))
+                                    {
+                                        var loader = PluginLoader.CreateFromAssemblyFile(
+                                            pluginDll,
+                                            sharedTypes: new[] { typeof(IPlugin) });
+                                        pluginLoaders.Add(loader);
+                                    }
+                                }
+
+                            }
+
+                            // Create an instance of plugin types
+                            foreach (var loader in pluginLoaders)
+                            {
+
+                                foreach (var pluginType in loader
+                                    .LoadDefaultAssembly()
+                                    .GetTypes()
+                                    .Where(t => typeof(IPlugin).IsAssignableFrom(t) && !t.IsAbstract))
+                                {
+                                    try
+                                    {
+                                        // This assumes the implementation of IPlugin has a parameterless constructor
+                                        var plugin = Activator.CreateInstance(pluginType) as IPlugin;
+
+                                        //Console.WriteLine($"Created plugin instance '{plugin?.GetName()}'.");
+                                        _logger.LogInformation($"Created plugin instance '{plugin?.GetName()}'.");
+                                        _logger.LogInformation($"Details: '{plugin?.GetDescription()}'.");
+                                        _logger.LogInformation($"DeviceId: '{DeviceId}'.");
+                                        plugin.SetDeviceId(DeviceId);
+                                        plugin.Init();
+                                        _plugins.Add(plugin?.GetName(), plugin);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogError(ex, "Plugin Activator: unexpected error.");
+                                    }
+                                }
+                            }
+                        }
+                        
+                    }
+                    catch (Exception ex)
+                    {
+
+                        _logger.LogError(ex, "Plugin Activator: unexpected error.");
+                    }
+                    
+                }
+                
+            }
+            catch (Exception ex)
+            {
+
+                _logger.LogError(ex, "Plugin Activator: unexpected error.");
+            }
 
             _timerTagFilterLists.Elapsed += OnRunPeriodicTagFilterListsEvent;
             _timerTagFilterLists.Interval = 100;
@@ -5851,6 +6480,31 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         throw new NotImplementedException();
     }
 
+    private void BarcodeSerialDataReceivedHandler(object sender, SerialDataReceivedEventArgs e)
+    {
+        try
+        {
+            var sp = (SerialPort)sender;
+
+            var bytesToRead = sp.BytesToRead;
+            var bytes = new byte[bytesToRead];
+
+            sp.Read(bytes, 0, bytesToRead);
+            var messageData = Encoding.ASCII.GetString(bytes);
+
+            sp.DiscardInBuffer();
+            sp.DiscardOutBuffer();
+            //string messageData = sp.ReadExisting();
+            var receivedBarcode = ReceiveBarcode(messageData);
+            if ("".Equals(receivedBarcode))
+                _logger.LogInformation("BarcodeSerialDataReceivedHandler - ignoring [" + messageData + "] ");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "BarcodeSerialDataReceivedHandler: unexpected error.");
+        }
+    }
+
     private void SerialDataReceivedHandler(object sender, SerialDataReceivedEventArgs e)
     {
         try
@@ -5873,7 +6527,100 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "SerialDataReceivedHandler: unexpected error.");
-            //_logger.LogInformation("SerialDataReceivedHandler: unexpected error. " + ex.Message, SeverityType.Error);
+        }
+    }
+
+    private void GpsSerialDataReceivedHandler(object sender, SerialDataReceivedEventArgs e)
+    {
+        try
+        {
+            var sp = (SerialPort)sender;
+
+            var bytesToRead = sp.BytesToRead;
+            //var bytes = new byte[bytesToRead];
+
+            //sp.Read(bytes, 0, bytesToRead);
+            //var messageData = Encoding.ASCII.GetString(bytes);
+
+            //sp.DiscardInBuffer();
+            //sp.DiscardOutBuffer();
+            ////string messageData = sp.ReadExisting();
+            //var receivedBarcode = ReceiveBarcode(messageData);
+            //if ("".Equals(receivedBarcode))
+            //    _logger.LogInformation("SerialDataReceivedHandler - ignoring [" + messageData + "] ");
+
+            string line = sp.ReadLine();
+            // Read a line of data from the serial port.
+
+            if ("".Equals(line))
+                _logger.LogInformation("GpsSerialDataReceivedHandler - ignoring [" + line + "] ");
+
+            if (line.StartsWith("$GPGGA"))
+            {
+                string[] parts = line.Split(',');
+                // Split the line into an array of strings using a comma as the delimiter.
+
+
+
+                if (parts.Length >= 12)
+                {
+                    string lat = parts[2];
+                    string latDir = parts[3];
+                    string lon = parts[4];
+                    string lonDir = parts[5];
+                    int altitude = int.Parse(parts[9]);
+                    // Extract the latitude, longitude, and altitude from the parts array.
+
+
+
+                    if (lat != "" && lon != "")
+                    {
+                        double latDegrees = double.Parse(lat.Substring(0, 2));
+                        double latMinutes = double.Parse(lat.Substring(2));
+                        double latDecimal = latDegrees + latMinutes / 60;
+                        if (latDir == "S")
+                        {
+                            latDecimal = -latDecimal;
+                        }
+                        // Convert the latitude from NMEA format to decimal degrees.
+
+
+
+                        double lonDegrees = double.Parse(lon.Substring(0, 3));
+                        double lonMinutes = double.Parse(lon.Substring(3));
+                        double lonDecimal = lonDegrees + lonMinutes / 60;
+                        if (lonDir == "W")
+                        {
+                            lonDecimal = -lonDecimal;
+                        }
+                        // Convert the longitude from NMEA format to decimal degrees.
+
+
+
+                        // DateTime timestamp = DateTime.UtcNow;
+                        // Get the current UTC time.
+
+
+
+                        string json = JsonConvert.SerializeObject(new { latitude = latDecimal, longitude = lonDecimal, altitude = altitude });
+                        // Create a JSON object with the latitude, longitude, altitude, and timestamp, and serialize it to a JSON string.
+
+
+
+                        _logger.LogInformation(json);
+                        // Print the JSON string to the console.
+                    }
+                }
+            }
+            else
+            {
+                _logger.LogError("Invalid NMEA sentence: " + line);
+                // If the NMEA sentence is not in the expected format, print an error message to the console.
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GpsSerialDataReceivedHandler: unexpected error.");
         }
     }
 
@@ -6228,743 +6975,820 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 try
                 {
                     //var deserializedCmdData = JsonDocument.Parse(mqttMessage);
-                    var deserializedCmdData = JsonConvert.DeserializeObject<JObject>(mqttMessage);
-                    if (deserializedCmdData != null)
-                        if (deserializedCmdData.ContainsKey("command"))
-                        {
-                            var commandStatus = "success";
-                            var commandValue = deserializedCmdData["command"].Value<string>();
-                            try
+                    if(mqttMessage.StartsWith("{") && !mqttMessage.Contains("antennaFilter"))
+                    {
+                        var deserializedCmdData = JsonConvert.DeserializeObject<JObject>(mqttMessage);
+                        if (deserializedCmdData != null)
+                            if (deserializedCmdData.ContainsKey("command"))
                             {
-                                if (deserializedCmdData.ContainsKey("command_id"))
+                                var commandStatus = "success";
+                                var commandValue = deserializedCmdData["command"].Value<string>();
+                                try
                                 {
-                                    var previousCommandId = ReadMqttCommandIdFromFile().Result;
-                                    var commandIdValue = deserializedCmdData["command_id"].Value<string>();
-                                    if (!string.IsNullOrEmpty(commandIdValue))
+                                    if (deserializedCmdData.ContainsKey("command_id"))
                                     {
-                                        WriteMqttCommandIdToFile(commandIdValue);
-                                        if (!string.IsNullOrEmpty(previousCommandId))
-                                            if (previousCommandId.Trim().Equals(commandIdValue.Trim()))
-                                            {
-                                                commandStatus = "error";
-                                                if (!string.IsNullOrEmpty(_standaloneConfigDTO
-                                                        .mqttManagementResponseTopic))
-                                                    if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains(
-                                                            "{{deviceId}}"))
-                                                        _standaloneConfigDTO.mqttManagementResponseTopic =
-                                                            _standaloneConfigDTO.mqttManagementResponseTopic.Replace(
-                                                                "{{deviceId}}", _standaloneConfigDTO.readerName);
-
-                                                if (deserializedCmdData.ContainsKey("response"))
-                                                {
-                                                    deserializedCmdData["response"] = commandStatus;
-                                                }
-                                                else
-                                                {
-                                                    var commandResponse = new JProperty("response", commandStatus);
-                                                    deserializedCmdData.Add(commandResponse);
-                                                }
-
-                                                var payloadCommandStatus = new Dictionary<string, string>();
-                                                payloadCommandStatus.Add("detail",
-                                                    $"command_id {commandIdValue} already processed.");
-                                                if (deserializedCmdData.ContainsKey("message"))
-                                                {
-                                                    deserializedCmdData["message"] =
-                                                        JObject.FromObject(payloadCommandStatus);
-                                                }
-                                                else
-                                                {
-                                                    var commandResponsePayload = new JProperty("message",
-                                                        JObject.FromObject(payloadCommandStatus));
-                                                    deserializedCmdData.Add(commandResponsePayload);
-                                                }
-
-                                                var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
-
-                                                var qos = 0;
-                                                var retain = false;
-                                                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
-                                                try
-                                                {
-                                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS,
-                                                        out qos);
-                                                    bool.TryParse(
-                                                        _standaloneConfigDTO.mqttManagementResponseRetainMessages,
-                                                        out retain);
-
-                                                    mqttQualityOfServiceLevel = qos switch
-                                                    {
-                                                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
-                                                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
-                                                        _ => MqttQualityOfServiceLevel.AtMostOnce
-                                                    };
-                                                }
-                                                catch (Exception)
-                                                {
-                                                }
-
-                                                var mqttCommandResponseTopic =
-                                                    $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                                _mqttClient.PublishAsync(mqttCommandResponseTopic,
-                                                    serializedData, mqttQualityOfServiceLevel, retain);
-                                                return;
-                                            }
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Unexpected error");
-                            }
-
-
-                            if ("start".Equals(commandValue))
-                            {
-                                try
-                                {
-                                    //StartPresetAsync();
-                                    //_ = StartTasksAsync();
-                                    //SaveStartCommandToDb();
-                                    SaveStartPresetCommandToDb();
-                                }
-                                catch (Exception e)
-                                {
-                                    commandStatus = "error";
-                                    _logger.LogError(e, "Unexpected error");
-                                }
-
-                                if (deserializedCmdData.ContainsKey("response"))
-                                {
-                                    deserializedCmdData["response"] = commandStatus;
-                                }
-                                else
-                                {
-                                    var commandResponse = new JProperty("response", commandStatus);
-                                    deserializedCmdData.Add(commandResponse);
-                                }
-
-                                var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
-
-                                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
-                                    if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
-                                        _standaloneConfigDTO.mqttManagementResponseTopic =
-                                            _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
-                                                _standaloneConfigDTO.readerName);
-                                var qos = 0;
-                                var retain = false;
-                                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
-                                try
-                                {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
-                                        out retain);
-
-                                    mqttQualityOfServiceLevel = qos switch
-                                    {
-                                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
-                                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
-                                        _ => MqttQualityOfServiceLevel.AtMostOnce
-                                    };
-                                }
-                                catch (Exception)
-                                {
-                                }
-
-                                var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
-                            }
-                            else if ("stop".Equals(commandValue))
-                            {
-                                try
-                                {
-                                    //StopPresetAsync();
-                                    //_ = StopTasksAsync();
-                                    //SaveStopCommandToDb();
-                                    SaveStopPresetCommandToDb();
-                                }
-                                catch (Exception e)
-                                {
-                                    commandStatus = "error";
-                                    _logger.LogError(e, "Unexpected error");
-                                }
-
-                                if (deserializedCmdData.ContainsKey("response"))
-                                {
-                                    deserializedCmdData["response"] = commandStatus;
-                                }
-                                else
-                                {
-                                    var commandResponse = new JProperty("response", commandStatus);
-                                    deserializedCmdData.Add(commandResponse);
-                                }
-
-                                var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
-
-                                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
-                                    if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
-                                        _standaloneConfigDTO.mqttManagementResponseTopic =
-                                            _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
-                                                _standaloneConfigDTO.readerName);
-                                var qos = 0;
-                                var retain = false;
-                                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
-                                try
-                                {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
-                                        out retain);
-
-                                    mqttQualityOfServiceLevel = qos switch
-                                    {
-                                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
-                                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
-                                        _ => MqttQualityOfServiceLevel.AtMostOnce
-                                    };
-                                }
-                                catch (Exception)
-                                {
-                                }
-
-                                var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
-
-
-                            }
-                            else if ("status".Equals(commandValue))
-                            {
-                                try
-                                {
-                                    ProcessAppStatus();
-                                }
-                                catch (Exception e)
-                                {
-                                    commandStatus = "error";
-                                    _logger.LogError(e, "Unexpected error");
-                                }
-
-                                if (deserializedCmdData.ContainsKey("response"))
-                                {
-                                    deserializedCmdData["response"] = commandStatus;
-                                }
-                                else
-                                {
-                                    var commandResponse = new JProperty("response", commandStatus);
-                                    deserializedCmdData.Add(commandResponse);
-                                }
-
-                                var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
-
-                                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
-                                    if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
-                                        _standaloneConfigDTO.mqttManagementResponseTopic =
-                                            _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
-                                                _standaloneConfigDTO.readerName);
-                                var qos = 0;
-                                var retain = false;
-                                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
-                                try
-                                {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
-                                        out retain);
-
-                                    mqttQualityOfServiceLevel = qos switch
-                                    {
-                                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
-                                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
-                                        _ => MqttQualityOfServiceLevel.AtMostOnce
-                                    };
-                                }
-                                catch (Exception)
-                                {
-                                }
-
-                                var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
-
-
-                            }
-                            else if ("reboot".Equals(commandValue))
-                            {
-                                var resultPayload = "";
-                                try
-                                {
-                                    resultPayload = CallIotRestFulInterface(mqttMessage, "/system/reboot", "POST",
-                                        $"{_standaloneConfigDTO.mqttManagementResponseTopic}", false);
-                                }
-                                catch (Exception e)
-                                {
-                                    commandStatus = "error";
-                                    _logger.LogError(e, "Unexpected error");
-                                }
-
-                                if (deserializedCmdData.ContainsKey("payload"))
-                                {
-                                    deserializedCmdData["payload"] = JObject.Parse(resultPayload);
-                                }
-                                else
-                                {
-                                    var commandResponsePayload = new JProperty("payload", JObject.Parse(resultPayload));
-                                    deserializedCmdData.Add(commandResponsePayload);
-                                }
-
-                                if (deserializedCmdData.ContainsKey("response"))
-                                {
-                                    deserializedCmdData["response"] = commandStatus;
-                                }
-                                else
-                                {
-                                    var commandResponse = new JProperty("response", commandStatus);
-                                    deserializedCmdData.Add(commandResponse);
-                                }
-
-                                var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
-
-                                //var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttCommandTopic}/response";
-                                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
-                                    if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
-                                        _standaloneConfigDTO.mqttManagementResponseTopic =
-                                            _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
-                                                _standaloneConfigDTO.readerName);
-                                var qos = 0;
-                                var retain = false;
-                                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
-                                try
-                                {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
-                                        out retain);
-
-                                    mqttQualityOfServiceLevel = qos switch
-                                    {
-                                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
-                                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
-                                        _ => MqttQualityOfServiceLevel.AtMostOnce
-                                    };
-                                }
-                                catch (Exception)
-                                {
-                                }
-
-                                var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
-                            }
-                            else if ("mode".Equals(commandValue))
-                            {
-                                var modeCmdResult = "success";
-                                try
-                                {
-                                    if (deserializedCmdData.ContainsKey("payload"))
-                                        try
+                                        var previousCommandId = ReadMqttCommandIdFromFile().Result;
+                                        var commandIdValue = deserializedCmdData["command_id"].Value<string>();
+                                        if (!string.IsNullOrEmpty(commandIdValue))
                                         {
-                                            modeCmdResult = ProcessModeJsonCommand(mqttMessage);
-                                            if (!"success".Equals(modeCmdResult)) commandStatus = "error";
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            commandStatus = "error";
-                                            _logger.LogError(ex, "Unexpected error");
-                                        }
-                                }
-                                catch (Exception e)
-                                {
-                                    commandStatus = "error";
-                                    _logger.LogError(e, "Unexpected error");
-                                }
-
-                                if (deserializedCmdData.ContainsKey("response"))
-                                {
-                                    deserializedCmdData["response"] = commandStatus;
-                                }
-                                else
-                                {
-                                    var commandResponse = new JProperty("response", commandStatus);
-                                    deserializedCmdData.Add(commandResponse);
-                                }
-
-                                if (deserializedCmdData.ContainsKey("message"))
-                                {
-                                    deserializedCmdData["message"] = modeCmdResult;
-                                }
-                                else
-                                {
-                                    var commandResponse = new JProperty("message", modeCmdResult);
-                                    deserializedCmdData.Add(commandResponse);
-                                }
-
-                                var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
-
-                                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
-                                    if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
-                                        _standaloneConfigDTO.mqttManagementResponseTopic =
-                                            _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
-                                                _standaloneConfigDTO.readerName);
-                                var qos = 0;
-                                var retain = false;
-                                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
-                                try
-                                {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
-                                        out retain);
-
-                                    mqttQualityOfServiceLevel = qos switch
-                                    {
-                                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
-                                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
-                                        _ => MqttQualityOfServiceLevel.AtMostOnce
-                                    };
-                                }
-                                catch (Exception)
-                                {
-                                }
-
-                                var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
-                                //if ("success".Equals(commandStatus))
-                                //{
-                                //    // exits the app to reload the settings
-                                //    Task.Delay(3000);
-                                //    Environment.Exit(0);
-                                //}
-                            }
-                            else if ("retrieve-settings".Equals(commandValue))
-                            {
-                                var resultPayload = "";
-                                try
-                                {
-                                    resultPayload = JsonConvert.SerializeObject(_standaloneConfigDTO);
-                                }
-                                catch (Exception e)
-                                {
-                                    commandStatus = "error";
-                                    _logger.LogError(e, "Unexpected error");
-                                }
-
-                                if (deserializedCmdData.ContainsKey("payload"))
-                                {
-                                    deserializedCmdData["payload"] = JObject.Parse(resultPayload);
-                                }
-                                else
-                                {
-                                    var commandResponsePayload = new JProperty("payload", JObject.Parse(resultPayload));
-                                    deserializedCmdData.Add(commandResponsePayload);
-                                }
-
-                                if (deserializedCmdData.ContainsKey("response"))
-                                {
-                                    deserializedCmdData["response"] = commandStatus;
-                                }
-                                else
-                                {
-                                    var commandResponse = new JProperty("response", commandStatus);
-                                    deserializedCmdData.Add(commandResponse);
-                                }
-
-                                var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
-
-                                //var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttCommandTopic}/response";
-                                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
-                                    if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
-                                        _standaloneConfigDTO.mqttManagementResponseTopic =
-                                            _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
-                                                _standaloneConfigDTO.readerName);
-                                var qos = 0;
-                                var retain = false;
-                                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
-                                try
-                                {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
-                                        out retain);
-
-                                    mqttQualityOfServiceLevel = qos switch
-                                    {
-                                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
-                                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
-                                        _ => MqttQualityOfServiceLevel.AtMostOnce
-                                    };
-                                }
-                                catch (Exception)
-                                {
-                                }
-
-                                var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
-                            }
-                            else if ("apply-settings".Equals(commandValue))
-                            {
-                                var resultPayload = "";
-
-                                if (deserializedCmdData.ContainsKey("payload"))
-                                {
-                                    var commandPayloadJObject =
-                                        deserializedCmdData["payload"].Value<StandaloneConfigDTO>();
-                                    if (commandPayloadJObject != null)
-                                        try
-                                        {
-                                            SaveConfigDtoToDb(commandPayloadJObject);
-                                        }
-                                        catch (Exception e)
-                                        {
-                                            commandStatus = "error";
-                                            _logger.LogError(e, "Unexpected error");
-                                        }
-                                }
-
-                                if (deserializedCmdData.ContainsKey("response"))
-                                {
-                                    deserializedCmdData["response"] = commandStatus;
-                                }
-                                else
-                                {
-                                    var commandResponse = new JProperty("response", commandStatus);
-                                    deserializedCmdData.Add(commandResponse);
-                                }
-
-                                var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
-
-                                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
-                                    if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
-                                        _standaloneConfigDTO.mqttManagementResponseTopic =
-                                            _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
-                                                _standaloneConfigDTO.readerName);
-                                var qos = 0;
-                                var retain = false;
-                                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
-                                try
-                                {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
-                                        out retain);
-
-                                    mqttQualityOfServiceLevel = qos switch
-                                    {
-                                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
-                                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
-                                        _ => MqttQualityOfServiceLevel.AtMostOnce
-                                    };
-                                }
-                                catch (Exception)
-                                {
-                                }
-
-                                var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
-                            }
-                            else if ("upgrade".Equals(commandValue))
-                            {
-                                try
-                                {
-                                    if (deserializedCmdData.ContainsKey("payload"))
-                                    {
-                                        var remoteUrl = _standaloneConfigDTO.systemImageUpgradeUrl;
-                                        var commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
-                                        if (commandPayloadJObject != null &&
-                                            commandPayloadJObject.ContainsKey("upgradeUrl"))
-                                        {
-                                            var commandPayloadValue =
-                                                commandPayloadJObject["upgradeUrl"].Value<string>();
-                                            if (!string.IsNullOrEmpty(commandPayloadValue))
-                                            {
-                                                remoteUrl = commandPayloadValue;
-                                                _logger.LogInformation($"Requesting image upgrade from {remoteUrl}");
-                                            }
-                                        }
-
-                                        try
-                                        {
-                                            var deserializedConfigData =
-                                                JsonConvert.DeserializeObject<StandaloneConfigDTO>(mqttMessage);
-
-                                            if (deserializedConfigData != null)
-                                                try
-                                                {
-                                                    SaveUpgradeCommandToDb(remoteUrl);
-                                                }
-                                                catch (Exception e)
+                                            WriteMqttCommandIdToFile(commandIdValue);
+                                            if (!string.IsNullOrEmpty(previousCommandId))
+                                                if (previousCommandId.Trim().Equals(commandIdValue.Trim()))
                                                 {
                                                     commandStatus = "error";
-                                                    _logger.LogError(e, "Unexpected error");
+                                                    if (!string.IsNullOrEmpty(_standaloneConfigDTO
+                                                            .mqttManagementResponseTopic))
+                                                        if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains(
+                                                                "{{deviceId}}"))
+                                                            _standaloneConfigDTO.mqttManagementResponseTopic =
+                                                                _standaloneConfigDTO.mqttManagementResponseTopic.Replace(
+                                                                    "{{deviceId}}", _standaloneConfigDTO.readerName);
+
+                                                    if (deserializedCmdData.ContainsKey("response"))
+                                                    {
+                                                        deserializedCmdData["response"] = commandStatus;
+                                                    }
+                                                    else
+                                                    {
+                                                        var commandResponse = new JProperty("response", commandStatus);
+                                                        deserializedCmdData.Add(commandResponse);
+                                                    }
+
+                                                    var payloadCommandStatus = new Dictionary<string, string>();
+                                                    payloadCommandStatus.Add("detail",
+                                                        $"command_id {commandIdValue} already processed.");
+                                                    if (deserializedCmdData.ContainsKey("message"))
+                                                    {
+                                                        deserializedCmdData["message"] =
+                                                            JObject.FromObject(payloadCommandStatus);
+                                                    }
+                                                    else
+                                                    {
+                                                        var commandResponsePayload = new JProperty("message",
+                                                            JObject.FromObject(payloadCommandStatus));
+                                                        deserializedCmdData.Add(commandResponsePayload);
+                                                    }
+
+                                                    var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
+
+                                                    var qos = 0;
+                                                    var retain = false;
+                                                    var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                                                    try
+                                                    {
+                                                        int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS,
+                                                            out qos);
+                                                        bool.TryParse(
+                                                            _standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                                            out retain);
+
+                                                        mqttQualityOfServiceLevel = qos switch
+                                                        {
+                                                            1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                                                            2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                                                            _ => MqttQualityOfServiceLevel.AtMostOnce
+                                                        };
+                                                    }
+                                                    catch (Exception)
+                                                    {
+                                                    }
+
+                                                    var mqttCommandResponseTopic =
+                                                        $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
+                                                    _mqttClient.PublishAsync(mqttCommandResponseTopic,
+                                                        serializedData, mqttQualityOfServiceLevel, retain);
+                                                    return;
                                                 }
                                         }
-                                        catch (Exception ex)
-                                        {
-                                            commandStatus = "error";
-                                            _logger.LogError(ex, "Unexpected error");
-                                        }
                                     }
                                 }
-                                catch (Exception e)
+                                catch (Exception ex)
                                 {
-                                    commandStatus = "error";
-                                    _logger.LogError(e, "Unexpected error");
+                                    _logger.LogError(ex, "Unexpected error");
                                 }
 
-                                if (deserializedCmdData.ContainsKey("response"))
-                                {
-                                    deserializedCmdData["response"] = commandStatus;
-                                }
-                                else
-                                {
-                                    var commandResponse = new JProperty("response", commandStatus);
-                                    deserializedCmdData.Add(commandResponse);
-                                }
 
-                                var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
-
-                                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
-                                    if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
-                                        _standaloneConfigDTO.mqttManagementResponseTopic =
-                                            _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
-                                                _standaloneConfigDTO.readerName);
-                                var qos = 0;
-                                var retain = false;
-                                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
-                                try
+                                if ("start".Equals(commandValue))
                                 {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
-                                        out retain);
-
-                                    mqttQualityOfServiceLevel = qos switch
+                                    try
                                     {
-                                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
-                                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
-                                        _ => MqttQualityOfServiceLevel.AtMostOnce
-                                    };
-                                }
-                                catch (Exception)
-                                {
-                                }
+                                        //StartPresetAsync();
+                                        //_ = StartTasksAsync();
+                                        //SaveStartCommandToDb();
+                                        SaveStartPresetCommandToDb();
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        commandStatus = "error";
+                                        _logger.LogError(e, "Unexpected error");
+                                    }
 
-                                var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
-                            }
-                            else if ("impinj_iot_device_interface".Equals(commandValue))
-                            {
-                                var resultPayload = "";
-                                try
+                                    if (deserializedCmdData.ContainsKey("response"))
+                                    {
+                                        deserializedCmdData["response"] = commandStatus;
+                                    }
+                                    else
+                                    {
+                                        var commandResponse = new JProperty("response", commandStatus);
+                                        deserializedCmdData.Add(commandResponse);
+                                    }
+
+                                    var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
+
+                                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
+                                        if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
+                                            _standaloneConfigDTO.mqttManagementResponseTopic =
+                                                _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
+                                                    _standaloneConfigDTO.readerName);
+                                    var qos = 0;
+                                    var retain = false;
+                                    var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                                    try
+                                    {
+                                        int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                        bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                            out retain);
+
+                                        mqttQualityOfServiceLevel = qos switch
+                                        {
+                                            1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                                            2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                                            _ => MqttQualityOfServiceLevel.AtMostOnce
+                                        };
+                                    }
+                                    catch (Exception)
+                                    {
+                                    }
+
+                                    var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
+                                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                        mqttQualityOfServiceLevel, retain);
+                                }
+                                else if ("stop".Equals(commandValue))
                                 {
+                                    try
+                                    {
+                                        //StopPresetAsync();
+                                        //_ = StopTasksAsync();
+                                        //SaveStopCommandToDb();
+                                        SaveStopPresetCommandToDb();
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        commandStatus = "error";
+                                        _logger.LogError(e, "Unexpected error");
+                                    }
+
+                                    if (deserializedCmdData.ContainsKey("response"))
+                                    {
+                                        deserializedCmdData["response"] = commandStatus;
+                                    }
+                                    else
+                                    {
+                                        var commandResponse = new JProperty("response", commandStatus);
+                                        deserializedCmdData.Add(commandResponse);
+                                    }
+
+                                    var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
+
+                                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
+                                        if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
+                                            _standaloneConfigDTO.mqttManagementResponseTopic =
+                                                _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
+                                                    _standaloneConfigDTO.readerName);
+                                    var qos = 0;
+                                    var retain = false;
+                                    var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                                    try
+                                    {
+                                        int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                        bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                            out retain);
+
+                                        mqttQualityOfServiceLevel = qos switch
+                                        {
+                                            1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                                            2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                                            _ => MqttQualityOfServiceLevel.AtMostOnce
+                                        };
+                                    }
+                                    catch (Exception)
+                                    {
+                                    }
+
+                                    var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
+                                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                        mqttQualityOfServiceLevel, retain);
+
+
+                                }
+                                else if ("status".Equals(commandValue))
+                                {
+                                    try
+                                    {
+                                        ProcessAppStatus();
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        commandStatus = "error";
+                                        _logger.LogError(e, "Unexpected error");
+                                    }
+
+                                    if (deserializedCmdData.ContainsKey("response"))
+                                    {
+                                        deserializedCmdData["response"] = commandStatus;
+                                    }
+                                    else
+                                    {
+                                        var commandResponse = new JProperty("response", commandStatus);
+                                        deserializedCmdData.Add(commandResponse);
+                                    }
+
+                                    var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
+
+                                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
+                                        if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
+                                            _standaloneConfigDTO.mqttManagementResponseTopic =
+                                                _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
+                                                    _standaloneConfigDTO.readerName);
+                                    var qos = 0;
+                                    var retain = false;
+                                    var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                                    try
+                                    {
+                                        int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                        bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                            out retain);
+
+                                        mqttQualityOfServiceLevel = qos switch
+                                        {
+                                            1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                                            2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                                            _ => MqttQualityOfServiceLevel.AtMostOnce
+                                        };
+                                    }
+                                    catch (Exception)
+                                    {
+                                    }
+
+                                    var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
+                                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                        mqttQualityOfServiceLevel, retain);
+
+
+                                }
+                                else if ("status-detailed".Equals(commandValue))
+                                {
+                                    try
+                                    {
+                                        ProcessAppStatusDetailed();
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        commandStatus = "error";
+                                        _logger.LogError(e, "Unexpected error");
+                                    }
+
+                                    if (deserializedCmdData.ContainsKey("response"))
+                                    {
+                                        deserializedCmdData["response"] = commandStatus;
+                                    }
+                                    else
+                                    {
+                                        var commandResponse = new JProperty("response", commandStatus);
+                                        deserializedCmdData.Add(commandResponse);
+                                    }
+
+                                    var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
+
+                                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
+                                        if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
+                                            _standaloneConfigDTO.mqttManagementResponseTopic =
+                                                _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
+                                                    _standaloneConfigDTO.readerName);
+                                    var qos = 0;
+                                    var retain = false;
+                                    var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                                    try
+                                    {
+                                        int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                        bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                            out retain);
+
+                                        mqttQualityOfServiceLevel = qos switch
+                                        {
+                                            1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                                            2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                                            _ => MqttQualityOfServiceLevel.AtMostOnce
+                                        };
+                                    }
+                                    catch (Exception)
+                                    {
+                                    }
+
+                                    var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
+                                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                        mqttQualityOfServiceLevel, retain);
+
+
+                                }
+                                else if ("reboot".Equals(commandValue))
+                                {
+                                    var resultPayload = "";
+                                    try
+                                    {
+                                        resultPayload = CallIotRestFulInterface(mqttMessage, "/system/reboot", "POST",
+                                            $"{_standaloneConfigDTO.mqttManagementResponseTopic}", false);
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        commandStatus = "error";
+                                        _logger.LogError(e, "Unexpected error");
+                                    }
+
                                     if (deserializedCmdData.ContainsKey("payload"))
                                     {
-                                        var impinjIotApiEndpoint = "";
-                                        var impinjIotApiVerb = "";
-                                        var impinjIotApiRequest = "";
-                                        var commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
-                                        if (commandPayloadJObject != null &&
-                                            commandPayloadJObject.ContainsKey("impinjIotApiEndpoint"))
-                                        {
-                                            impinjIotApiEndpoint = commandPayloadJObject["impinjIotApiEndpoint"]
-                                                .Value<string>();
-                                            if (!string.IsNullOrEmpty(impinjIotApiEndpoint))
-                                                _logger.LogInformation($"impinjIotApiEndpoint {impinjIotApiEndpoint}");
-                                        }
+                                        deserializedCmdData["payload"] = JObject.Parse(resultPayload);
+                                    }
+                                    else
+                                    {
+                                        var commandResponsePayload = new JProperty("payload", JObject.Parse(resultPayload));
+                                        deserializedCmdData.Add(commandResponsePayload);
+                                    }
 
-                                        if (commandPayloadJObject != null &&
-                                            commandPayloadJObject.ContainsKey("impinjIotApiVerb"))
-                                        {
-                                            impinjIotApiVerb = commandPayloadJObject["impinjIotApiVerb"]
-                                                .Value<string>();
-                                            if (!string.IsNullOrEmpty(impinjIotApiVerb))
-                                                _logger.LogInformation($"impinjIotApiVerb {impinjIotApiVerb}");
-                                        }
+                                    if (deserializedCmdData.ContainsKey("response"))
+                                    {
+                                        deserializedCmdData["response"] = commandStatus;
+                                    }
+                                    else
+                                    {
+                                        var commandResponse = new JProperty("response", commandStatus);
+                                        deserializedCmdData.Add(commandResponse);
+                                    }
 
-                                        if (commandPayloadJObject != null &&
-                                            commandPayloadJObject.ContainsKey("impinjIotApiRequest"))
+                                    var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
+
+                                    //var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttCommandTopic}/response";
+                                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
+                                        if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
+                                            _standaloneConfigDTO.mqttManagementResponseTopic =
+                                                _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
+                                                    _standaloneConfigDTO.readerName);
+                                    var qos = 0;
+                                    var retain = false;
+                                    var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                                    try
+                                    {
+                                        int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                        bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                            out retain);
+
+                                        mqttQualityOfServiceLevel = qos switch
                                         {
-                                            var impinjIotApiRequestJObject =
-                                                commandPayloadJObject["impinjIotApiRequest"].Value<JObject>();
-                                            if (impinjIotApiRequestJObject != null)
+                                            1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                                            2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                                            _ => MqttQualityOfServiceLevel.AtMostOnce
+                                        };
+                                    }
+                                    catch (Exception)
+                                    {
+                                    }
+
+                                    var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
+                                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                        mqttQualityOfServiceLevel, retain);
+                                }
+                                else if ("mode".Equals(commandValue))
+                                {
+                                    var modeCmdResult = "success";
+                                    try
+                                    {
+                                        if (deserializedCmdData.ContainsKey("payload"))
+                                            try
                                             {
-                                                impinjIotApiRequest =
-                                                    JsonConvert.SerializeObject(impinjIotApiRequestJObject);
-                                                if (!string.IsNullOrEmpty(impinjIotApiRequest))
-                                                    _logger.LogInformation(
-                                                        $"impinjIotApiRequest {impinjIotApiRequest}");
+                                                modeCmdResult = ProcessModeJsonCommand(mqttMessage);
+                                                if (!"success".Equals(modeCmdResult)) commandStatus = "error";
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                commandStatus = "error";
+                                                _logger.LogError(ex, "Unexpected error");
+                                            }
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        commandStatus = "error";
+                                        _logger.LogError(e, "Unexpected error");
+                                    }
+
+                                    if (deserializedCmdData.ContainsKey("response"))
+                                    {
+                                        deserializedCmdData["response"] = commandStatus;
+                                    }
+                                    else
+                                    {
+                                        var commandResponse = new JProperty("response", commandStatus);
+                                        deserializedCmdData.Add(commandResponse);
+                                    }
+
+                                    if (deserializedCmdData.ContainsKey("message"))
+                                    {
+                                        deserializedCmdData["message"] = modeCmdResult;
+                                    }
+                                    else
+                                    {
+                                        var commandResponse = new JProperty("message", modeCmdResult);
+                                        deserializedCmdData.Add(commandResponse);
+                                    }
+
+                                    var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
+
+                                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
+                                        if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
+                                            _standaloneConfigDTO.mqttManagementResponseTopic =
+                                                _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
+                                                    _standaloneConfigDTO.readerName);
+                                    var qos = 0;
+                                    var retain = false;
+                                    var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                                    try
+                                    {
+                                        int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                        bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                            out retain);
+
+                                        mqttQualityOfServiceLevel = qos switch
+                                        {
+                                            1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                                            2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                                            _ => MqttQualityOfServiceLevel.AtMostOnce
+                                        };
+                                    }
+                                    catch (Exception)
+                                    {
+                                    }
+
+                                    var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
+                                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                        mqttQualityOfServiceLevel, retain);
+                                    //if ("success".Equals(commandStatus))
+                                    //{
+                                    //    // exits the app to reload the settings
+                                    //    Task.Delay(3000);
+                                    //    Environment.Exit(0);
+                                    //}
+                                }
+                                else if ("retrieve-settings".Equals(commandValue))
+                                {
+                                    var resultPayload = "";
+                                    try
+                                    {
+                                        resultPayload = JsonConvert.SerializeObject(_standaloneConfigDTO);
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        commandStatus = "error";
+                                        _logger.LogError(e, "Unexpected error");
+                                    }
+
+                                    if (deserializedCmdData.ContainsKey("payload"))
+                                    {
+                                        deserializedCmdData["payload"] = JObject.Parse(resultPayload);
+                                    }
+                                    else
+                                    {
+                                        var commandResponsePayload = new JProperty("payload", JObject.Parse(resultPayload));
+                                        deserializedCmdData.Add(commandResponsePayload);
+                                    }
+
+                                    if (deserializedCmdData.ContainsKey("response"))
+                                    {
+                                        deserializedCmdData["response"] = commandStatus;
+                                    }
+                                    else
+                                    {
+                                        var commandResponse = new JProperty("response", commandStatus);
+                                        deserializedCmdData.Add(commandResponse);
+                                    }
+
+                                    var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
+
+                                    //var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttCommandTopic}/response";
+                                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
+                                        if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
+                                            _standaloneConfigDTO.mqttManagementResponseTopic =
+                                                _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
+                                                    _standaloneConfigDTO.readerName);
+                                    var qos = 0;
+                                    var retain = false;
+                                    var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                                    try
+                                    {
+                                        int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                        bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                            out retain);
+
+                                        mqttQualityOfServiceLevel = qos switch
+                                        {
+                                            1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                                            2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                                            _ => MqttQualityOfServiceLevel.AtMostOnce
+                                        };
+                                    }
+                                    catch (Exception)
+                                    {
+                                    }
+
+                                    var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
+                                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                        mqttQualityOfServiceLevel, retain);
+                                }
+                                else if ("apply-settings".Equals(commandValue))
+                                {
+                                    var resultPayload = "";
+
+                                    if (deserializedCmdData.ContainsKey("payload"))
+                                    {
+                                        var commandPayloadJObject =
+                                            deserializedCmdData["payload"].Value<StandaloneConfigDTO>();
+                                        if (commandPayloadJObject != null)
+                                            try
+                                            {
+                                                SaveConfigDtoToDb(commandPayloadJObject);
+                                            }
+                                            catch (Exception e)
+                                            {
+                                                commandStatus = "error";
+                                                _logger.LogError(e, "Unexpected error");
+                                            }
+                                    }
+
+                                    if (deserializedCmdData.ContainsKey("response"))
+                                    {
+                                        deserializedCmdData["response"] = commandStatus;
+                                    }
+                                    else
+                                    {
+                                        var commandResponse = new JProperty("response", commandStatus);
+                                        deserializedCmdData.Add(commandResponse);
+                                    }
+
+                                    var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
+
+                                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
+                                        if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
+                                            _standaloneConfigDTO.mqttManagementResponseTopic =
+                                                _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
+                                                    _standaloneConfigDTO.readerName);
+                                    var qos = 0;
+                                    var retain = false;
+                                    var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                                    try
+                                    {
+                                        int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                        bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                            out retain);
+
+                                        mqttQualityOfServiceLevel = qos switch
+                                        {
+                                            1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                                            2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                                            _ => MqttQualityOfServiceLevel.AtMostOnce
+                                        };
+                                    }
+                                    catch (Exception)
+                                    {
+                                    }
+
+                                    var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
+                                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                        mqttQualityOfServiceLevel, retain);
+                                }
+                                else if ("upgrade".Equals(commandValue))
+                                {
+                                    try
+                                    {
+                                        if (deserializedCmdData.ContainsKey("payload"))
+                                        {
+                                            var remoteUrl = _standaloneConfigDTO.systemImageUpgradeUrl;
+                                            var commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
+                                            if (commandPayloadJObject != null &&
+                                                commandPayloadJObject.ContainsKey("upgradeUrl"))
+                                            {
+                                                var commandPayloadValue =
+                                                    commandPayloadJObject["upgradeUrl"].Value<string>();
+                                                if (!string.IsNullOrEmpty(commandPayloadValue))
+                                                {
+                                                    remoteUrl = commandPayloadValue;
+                                                    _logger.LogInformation($"Requesting image upgrade from {remoteUrl}");
+                                                }
+                                            }
+
+                                            try
+                                            {
+                                                var deserializedConfigData =
+                                                    JsonConvert.DeserializeObject<StandaloneConfigDTO>(mqttMessage);
+
+                                                if (deserializedConfigData != null)
+                                                    try
+                                                    {
+                                                        SaveUpgradeCommandToDb(remoteUrl);
+                                                    }
+                                                    catch (Exception e)
+                                                    {
+                                                        commandStatus = "error";
+                                                        _logger.LogError(e, "Unexpected error");
+                                                    }
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                commandStatus = "error";
+                                                _logger.LogError(ex, "Unexpected error");
                                             }
                                         }
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        commandStatus = "error";
+                                        _logger.LogError(e, "Unexpected error");
+                                    }
 
-                                        try
+                                    if (deserializedCmdData.ContainsKey("response"))
+                                    {
+                                        deserializedCmdData["response"] = commandStatus;
+                                    }
+                                    else
+                                    {
+                                        var commandResponse = new JProperty("response", commandStatus);
+                                        deserializedCmdData.Add(commandResponse);
+                                    }
+
+                                    var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
+
+                                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
+                                        if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
+                                            _standaloneConfigDTO.mqttManagementResponseTopic =
+                                                _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
+                                                    _standaloneConfigDTO.readerName);
+                                    var qos = 0;
+                                    var retain = false;
+                                    var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                                    try
+                                    {
+                                        int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                        bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                            out retain);
+
+                                        mqttQualityOfServiceLevel = qos switch
                                         {
-                                            resultPayload = CallIotRestFulInterface(impinjIotApiRequest,
-                                                impinjIotApiEndpoint, impinjIotApiVerb,
-                                                _standaloneConfigDTO.mqttManagementResponseTopic, false);
-                                        }
-                                        catch (Exception ex)
+                                            1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                                            2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                                            _ => MqttQualityOfServiceLevel.AtMostOnce
+                                        };
+                                    }
+                                    catch (Exception)
+                                    {
+                                    }
+
+                                    var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
+                                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                        mqttQualityOfServiceLevel, retain);
+                                }
+                                else if ("impinj_iot_device_interface".Equals(commandValue))
+                                {
+                                    var resultPayload = "";
+                                    try
+                                    {
+                                        if (deserializedCmdData.ContainsKey("payload"))
                                         {
-                                            commandStatus = "error";
-                                            _logger.LogError(ex, "Unexpected error");
+                                            var impinjIotApiEndpoint = "";
+                                            var impinjIotApiVerb = "";
+                                            var impinjIotApiRequest = "";
+                                            var commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
+                                            if (commandPayloadJObject != null &&
+                                                commandPayloadJObject.ContainsKey("impinjIotApiEndpoint"))
+                                            {
+                                                impinjIotApiEndpoint = commandPayloadJObject["impinjIotApiEndpoint"]
+                                                    .Value<string>();
+                                                if (!string.IsNullOrEmpty(impinjIotApiEndpoint))
+                                                    _logger.LogInformation($"impinjIotApiEndpoint {impinjIotApiEndpoint}");
+                                            }
+
+                                            if (commandPayloadJObject != null &&
+                                                commandPayloadJObject.ContainsKey("impinjIotApiVerb"))
+                                            {
+                                                impinjIotApiVerb = commandPayloadJObject["impinjIotApiVerb"]
+                                                    .Value<string>();
+                                                if (!string.IsNullOrEmpty(impinjIotApiVerb))
+                                                    _logger.LogInformation($"impinjIotApiVerb {impinjIotApiVerb}");
+                                            }
+
+                                            if (commandPayloadJObject != null &&
+                                                commandPayloadJObject.ContainsKey("impinjIotApiRequest"))
+                                            {
+                                                var impinjIotApiRequestJObject =
+                                                    commandPayloadJObject["impinjIotApiRequest"].Value<JObject>();
+                                                if (impinjIotApiRequestJObject != null)
+                                                {
+                                                    impinjIotApiRequest =
+                                                        JsonConvert.SerializeObject(impinjIotApiRequestJObject);
+                                                    if (!string.IsNullOrEmpty(impinjIotApiRequest))
+                                                        _logger.LogInformation(
+                                                            $"impinjIotApiRequest {impinjIotApiRequest}");
+                                                }
+                                            }
+
+                                            try
+                                            {
+                                                resultPayload = CallIotRestFulInterface(impinjIotApiRequest,
+                                                    impinjIotApiEndpoint, impinjIotApiVerb,
+                                                    _standaloneConfigDTO.mqttManagementResponseTopic, false);
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                commandStatus = "error";
+                                                _logger.LogError(ex, "Unexpected error");
+                                            }
                                         }
                                     }
-                                }
-                                catch (Exception e)
-                                {
-                                    commandStatus = "error";
-                                    _logger.LogError(e, "Unexpected error");
-                                }
-
-                                if (deserializedCmdData.ContainsKey("payload"))
-                                {
-                                    deserializedCmdData["payload"] = JObject.Parse(resultPayload);
-                                }
-                                else
-                                {
-                                    var commandResponsePayload = new JProperty("payload", JObject.Parse(resultPayload));
-                                    deserializedCmdData.Add(commandResponsePayload);
-                                }
-
-                                if (deserializedCmdData.ContainsKey("response"))
-                                {
-                                    deserializedCmdData["response"] = commandStatus;
-                                }
-                                else
-                                {
-                                    var commandResponse = new JProperty("response", commandStatus);
-                                    deserializedCmdData.Add(commandResponse);
-                                }
-
-                                var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
-
-                                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
-                                    if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
-                                        _standaloneConfigDTO.mqttManagementResponseTopic =
-                                            _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
-                                                _standaloneConfigDTO.readerName);
-                                var qos = 0;
-                                var retain = false;
-                                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
-                                try
-                                {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
-                                        out retain);
-
-                                    mqttQualityOfServiceLevel = qos switch
+                                    catch (Exception e)
                                     {
-                                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
-                                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
-                                        _ => MqttQualityOfServiceLevel.AtMostOnce
-                                    };
-                                }
-                                catch (Exception)
-                                {
-                                }
+                                        commandStatus = "error";
+                                        _logger.LogError(e, "Unexpected error");
+                                    }
 
-                                var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
+                                    if (deserializedCmdData.ContainsKey("payload"))
+                                    {
+                                        deserializedCmdData["payload"] = JObject.Parse(resultPayload);
+                                    }
+                                    else
+                                    {
+                                        var commandResponsePayload = new JProperty("payload", JObject.Parse(resultPayload));
+                                        deserializedCmdData.Add(commandResponsePayload);
+                                    }
+
+                                    if (deserializedCmdData.ContainsKey("response"))
+                                    {
+                                        deserializedCmdData["response"] = commandStatus;
+                                    }
+                                    else
+                                    {
+                                        var commandResponse = new JProperty("response", commandStatus);
+                                        deserializedCmdData.Add(commandResponse);
+                                    }
+
+                                    var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
+
+                                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
+                                        if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
+                                            _standaloneConfigDTO.mqttManagementResponseTopic =
+                                                _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
+                                                    _standaloneConfigDTO.readerName);
+                                    var qos = 0;
+                                    var retain = false;
+                                    var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                                    try
+                                    {
+                                        int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                        bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                            out retain);
+
+                                        mqttQualityOfServiceLevel = qos switch
+                                        {
+                                            1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                                            2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                                            _ => MqttQualityOfServiceLevel.AtMostOnce
+                                        };
+                                    }
+                                    catch (Exception)
+                                    {
+                                    }
+
+                                    var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
+                                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                        mqttQualityOfServiceLevel, retain);
+                                }
+                            }
+                    }                  
+                    else
+                    {
+                        if(string.Equals("1", _standaloneConfigDTO.enablePlugin.Trim(), StringComparison.OrdinalIgnoreCase)
+                            && _plugins.Count > 0
+                            && _plugins.ContainsKey(_standaloneConfigDTO.activePlugin) )
+                        {
+                            _logger.LogInformation(_plugins[_standaloneConfigDTO.activePlugin].GetName());
+                            var cmdResult = _plugins[_standaloneConfigDTO.activePlugin].ProcessCommand(mqttMessage);
+
+                            if("START".Equals(cmdResult))
+                            {
+                                SaveStartPresetCommandToDb();
+                            }
+                            else if ("STOP".Equals(cmdResult))
+                            {
+                                SaveStopPresetCommandToDb();
                             }
                         }
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -8580,17 +9404,43 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             if (tagInventoryEvent == null)
                 return;
 
-            if (_standaloneConfigDTO != null
-                && !string.IsNullOrEmpty(_expectedLicense)
-                && !_expectedLicense.Equals(_standaloneConfigDTO.licenseKey.Trim()))
+            var licenseToSet = "";
+            if(string.Equals("1", _standaloneConfigDTO.enablePlugin,
+                                StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine(_standaloneConfigDTO.licenseKey.Trim());
-                _logger.LogInformation("Invalid license key. ", SeverityType.Error);
-                var mqttManagementEvents = new Dictionary<string, string>();
-                mqttManagementEvents.Add("smartreader-status", "invalid-license-key");
-                PublishMqttManagementEvent(mqttManagementEvents);
-                return;
+                if (_plugins != null
+                   && _plugins.Count > 0
+                   && !_plugins.ContainsKey("LICENSE"))
+                {
+                    if (_standaloneConfigDTO != null
+                    && !string.IsNullOrEmpty(_expectedLicense)
+                    && !_expectedLicense.Equals(_standaloneConfigDTO.licenseKey.Trim()))
+                    {
+                        Console.WriteLine(_standaloneConfigDTO.licenseKey.Trim());
+                        _logger.LogInformation("Invalid license key. ", SeverityType.Error);
+                        var mqttManagementEvents = new Dictionary<string, string>();
+                        mqttManagementEvents.Add("smartreader-status", "invalid-license-key");
+                        PublishMqttManagementEvent(mqttManagementEvents);
+                        return;
+                    }
+                }
             }
+            else
+            {
+                if (_standaloneConfigDTO != null
+                    && !string.IsNullOrEmpty(_expectedLicense)
+                    && !_expectedLicense.Equals(_standaloneConfigDTO.licenseKey.Trim()))
+                {
+                    Console.WriteLine(_standaloneConfigDTO.licenseKey.Trim());
+                    _logger.LogInformation("Invalid license key. ", SeverityType.Error);
+                    var mqttManagementEvents = new Dictionary<string, string>();
+                    mqttManagementEvents.Add("smartreader-status", "invalid-license-key");
+                    PublishMqttManagementEvent(mqttManagementEvents);
+                    return;
+                }
+            }
+            
+            
 
             var smartReaderTagReadEvent = new SmartReaderTagReadEvent();
 
@@ -8663,16 +9513,21 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     StringComparison.OrdinalIgnoreCase))
                                 if (!string.IsNullOrEmpty(sku))
                                 {
-                                    if (!_currentSkus.ContainsKey(sku))
-                                        _currentSkus.TryAdd(sku, 1);
-                                    else
-                                        try
-                                        {
-                                            _currentSkus[sku] = _currentSkus[sku] + 1;
-                                        }
-                                        catch (Exception)
-                                        {
-                                        }
+                                    if(!_currentSkuReadEpcs.Contains(epc))
+                                    {
+                                        _currentSkuReadEpcs.Add(epc);
+                                        if (!_currentSkus.ContainsKey(sku))
+                                            _currentSkus.TryAdd(sku, 1);
+                                        else
+                                            try
+                                            {
+                                                _currentSkus[sku] = _currentSkus[sku] + 1;
+                                            }
+                                            catch (Exception)
+                                            {
+                                            }
+                                    }
+                                    
                                 }
                         }
                         catch (Exception)
@@ -8720,16 +9575,22 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     StringComparison.OrdinalIgnoreCase))
                                 if (!string.IsNullOrEmpty(tagRead.TagDataKey))
                                 {
-                                    if (!_currentSkus.ContainsKey(tagRead.TagDataKey))
-                                        _currentSkus.TryAdd(tagRead.TagDataKey, 1);
-                                    else
-                                        try
-                                        {
-                                            _currentSkus[tagRead.TagDataKey] = _currentSkus[tagRead.TagDataKey] + 1;
-                                        }
-                                        catch (Exception)
-                                        {
-                                        }
+                                    if (!_currentSkuReadEpcs.Contains(epc))
+                                    {
+                                        _currentSkuReadEpcs.Add(epc);
+                                        if (!_currentSkus.ContainsKey(tagRead.TagDataKey))
+                                            _currentSkus.TryAdd(tagRead.TagDataKey, 1);
+                                        else
+                                            try
+                                            {
+                                                _currentSkus[tagRead.TagDataKey] = _currentSkus[tagRead.TagDataKey] + 1;
+                                            }
+                                            catch (Exception)
+                                            {
+                                            }
+                                    }
+
+                                    
                                 }
                         }
                     }
@@ -8799,6 +9660,36 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         tagRead.Gpi2Status = 0;
                 }
             }
+
+            //============================================================================================
+            // PLUGIN
+            //============================================================================================
+            if (_standaloneConfigDTO != null && !string.IsNullOrEmpty(_standaloneConfigDTO.enablePlugin)
+                                             && string.Equals("1", _standaloneConfigDTO.enablePlugin.Trim(),
+                                                 StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    //_logger.LogInformation("Processing data: " + epc, SeverityType.Debug);
+                    if (_plugins != null
+                        && _plugins.Count > 0
+                        && !string.IsNullOrEmpty(_standaloneConfigDTO.activePlugin)
+                        && _plugins.ContainsKey(_standaloneConfigDTO.activePlugin)
+                        && _plugins[_standaloneConfigDTO.activePlugin].IsProcessingTagData())
+                    {
+                        _plugins[_standaloneConfigDTO.activePlugin].AddTagDataToQueue(tagRead);
+                        return;
+                    }
+                }
+                catch (Exception)
+                {
+
+                }
+                
+            }
+            //============================================================================================
+            //  PLUGIN
+            //============================================================================================
 
             var isPositioningEvent = false;
             var isNonPositioningEvent = false;
@@ -9152,8 +10043,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             if (string.Equals("1", _standaloneConfigDTO.httpPostEnabled, StringComparison.OrdinalIgnoreCase))
                 try
                 {
-                    if (_messageQueueTagSmartReaderTagEventHttpPost.Count < 1000)
-                        _messageQueueTagSmartReaderTagEventHttpPost.Enqueue(dataToPublish);
+                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.httpPostURL))
+                    {
+                        if (_messageQueueTagSmartReaderTagEventHttpPost.Count < 1000)
+                            _messageQueueTagSmartReaderTagEventHttpPost.Enqueue(dataToPublish);
+                    }
+                        
                 }
                 catch (Exception)
                 {
@@ -9162,8 +10057,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
                 try
                 {
-                    if (_messageQueueTagSmartReaderTagEventMqtt.Count < 1000)
-                        _messageQueueTagSmartReaderTagEventMqtt.Enqueue(dataToPublish);
+                    if(!string.IsNullOrEmpty(_standaloneConfigDTO.mqttTagEventsTopic))
+                    {
+                        if (_messageQueueTagSmartReaderTagEventMqtt.Count < 1000)
+                            _messageQueueTagSmartReaderTagEventMqtt.Enqueue(dataToPublish);
+                    }
+                    
                 }
                 catch (Exception)
                 {

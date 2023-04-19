@@ -332,9 +332,27 @@
                                         <option value="1002">AutoSetDenseReaderDeepScan</option>
                                         <option value="1003">AutoSetStaticFast</option>
                                         <option value="1004">AutoSetStaticDRM</option>
+
+
                                     </select>
                                 </template>
                             </template>
+                            <!--
+                                            <option value="100">100</option>
+                <option value="120">120</option>
+                <option value="140">140</option>
+                <option value="142">142</option>
+                <option value="185">185</option>
+                <option value="201">201</option>
+                <option value="221">221</option>
+                <option value="243">243</option>
+                <option value="284">284</option>
+                <option value="301">301</option>
+                <option value="322">322</option>
+                <option value="340">340</option>
+                <option value="341">341</option>
+                <option value="381">381</option>
+        -->
                             <template v-if="readerConfigs[0].operatingRegion.indexOf('ETSI') > -1">
                                 <template v-if="readerConfigs[0].operatingRegion.indexOf('915') == -1">
                                     <select id="gen2RFMode" class="form-control" v-model="readerConfigs[0].readerMode">
@@ -1639,124 +1657,125 @@
                         </template>
                         -->
                         <template v-if="readerConfigs[0].enablePlugin == '1'">
-
-                            <h3>Custom Plugin</h3>
-                            <br />
-                            <label for="activePlugin">Plugin Name:</label>
-                            <input id="activePlugin" class="form-control" v-model="readerConfigs[0].activePlugin">
-                            <br />
-                            <label for="outputPluginServer">Plugin Server IP Address:</label>
-                            <input id="outputPluginServer" class="form-control" v-model="readerConfigs[0].pluginServer">
-                            <br />
-                            <label for="outputHttpPostInterval">POST interval in seconds:</label>
-                            <input id="outputHttpPostInterval" class="form-control" v-model="readerConfigs[0].httpPostIntervalSec">
-                            <br>
-                            <input id="enableUniqueTagRead" type="checkbox"
-                                   v-model="readerConfigs[0].enableUniqueTagRead"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
-                            <label for="enableUniqueTagRead">Enable Unique Tag Read</label>
-                            <br>
-                            <input id="enableAntennaTask" type="checkbox"
-                                   v-model="readerConfigs[0].enableAntennaTask"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
-                            <label for="enableAntennaTask">Enable Antenna Task</label>
-                            <br>
-                            <input id="softwareFilterEnabled" type="checkbox"
-                                   v-model="readerConfigs[0].softwareFilterEnabled"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
-                            <label for="softwareFilterEnabled">Enable Software Filter</label>
-                            <br />
-                            <template v-if="readerConfigs[0].softwareFilterEnabled == '1'">
-                                <label for="softwareFilterWindowSec">Software Filter Interval in seconds:</label>
-                                <input id="softwareFilterWindowSec" class="form-control" v-model="readerConfigs[0].softwareFilterWindowSec">
+                            <template v-if="readerConfigs[0].activePlugin == 'CONNECT'">
+                                <h3>Custom Plugin</h3>
                                 <br />
-                                <!--
-                                <label for="packageHeaders">Package Headers:</label>
-                                <input id="packageHeaders" class="form-control" v-model="readerConfigs[0].packageHeaders">
-                                -->
-                            </template>
-                            <br>
-                            <input id="enablePluginShipmentVerification" type="checkbox"
-                                   v-model="readerConfigs[0].enablePluginShipmentVerification"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
-                            <label for="enablePluginShipmentVerification">Enable Shipment Verification</label>
-                            <br>
-                            <template v-if="readerConfigs[0].enablePluginShipmentVerification == '1'">
-                                <input id="enablePartialValidation" type="checkbox"
-                                       v-model="readerConfigs[0].enablePartialValidation"
+                                <label for="activePlugin">Plugin Name:</label>
+                                <input id="activePlugin" class="form-control" v-model="readerConfigs[0].activePlugin">
+                                <br />
+                                <label for="outputPluginServer">Plugin Server IP Address:</label>
+                                <input id="outputPluginServer" class="form-control" v-model="readerConfigs[0].pluginServer">
+                                <br />
+                                <label for="outputHttpPostInterval">POST interval in seconds:</label>
+                                <input id="outputHttpPostInterval" class="form-control" v-model="readerConfigs[0].httpPostIntervalSec">
+                                <br>
+                                <input id="enableUniqueTagRead" type="checkbox"
+                                       v-model="readerConfigs[0].enableUniqueTagRead"
                                        v-bind:true-value="1"
                                        v-bind:false-value="0">
-                                <label for="softwareFilterEnabled">Enable Partial Validation</label>
-                                <br />
-                                <label for="validationAcceptanceThreshold">Validation Acceptance Threshold (integer percentage):</label>
-                                <input id="validationAcceptanceThreshold" class="form-control" v-model="readerConfigs[0].validationAcceptanceThreshold">
-                                <br />
-                                <label for="validationAcceptanceThresholdTimeout">Validation Acceptance Threshold Timeout (in seconds):</label>
-                                <input id="validationAcceptanceThresholdTimeout" class="form-control" v-model="readerConfigs[0].validationAcceptanceThresholdTimeout">
-                                <br />
-                                <input id="publishFullShipmentValidationListOnAcceptanceThreshold" type="checkbox"
-                                       v-model="readerConfigs[0].publishFullShipmentValidationListOnAcceptanceThreshold"
+                                <label for="enableUniqueTagRead">Enable Unique Tag Read</label>
+                                <br>
+                                <input id="enableAntennaTask" type="checkbox"
+                                       v-model="readerConfigs[0].enableAntennaTask"
                                        v-bind:true-value="1"
                                        v-bind:false-value="0">
-                                <label for="publishFullShipmentValidationListOnAcceptanceThreshold">Publish Full Shipment Validation List on Acceptance Threshold Reached</label>
+                                <label for="enableAntennaTask">Enable Antenna Task</label>
+                                <br>
+                                <input id="softwareFilterEnabled" type="checkbox"
+                                       v-model="readerConfigs[0].softwareFilterEnabled"
+                                       v-bind:true-value="1"
+                                       v-bind:false-value="0">
+                                <label for="softwareFilterEnabled">Enable Software Filter</label>
+                                <br />
+                                <template v-if="readerConfigs[0].softwareFilterEnabled == '1'">
+                                    <label for="softwareFilterWindowSec">Software Filter Interval in seconds:</label>
+                                    <input id="softwareFilterWindowSec" class="form-control" v-model="readerConfigs[0].softwareFilterWindowSec">
+                                    <br />
+                                    <!--
+            <label for="packageHeaders">Package Headers:</label>
+            <input id="packageHeaders" class="form-control" v-model="readerConfigs[0].packageHeaders">
+            -->
+                                </template>
+                                <br>
+                                <input id="enablePluginShipmentVerification" type="checkbox"
+                                       v-model="readerConfigs[0].enablePluginShipmentVerification"
+                                       v-bind:true-value="1"
+                                       v-bind:false-value="0">
+                                <label for="enablePluginShipmentVerification">Enable Shipment Verification</label>
+                                <br>
+                                <template v-if="readerConfigs[0].enablePluginShipmentVerification == '1'">
+                                    <input id="enablePartialValidation" type="checkbox"
+                                           v-model="readerConfigs[0].enablePartialValidation"
+                                           v-bind:true-value="1"
+                                           v-bind:false-value="0">
+                                    <label for="softwareFilterEnabled">Enable Partial Validation</label>
+                                    <br />
+                                    <label for="validationAcceptanceThreshold">Validation Acceptance Threshold (integer percentage):</label>
+                                    <input id="validationAcceptanceThreshold" class="form-control" v-model="readerConfigs[0].validationAcceptanceThreshold">
+                                    <br />
+                                    <label for="validationAcceptanceThresholdTimeout">Validation Acceptance Threshold Timeout (in seconds):</label>
+                                    <input id="validationAcceptanceThresholdTimeout" class="form-control" v-model="readerConfigs[0].validationAcceptanceThresholdTimeout">
+                                    <br />
+                                    <input id="publishFullShipmentValidationListOnAcceptanceThreshold" type="checkbox"
+                                           v-model="readerConfigs[0].publishFullShipmentValidationListOnAcceptanceThreshold"
+                                           v-bind:true-value="1"
+                                           v-bind:false-value="0">
+                                    <label for="publishFullShipmentValidationListOnAcceptanceThreshold">Publish Full Shipment Validation List on Acceptance Threshold Reached</label>
+                                </template>
                             </template>
+
                         </template>
+                            <!--
+    <template v-if="readerMaxAntennas <= 4">
+    -->
+                            <h3>Serial Port (USB)</h3>
+                            <input id="outputSerialPortEnabled" type="checkbox"
+                                   v-model="readerConfigs[0].serialPort"
+                                   v-bind:true-value="1"
+                                   v-bind:false-value="0">
+                            <label for="outputSerialPortEnabled">Enable</label>
+                            <br>
 
-                        <!--
-                        <template v-if="readerMaxAntennas <= 4">
-                        -->
-                        <h3>Serial Port (USB)</h3>
-                        <input id="outputSerialPortEnabled" type="checkbox"
-                               v-model="readerConfigs[0].serialPort"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
-                        <label for="outputSerialPortEnabled">Enable</label>
-                        <br>
-
-                        <template v-if="readerConfigs[0].serialPort == '1'">
-                            <select id="outputSerialPortBaudRate" class="form-control" v-model="readerConfigs[0].baudRate">
-                                <option value="1200">1200</option>
-                                <option value="2400">2400</option>
-                                <option value="4800">4800</option>
-                                <option value="9600">9600</option>
-                                <option value="19200">19200</option>
-                                <option value="38400">38400</option>
-                                <option value="57600">57600</option>
-                                <option value="115200">115200</option>
-                            </select>
-                        </template>
-                        <!--
-                        </template>
-                        -->
-                        <!--
-                        <h3>Keyboard emulation</h3>
-                        <input id="outputKeyboardEmulationEnabled" type="checkbox"
-                               v-model="readerConfigs[0].usbHid"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
-                        <label for="outputKeyboardEmulationEnabled">Enable</label>
-                        -->
-                        <br>
-
-
-                        <h3>USB Flash Drive</h3>
-                        <input id="outputUsbFlashDriveEnabled" type="checkbox"
-                               v-model="readerConfigs[0].usbFlashDrive"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
-                        <label for="outputUsbFlashDriveEnabled">Enable</label>
-                        <br>
+                            <template v-if="readerConfigs[0].serialPort == '1'">
+                                <select id="outputSerialPortBaudRate" class="form-control" v-model="readerConfigs[0].baudRate">
+                                    <option value="1200">1200</option>
+                                    <option value="2400">2400</option>
+                                    <option value="4800">4800</option>
+                                    <option value="9600">9600</option>
+                                    <option value="19200">19200</option>
+                                    <option value="38400">38400</option>
+                                    <option value="57600">57600</option>
+                                    <option value="115200">115200</option>
+                                </select>
+                            </template>
+                            <!--
+    </template>
+    -->
+                            <!--
+    <h3>Keyboard emulation</h3>
+    <input id="outputKeyboardEmulationEnabled" type="checkbox"
+           v-model="readerConfigs[0].usbHid"
+           v-bind:true-value="1"
+           v-bind:false-value="0">
+    <label for="outputKeyboardEmulationEnabled">Enable</label>
+    -->
+                            <br>
 
 
-                        <br>
-                        <br>
-                        <button class="btn btn-primary pull-right" v-on:click="applySettings">Apply Settings</button>
+                            <h3>USB Flash Drive</h3>
+                            <input id="outputUsbFlashDriveEnabled" type="checkbox"
+                                   v-model="readerConfigs[0].usbFlashDrive"
+                                   v-bind:true-value="1"
+                                   v-bind:false-value="0">
+                            <label for="outputUsbFlashDriveEnabled">Enable</label>
+                            <br>
 
-                    </div>
+
+                            <br>
+                            <br>
+                            <button class="btn btn-primary pull-right" v-on:click="applySettings">Apply Settings</button>
+
+</div>
 
                     <!--
                     <div id="toi" class="tab-pane fade">

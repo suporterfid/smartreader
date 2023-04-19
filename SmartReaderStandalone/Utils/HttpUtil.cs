@@ -637,4 +637,72 @@ public class HttpUtil
             }
         }
     }
+
+    public string ExternalApiAuthenticateAsync(string url, string data)
+    {
+        var returnedData = "";
+        try
+        {
+            var client = new HttpClient();
+            var request = new HttpRequestMessage(HttpMethod.Post, url);
+            var content = new StringContent(data, null, "application/json");
+            request.Content = content;
+            var response = client.SendAsync(request).Result;
+            response.EnsureSuccessStatusCode();
+            returnedData = response.Content.ReadAsStringAsync().Result;
+        }
+        catch (Exception)
+        {
+
+            throw;
+        }
+        
+        return returnedData;
+    }
+
+    public string ExternalApiSearchOrderAsync(string url, string token, string data)
+    {
+        var returnedData = "";
+        try
+        {
+            var client = new HttpClient();
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Add("Authorization", token);
+            var content = new StringContent(data, null, "application/json");
+            request.Content = content;
+            var response = client.SendAsync(request).Result;
+            response.EnsureSuccessStatusCode();
+            returnedData = response.Content.ReadAsStringAsync().Result;
+        }
+        catch (Exception)
+        {
+
+            throw;
+        }
+
+        return returnedData;
+    }
+
+    public string ExternalApiOrderPublishDataAsync(string url, string token, string data)
+    {
+        var returnedData = "";
+        try
+        {
+            var client = new HttpClient();
+            var request = new HttpRequestMessage(HttpMethod.Put, url);
+            request.Headers.Add("Authorization", token);
+            var content = new StringContent(data, null, "application/json");
+            request.Content = content;
+            var response = client.SendAsync(request).Result;
+            response.EnsureSuccessStatusCode();
+            returnedData = response.Content.ReadAsStringAsync().Result;
+        }
+        catch (Exception)
+        {
+
+            throw;
+        }
+
+        return returnedData;
+    }
 }

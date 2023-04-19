@@ -1386,3 +1386,14 @@ SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/wwwroot/volumes.ht
 SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/wwwroot/volumes.js
 SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/wwwroot/ytem.html
 SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/wwwroot/ytem.js
+/plugin-contract/obj
+/plugin-contract/bin
+/SmartReaderStandalone/bin/Debug/net6.0/cap_template/config/smartreader-tunel.json
+/SmartReaderStandalone/bin/Debug/net6.0/cap_template/config/smartreader-cabide.json
+/SmartReaderStandalone/bin/Debug/net6.0/cap_template/plugins/LibConnect.dll
+/SmartReaderStandalone/bin/Debug/net6.0
+/SmartReaderStandalone/cap_deploy/smartreader_cap_0411v10.upgx
+/SmartReaderStandalone/cap_template/config/smartreader.json
+/SmartReaderStandalone/cap_template/config/smartreader-tunel.json
+*.json
+/SmartReaderStandalone/obj

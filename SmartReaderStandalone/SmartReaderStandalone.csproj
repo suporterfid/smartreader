@@ -46,10 +46,6 @@
 	  <PackageReference Include="System.IO.Ports" Version="6.0.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\plugin-contract\plugin-contract.csproj" />
-  </ItemGroup>
-
 	<ItemGroup>
 		<Reference Include="Impinj.Atlas">
 			<HintPath>Impinj.Atlas.dll</HintPath>

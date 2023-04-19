@@ -84,4 +84,8 @@
 	  <Folder Include="plugins\" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <ProjectReference Include="..\plugin-contract\plugin-contract.csproj" />
+	</ItemGroup>
+
 </Project>

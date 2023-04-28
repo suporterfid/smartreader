@@ -1399,3 +1399,7 @@ SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/wwwroot/ytem.js
 /SmartReaderStandalone/obj
 /SmartReaderStandalone/bin/Release/net6.0/publish
 /SmartReaderStandalone/bin/Release/net6.0
+/SmartReaderStandalone/cap_template/config/smartreader-tunel.json
+/SmartReaderStandalone/cap_template/config/smartreader-flipkart.json
+/SmartReaderStandalone/cap_template/config/smartreader-fk.json
+/SmartReaderStandalone/cap_template/config/smartreader-cabide.json

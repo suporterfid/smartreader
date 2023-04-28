@@ -441,8 +441,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         break;
                     }
                 }
-                catch (IOException)
+                catch (IOException ex)
                 {
+                    _logger.LogError(ex, "Error setting USB drive options.");
                 }
         }
         catch (Exception ex)
@@ -1141,12 +1142,52 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         if (_iotDeviceInterfaceClient == null)
             _iotDeviceInterfaceClient =
                 new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword);
+
         try
         {
-            await _iotDeviceInterfaceClient.StartPresetAsync("SmartReader");
+            _iotDeviceInterfaceClient.TagInventoryEvent -= OnTagInventoryEvent;
+            _iotDeviceInterfaceClient.GpiTransitionEvent -= OnGpiTransitionEvent;
+            await _iotDeviceInterfaceClient.StopAsync();
         }
         catch (Exception)
         {
+        }
+
+        try
+        {
+            _iotDeviceInterfaceClient.TagInventoryEvent += OnTagInventoryEvent;
+            _iotDeviceInterfaceClient.GpiTransitionEvent += OnGpiTransitionEvent;
+        }
+        catch (Exception)
+        {
+        }
+
+        _isStarted = true;
+
+        try
+        {
+            await ApplySettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInformation("Error applying settings. " + ex.Message);
+        }
+
+        //try
+        //{
+        //    await _iotDeviceInterfaceClient.StartPresetAsync("SmartReader");
+        //}
+        //catch (Exception)
+        //{
+        //}
+
+        try
+        {
+            await _iotDeviceInterfaceClient.StartAsync("SmartReader");
+        }
+        catch (Exception)
+        {
+            if (_standaloneConfigDTO.isEnabled == "1" && _isStarted) SaveStartCommandToDb();
         }
     }
 
@@ -1158,6 +1199,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         try
         {
             await _iotDeviceInterfaceClient.StopPresetAsync();
+        }
+        catch (Exception)
+        {
+        }
+
+        try
+        {
+            await _iotDeviceInterfaceClient.StopAsync();
         }
         catch (Exception)
         {
@@ -1250,7 +1299,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         StartTcpSocketServer();
         StartUdpServer();
         StartTcpSocketCommandServer();
-        SetupUsbFlashDrive();
+        
 
         var mqttManagementEvents = new Dictionary<string, string>();
         mqttManagementEvents.Add("smartreader-status", "started");
@@ -3404,7 +3453,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         _logger.LogInformation("Publishing data to external API...");
                                         string[] epcArray = Array.Empty<string>();
                                         _plugins[_standaloneConfigDTO.activePlugin].ExternalApiPublish(barcode, skuSummaryList , epcArray);
-                                        return;
+                                        //return;
                                     }
                                 }
                                 catch (Exception)
@@ -5903,11 +5952,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             try
             {
+                _standaloneConfigDTO.readerSerial = _iotDeviceInterfaceClient.GetStatusAsync().Result.SerialNumber;
+
                 if (_standaloneConfigDTO.readerName.Equals("impinj-xx-xx-xx"))
                 {
-                    _ = await _iotDeviceInterfaceClient.GetStatusAsync();
                     _standaloneConfigDTO.readerName = "impinj" + _iotDeviceInterfaceClient.MacAddress.Replace("-", String.Empty).Replace(":", String.Empty);
                 }
+                
             }
             catch (Exception)
             {
@@ -6331,6 +6382,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
             }
 
+            try
+            {
+                SetupUsbFlashDrive();
+            }
+            catch (Exception ex)
+            {
+
+                _logger.LogError(ex, "SetupUsbFlashDrive: unexpected error.");
+            }
             try
             {
                 if(_standaloneConfigDTO != null

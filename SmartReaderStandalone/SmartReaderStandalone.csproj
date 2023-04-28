@@ -80,12 +80,13 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Folder Include="cap_template\plugins\" />
-	  <Folder Include="plugins\" />
+	  <ProjectReference Include="..\plugin-contract\plugin-contract.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\plugin-contract\plugin-contract.csproj" />
+	  <Folder Include="cap_deploy\" />
+	  <Folder Include="cap_template\plugins\" />
+	  <Folder Include="plugins\" />
 	</ItemGroup>
 
 </Project>

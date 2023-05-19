@@ -124,6 +124,15 @@ internal class R700IotReader : IR700IotReader
         return regionInfoAsync;
     }
 
+    public async Task<PowerConfiguration> GetSystemPowerAsync()
+    {
+        var powerInfoAsync = await _r700IotEventProcessor.GetSystemPowerAsync();
+
+        //var regionInfo = regionInfoAsync.OperatingRegion;
+        return powerInfoAsync;
+    }
+   
+
     public async Task<SystemInfo> GetSystemInfoAsync()
     {
         var systemInfoAsync = await _r700IotEventProcessor.GetSystemInfoAsync();
@@ -511,6 +520,13 @@ internal class R700IotReader : IR700IotReader
             var systemRegionCancellationToken = new CancellationToken();
             bool? pending = null;
             return _iotDeviceInterfaceClientSecure.SystemRegionGetAsync(systemRegionCancellationToken);
+        }
+
+        public Task<PowerConfiguration> GetSystemPowerAsync()
+        {
+            var systemPowerCancellationToken = new CancellationToken();
+            bool? pending = null;
+            return _iotDeviceInterfaceClientSecure.SystemPowerGetAsync(systemPowerCancellationToken);
         }
 
         public async Task StartAsync(string presetId)

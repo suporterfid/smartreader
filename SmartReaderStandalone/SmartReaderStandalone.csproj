@@ -84,7 +84,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Folder Include="cap_deploy\" />
 	  <Folder Include="cap_template\plugins\" />
 	  <Folder Include="plugins\" />
 	</ItemGroup>

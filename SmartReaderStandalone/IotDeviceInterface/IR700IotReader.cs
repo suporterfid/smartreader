@@ -73,6 +73,8 @@ public interface IR700IotReader
 
     Task<RegionInfo> GetSystemRegionInfoAsync();
 
+    Task<PowerConfiguration> GetSystemPowerAsync();
+
     Task<SystemInfo> GetSystemInfoAsync();
 
     Task SendCustomInventoryPresetAsync(string presetId, string jsonInventoryRequest);

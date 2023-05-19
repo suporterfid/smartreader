@@ -6,6 +6,7 @@ const columnDefs = [
     { field: 'qty', headerName: 'Qtde Esperada', cellStyle: { fontSize: '20px' }, width: 100 },
     { field: 'read', headerName: 'Qtde Lida', cellStyle: { fontSize: '20px' }, width: 100 },
     { field: 'unexpected', headerName: 'Sobra', cellStyle: { fontSize: '20px' }, width: 100 },
+    { field: 'unders', headerName: 'Falta', cellStyle: { fontSize: '20px' }, width: 100 },
     //{ field: 'eventTimestamp', headerName: 'Timestamp', cellStyle: { fontSize: '20px' }, width: 100 },
 ];
 
@@ -14,6 +15,7 @@ var epcData = [];
 var summaryEventData = [];
 var tagCount = 0;
 var itemCount = 0;
+var totalExpected = 0;
 
 var clicks = 0;
 
@@ -72,7 +74,8 @@ const gridOptions = {
             })
         })
 
-        init(event.api)
+        start();
+        init(event.api);
     }
 };
 
@@ -201,7 +204,7 @@ function getApiKey() {
 
 function searchOrder() {
 
-    this.rowDataA = [];
+    //this.rowDataA = [];
     this.epcData = [];
     this.summaryEventData = [];
     this.contentFormat = "";
@@ -268,14 +271,17 @@ function searchOrder() {
                             for (var k = 0; k < data[i].referenceList.containers[j].content.length; k++) {
                                 console.log('gtin: ' + data[i].referenceList.containers[j].content[k].gtin);
                                 console.log('quantity: ' + data[i].referenceList.containers[j].content[k].quantity);
+                                totalExpected = totalExpected + data[i].referenceList.containers[j].content[k].quantity;
 
                                 let skuEventRow = {
                                     eventTimestamp: 0,
                                     read: 0,
                                     unexpected: 0,
+                                    unders: 0,
                                     sku: data[i].referenceList.containers[j].content[k].gtin,
                                     qty: data[i].referenceList.containers[j].content[k].quantity,
-                                    barcode: data[i].referenceList.referenceListId
+                                    //barcode: data[i].referenceList.referenceListId
+                                    barcode: data[i].referenceList.transactionId
                                 };
                                 this.rowDataA.push(skuEventRow);
                                 gridOptions.api.setRowData(this.rowDataA);
@@ -287,10 +293,17 @@ function searchOrder() {
                     }
                 }
             }
+            document.getElementById("orderBarcode").value = "";
+            document.getElementById("orderBarcode").focus();
+
+
+            restartIfNeeded();
         })
         .catch(function (error) {
             console.log('There has been a problem with your fetch operation: ' + error.message);
         });
+
+
 
 }
 
@@ -416,6 +429,12 @@ function publishData() {
 
 }
 
+function restartIfNeeded() {
+    if (document.getElementById("stopBtn").className == "btn btn-danger btn-lg") {
+        start();
+    }
+}
+
 function finishOrder() {
 
     // var containerData = {
@@ -452,7 +471,7 @@ function finishOrder() {
     console.log('dataToPublish: ' + JSON.stringify(containerData));
     fetch(url, {
         credentials: 'include',
-        method: 'POST',
+        method: 'PUT',
         mode: 'cors',
         headers: {
             'Accept': '*/*',
@@ -593,19 +612,49 @@ function clean() {
 
 }
 
+function cleanReadData() {
+    this.containsUnexpected = false;
+    //this.rowDataA = [];
+    for (var i = 0; i < this.rowDataA.length; i++) {
+        this.rowDataA[i].read = 0;
+        this.rowDataA[i].unexpected = 0;
+        this.rowDataA[i].unders = 0;
+    }
+    this.epcData = [];
+    this.summaryEventData = [];
+    //this.orderBarcode = "";
+    //this.contentFormat = "";
+    //this.transactionId = "";
+    //this.status = "";
+    //this.bizStep = "";
+    //this.bizLocation = "";
+    gridOptions.api.setRowData(this.rowDataA);
+    gridOptions.api.sizeColumnsToFit();
+    document.getElementById("orderBarcode").value = "";
+
+}
+
 function updateItemCount() {
     itemCount = window.epcData.length;
     document.getElementById("itemCount").innerHTML = itemCount;
+    if (itemCount > 0 &&itemCount == totalExpected && !containsUnexpected) {
+        publishData();
+        finishOrder();
+        clean();
+
+    }
 };
 
 function updateTagCount() {
     tagCount = window.rowDataA.length;
     document.getElementById("tagCount").innerHTML = tagCount;
+    
 };
 
 function cleanTagCount() {
     tagCount = 0;
     itemCount = 0;
+    totalExpected = 0;
     document.getElementById("tagCount").innerHTML = tagCount;
     document.getElementById("itemCount").innerHTML = itemCount;
 };
@@ -746,6 +795,7 @@ function init(api) {
                             qty: 0,
                             read: qty,
                             unexpected: qty,
+                            unders: 0,
                             barcode: barcode
                         };
                         if (!currentValue.hasOwnProperty('epcs')) {
@@ -756,13 +806,24 @@ function init(api) {
                         if (shouldRun) {
 
                             if (skuIndex >= 0) {
-
+                                if (this.epcData.some(v => currentValue.epcs.indexOf(v) !== -1)) {
+                                    console.log("EPC already exists. " + this.epcData.length);
+                                    continue;
+                                }
+                                
                                 let currentSkuRow = this.rowDataA[skuIndex];
                                 currentSkuRow.read = parseInt(currentSkuRow.read) + parseInt(qty);
                                 if (parseInt(currentSkuRow.read) > parseInt(currentSkuRow.qty)) {
                                     currentSkuRow.unexpected = parseInt(currentSkuRow.read) - parseInt(currentSkuRow.qty);
                                     containsUnexpected = true;
                                 }
+                                else if (parseInt(currentSkuRow.read) < parseInt(currentSkuRow.qty)) {
+                                    currentSkuRow.unders = parseInt(currentSkuRow.qty) - parseInt(currentSkuRow.read);
+                                }
+                                else if (parseInt(currentSkuRow.read) == parseInt(currentSkuRow.qty)) {
+                                    currentSkuRow.unders = parseInt(currentSkuRow.qty) - parseInt(currentSkuRow.read);
+                                }
+
                                 if (currentSkuRow.eventTimestamp === 0) {
                                     try {
                                         currentSkuRow.eventTimestamp = eventTimestamp;
@@ -789,8 +850,7 @@ function init(api) {
                             }
 
                             for (var epcIndex = 0; epcIndex < currentValue.epcs.length; epcIndex++) {
-                                let containsEpc = this.epcData.
-                                    (element => {
+                                let containsEpc = this.epcData.find(element => {
                                     return element.toLowerCase() === currentValue.epcs[epcIndex].toLowerCase();
                                 });
                                 if (!containsEpc) {
@@ -922,12 +982,10 @@ function init(api) {
 
                 //}
 
-
-
-
-
             } catch (e) {
                 console.log("ERROR. " + e);
+                //location.reload();
+                window.location.reload();
             }
         }
 

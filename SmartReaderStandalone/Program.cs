@@ -25,6 +25,8 @@ using Endpoint = SmartReaderJobs.ViewModel.Mqtt.Endpoint.Endpoint;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
+
+
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
     .CreateBootstrapLogger();
@@ -637,6 +639,79 @@ app.MapPost("/api/publish/external", [AuthorizeBasicAuth]
         }
     });
 
+app.MapPut("/api/publish/external", [AuthorizeBasicAuth]
+async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
+{
+    var requestResult = "";
+
+    try
+    {
+        var jsonDocumentStr = "";
+        using (var stream = new MemoryStream())
+        {
+            var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            jsonDocument.WriteTo(writer);
+            writer.Flush();
+            jsonDocumentStr = Encoding.UTF8.GetString(stream.ToArray());
+        }
+
+        var configDto = ConfigFileHelper.ReadFile();
+        if (configDto != null && !string.IsNullOrEmpty(configDto.enableExternalApiVerification)
+                              && "1".Equals(configDto.enableExternalApiVerification))
+        {
+            var url = configDto.externalApiVerificationPublishDataUrl;
+            var fullUriData = new Uri(url);
+            var host = fullUriData.Host;
+            var baseUri = fullUriData.GetLeftPart(UriPartial.Authority);
+            var rightActionPath = url.Replace(baseUri, "");
+            HttpClient httpClient = new()
+            {
+                BaseAddress = new Uri(url)
+            };
+
+            var request = new HttpRequestMessage
+            {
+                Method = HttpMethod.Put,
+                RequestUri = new Uri(url),
+                Content = new StringContent(jsonDocumentStr, Encoding.UTF8,
+                    "application/json" /* or "application/json" in older versions */)
+            };
+            request.Headers.Add("Accept", "application/json");
+            request.Headers.Add(configDto.externalApiVerificationHttpHeaderName,
+                configDto.externalApiVerificationHttpHeaderValue);
+            ;
+
+
+            httpClient.DefaultRequestHeaders
+                .Accept
+                .Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            Log.Debug(url);
+            Log.Debug(jsonDocumentStr);
+
+            var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+            var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+            Log.Debug(content);
+            Console.WriteLine(content);
+
+            if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
+            {
+                requestResult = response.Content.ReadAsStringAsync().Result;
+                Log.Debug(requestResult);
+                return Results.Ok(JsonDocument.Parse(requestResult));
+            }
+        }
+
+        return Results.Ok(requestResult);
+    }
+    catch (Exception exDb)
+    {
+        File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
+        return Results.BadRequest(requestResult);
+    }
+});
+
 
 app.MapGet("/api/getserial", [AuthorizeBasicAuth] async (RuntimeDb db) =>
 {
@@ -837,11 +912,20 @@ app.MapGet("/api/reload", [AuthorizeBasicAuth] async (RuntimeDb db) =>
 
 app.MapGet("/api/getcapabilities", [AuthorizeBasicAuth] async (RuntimeDb db) =>
 {
-  
+
+    IR700IotReader _iotDeviceInterfaceClient = new R700IotReader("192.168.68.248", "", true, true, "root", "impinj");
+    var systemInfo = _iotDeviceInterfaceClient.GetSystemInfoAsync().Result;
+    var systemRegion =_iotDeviceInterfaceClient.GetSystemRegionInfoAsync().Result;
+    var systemPower = _iotDeviceInterfaceClient.GetSystemPowerAsync().Result;
+    bool isPoePlus = false;
+    if(systemPower.PowerSource.Equals(Impinj.Atlas.PowerSource.Poeplus))
+    {
+        isPoePlus = true;
+    }
     var capabilities = new List<SmartReaderCapabilities>();
     var capability = new SmartReaderCapabilities();
     capability.RxTable = Utils.GetDefaultRxTable();
-    capability.TxTable = Utils.GetDefaultTxTable();
+    capability.TxTable = Utils.GetDefaultTxTable(systemInfo.ProductModel, isPoePlus, systemRegion.OperatingRegion);
     capability.RfModeTable = Utils.GetDefaultRfModeTable();
     capability.MaxAntennas = 4;
     capability.SearchModeTable = Utils.GetDefaultSearchModeTable();

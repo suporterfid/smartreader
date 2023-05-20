@@ -68,6 +68,9 @@
 		<None Update="cap_template\localhost.pfx">
 		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
+		<None Update="cap_template\plugins\FlipKartLicensePlugin.dll">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
 		<None Update="cap_template\start">
 		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
@@ -77,15 +80,13 @@
 		<None Update="Impinj.Atlas.dll">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
+		<None Update="plugins\FlipKartLicensePlugin.dll">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
 	</ItemGroup>
 
 	<ItemGroup>
 	  <ProjectReference Include="..\plugin-contract\plugin-contract.csproj" />
-	</ItemGroup>
-
-	<ItemGroup>
-	  <Folder Include="cap_template\plugins\" />
-	  <Folder Include="plugins\" />
 	</ItemGroup>
 
 </Project>

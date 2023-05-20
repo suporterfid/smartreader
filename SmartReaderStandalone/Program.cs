@@ -85,6 +85,10 @@ ILogger logger = app.Services.GetService<ILogger<Program>>();
 
 var readerAddress = app.Configuration["ReaderInfo:Address"] ?? "127.0.0.1";
 
+var rshellAuthUserName = app.Configuration["RShellAuth:UserName"]  ?? "root";
+
+var rshellAuthPassword = app.Configuration["RShellAuth:Password"] ?? "impinj";
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -342,7 +346,7 @@ app.MapPost("/api/settings", [AuthorizeBasicAuth] async ([FromBody] StandaloneCo
         return Results.NotFound();
     }
 });
-
+/*
 app.MapPost("/api/rshell", [AuthorizeBasicAuth] async ([FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
 {
     string result = "";
@@ -410,6 +414,7 @@ app.MapPost("/api/rshell", [AuthorizeBasicAuth] async ([FromBody] JsonDocument j
         return Results.NotFound();
     }
 });
+*/
 
 app.MapGet("/api/query/external/product/{gtin}", [AuthorizeBasicAuth]
     async (HttpRequest readerRequest, string gtin, RuntimeDb db) =>
@@ -913,7 +918,7 @@ app.MapGet("/api/reload", [AuthorizeBasicAuth] async (RuntimeDb db) =>
 app.MapGet("/api/getcapabilities", [AuthorizeBasicAuth] async (RuntimeDb db) =>
 {
 
-    IR700IotReader _iotDeviceInterfaceClient = new R700IotReader("192.168.68.248", "", true, true, "root", "impinj");
+    IR700IotReader _iotDeviceInterfaceClient = new R700IotReader(readerAddress, "", true, true, rshellAuthUserName, rshellAuthUserName);
     var systemInfo = _iotDeviceInterfaceClient.GetSystemInfoAsync().Result;
     var systemRegion =_iotDeviceInterfaceClient.GetSystemRegionInfoAsync().Result;
     var systemPower = _iotDeviceInterfaceClient.GetSystemPowerAsync().Result;
@@ -962,7 +967,7 @@ app.MapGet("/api/getrfidstatus", [AuthorizeBasicAuth] async (RuntimeDb db) =>
     var statusEvent = new Dictionary<string, string>();
     try
     {
-        var rshell = new RShellUtil(readerAddress, "root", "impinj");
+        var rshell = new RShellUtil(readerAddress, rshellAuthUserName, rshellAuthPassword);
         try
         {
             var resultRfidStat = rshell.SendCommand("show rfid stat");

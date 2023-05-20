@@ -1407,3 +1407,5 @@ SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/wwwroot/ytem.js
 /SmartReaderStandalone/cap_template/template-auth-items.json
 /SmartReaderStandalone/cap_template/template-filter-items.json
 /SmartReaderStandalone/cap_template/template-items.json
+/SmartReaderStandalone/plugins/FlipKartLicensePlugin.dll
+/SmartReaderStandalone/cap_template/plugins/FlipKartLicensePlugin.dll

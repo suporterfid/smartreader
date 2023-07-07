@@ -13,7 +13,7 @@ using Impinj.Atlas;
 
 namespace SmartReader.IotDeviceInterface;
 
-public interface IR700IotReader
+public interface IR700IotReader : IDisposable
 {
     string Nickname { get; set; }
 

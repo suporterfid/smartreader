@@ -8,9 +8,11 @@
 //
 //****************************************************************************************************
 #endregion
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Net;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -33,12 +35,14 @@ internal class R700IotReader : IR700IotReader
         bool useBasicAuthAlways = false,
         string uname = "root",
         string pwd = "impinj",
-        int hostPort = 0)
+        int hostPort = 0,
+        string proxy = "",
+        int proxyPort = 8080)
     {
         if (string.IsNullOrWhiteSpace(hostname))
             throw new ArgumentNullException(nameof(hostname));
         _r700IotEventProcessor =
-            new IotDeviceInterfaceEventProcessor(hostname, useHttpAlways, useBasicAuthAlways, uname, pwd, hostPort);
+            new IotDeviceInterfaceEventProcessor(hostname, useHttpAlways, useBasicAuthAlways, uname, pwd, hostPort, proxy, proxyPort);
         Hostname = hostname;
         Nickname = nickname;
     }
@@ -436,6 +440,12 @@ internal class R700IotReader : IR700IotReader
         inventoryStatusEvent(this, e);
     }
 
+    void IDisposable.Dispose()
+    {
+        // Suppress finalization.
+        GC.SuppressFinalize(this);
+    }
+
     private sealed class IotDeviceInterfaceEventProcessor
     {
         private readonly string _hostname;
@@ -455,7 +465,9 @@ internal class R700IotReader : IR700IotReader
             bool useBasicAuthAlways,
             string uname,
             string pwd,
-            int hostPort = 0)
+            int hostPort = 0,
+            string proxy = "",
+            int proxyPort = 8080)
         {
             _hostname = Regex.Replace(hostname, "^https*\\://", "");
             var num = (uint) hostPort > 0U ? 1 : 0;
@@ -469,25 +481,52 @@ internal class R700IotReader : IR700IotReader
             var timeSpan = new TimeSpan(0, 0, 0, 3, 0);
             ServicePointManager.ServerCertificateValidationCallback +=
                 (sender, certificate, chain, sslPolicyErrors) => true;
+            
+
             var httpClientHandler = new HttpClientHandler
-            {
+            {                
+                
+
                 ServerCertificateCustomValidationCallback =
                     (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>) ((message, cert,
                         chain, errors) => true)
             };
 
+
+            if (!string.IsNullOrEmpty(proxy))
+            {
+                WebProxy webProxy = new WebProxy(proxy);
+                webProxy.Credentials = CredentialCache.DefaultNetworkCredentials;
+                webProxy.BypassProxyOnLocal = true;
+                webProxy.BypassList.Append("169.254.1.1");
+                webProxy.BypassList.Append(hostname);
+                
+
+                httpClientHandler = new HttpClientHandler
+                {
+                    Proxy = webProxy,
+                    UseProxy = true,
+                    ServerCertificateCustomValidationCallback =
+                    (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
+                        chain, errors) => true)
+                };
+            }
+
             if (useHttpAlways)
             {
+               
+
                 _httpClient = new HttpClient(httpClientHandler)
                 {
                     BaseAddress = new Uri(baseUrl2 + "/"),
                     Timeout = timeSpan
                 };
                 _iotDeviceInterfaceClient = new AtlasClient(baseUrl2, _httpClient);
+                
             }
             else
             {
-                _httpClient = new HttpClient
+                _httpClient = new HttpClient(httpClientHandler)
                 {
                     BaseAddress = new Uri(baseUrl1 + "/"),
                     Timeout = timeSpan

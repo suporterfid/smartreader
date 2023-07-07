@@ -55,6 +55,7 @@ using ReaderStatus = SmartReaderStandalone.Entities.ReaderStatus;
 using Timer = System.Timers.Timer;
 using McMaster.NETCore.Plugins;
 using SmartReaderStandalone.Plugins;
+using SmartReaderStandalone.Services;
 
 namespace SmartReader.IotDeviceInterface;
 
@@ -74,6 +75,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private static string _readerUsername = "root";
     private static string _readerPassword = "impinj";
+
+    private static string _proxyAddress= "";
+
+    private static int _proxyPort = 8080;
 
 
     private static bool _isStarted;
@@ -303,12 +308,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         try
         {
             _gpiCts = new CancellationTokenSource();
-            _gpiTimer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            _gpiTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
             _gpiTimerTask = HandleGpiTimerAsync(_gpiTimer, _gpiCts.Token);
         }
         catch (Exception ex)
         {
-            Console.WriteLine("HandleGpiTimerAsync init - " + ex.Message);
+            _logger.LogError(ex, "HandleGpiTimerAsync init - " + ex.Message);
+
         }
     }
 
@@ -330,7 +336,20 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     {
         try
         {
-            while (await timer.WaitForNextTickAsync(cancel)) await Task.Run(() => QueryGpiStatus(cancel), cancel);
+            if (_standaloneConfigDTO == null)
+            {
+                _standaloneConfigDTO = ConfigFileHelper.ReadFile();
+            }
+            if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent,
+                                             StringComparison.OrdinalIgnoreCase))
+            {
+                while (await timer.WaitForNextTickAsync(cancel)) await Task.Run(() => QueryGpiStatus(cancel), cancel);
+            }
+            else
+            {
+                await Task.Delay(100);
+            }
+            
         }
         catch (Exception ex)
         {
@@ -346,121 +365,220 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             var gpi1File = @"/dev/gpio/ext-gpi-0/value";
             var gpi2File = @"/dev/gpio/ext-gpi-1/value";
+            var fileContent1 = "";
+            var fileContent2 = "";
             if (File.Exists(gpi1File))
-            {
-                if (!_gpiPortStates.ContainsKey(0)) _gpiPortStates.TryAdd(0, false);
-                // read file content into a string
-                var fileContent = File.ReadAllText(gpi1File);
-
-                // compare TextBox content with file content
-                if (fileContent.Contains("1"))
-                {
-                    _gpiPortStates[0] = true;
-                    if (previousGpi1.HasValue)
-                    {
-                        if (_gpiPortStates[0] != previousGpi1.Value)
-                        {
-                            gpi1HasChanged = true;
-                        }
-                        else
-                        {
-                            gpi1HasChanged = false;
-                        }
-                    }
-                    else
-                    {
-                        gpi1HasChanged = true;
-                    }
-                    
-                    previousGpi1 = _gpiPortStates[0];
-                }
-                else
-                {
-                    _gpiPortStates[0] = false;
-                    if (previousGpi1.HasValue)
-                    {
-                        if (_gpiPortStates[0] != previousGpi1.Value)
-                        {
-                            gpi1HasChanged = true;
-                        }
-                        else
-                        {
-                            gpi1HasChanged = false;
-                        }
-                    }
-                    else
-                    {
-                        gpi1HasChanged = true;
-                    }
-
-                    //gpi1HasChanged = true;                    
-                    
-                    previousGpi1 = _gpiPortStates[0];
-                }
-
-            }
-
+                fileContent1 = File.ReadAllText(gpi1File);
             if (File.Exists(gpi2File))
+                fileContent2 = File.ReadAllText(gpi2File);
+
+            if (!_gpiPortStates.ContainsKey(0)) _gpiPortStates.TryAdd(0, false);
+            if (!_gpiPortStates.ContainsKey(1)) _gpiPortStates.TryAdd(1, false);
+
+            if (!string.IsNullOrEmpty(fileContent1) && fileContent1.Contains("1"))
             {
-                if (!_gpiPortStates.ContainsKey(1)) _gpiPortStates.TryAdd(1, false);
-                // read file content into a string
-                var fileContent = File.ReadAllText(gpi2File);
-
-                // compare TextBox content with file content
-                //if (fileContent.Contains("1"))
-                //    _gpiPortStates[1] = true;
-                //else
-                //    _gpiPortStates[1] = false;
-
-                if (fileContent.Contains("1"))
+                _gpiPortStates[0] = true;
+                if (previousGpi1.HasValue)
                 {
-                    _gpiPortStates[1] = true;
-                    if (previousGpi2.HasValue)
+                    if (_gpiPortStates[0] != previousGpi1.Value)
                     {
-                        if (_gpiPortStates[1] != previousGpi2.Value)
-                        {
-                            gpi2HasChanged = true;
-                        }
-                        else
-                        {
-                            gpi2HasChanged = false;
-                        }
+                        gpi1HasChanged = true;
                     }
                     else
                     {
-                        gpi2HasChanged = true;
+                        gpi1HasChanged = false;
                     }
-                    
-                    previousGpi2 = _gpiPortStates[0];
                 }
                 else
                 {
-                    _gpiPortStates[1] = false;
-                    if (previousGpi2.HasValue)
+                    gpi1HasChanged = true;
+                }
+
+                previousGpi1 = _gpiPortStates[0];
+            }
+            else
+            {
+                _gpiPortStates[0] = false;
+                if (previousGpi1.HasValue)
+                {
+                    if (_gpiPortStates[0] != previousGpi1.Value)
                     {
-                        if (_gpiPortStates[1] != previousGpi2.Value)
-                        {
-                            gpi2HasChanged = true;
-                        }
-                        else
-                        {
-                            gpi2HasChanged = false;
-                        }
+                        gpi1HasChanged = true;
                     }
                     else
                     {
+                        gpi1HasChanged = false;
+                    }
+                }
+                else
+                {
+                    gpi1HasChanged = true;
+                }
+                previousGpi1 = _gpiPortStates[0];
+            }
+
+            if (!string.IsNullOrEmpty(fileContent2) && fileContent2.Contains("1"))
+            {
+                _gpiPortStates[1] = true;
+                if (previousGpi2.HasValue)
+                {
+                    if (_gpiPortStates[1] != previousGpi2.Value)
+                    {
                         gpi2HasChanged = true;
                     }
-                    //gpi1HasChanged = true;
-                    
-                    previousGpi2 = _gpiPortStates[1];
+                    else
+                    {
+                        gpi2HasChanged = false;
+                    }
                 }
+                else
+                {
+                    gpi2HasChanged = true;
+                }
+
+                previousGpi2 = _gpiPortStates[1];
             }
+            else
+            {
+                _gpiPortStates[1] = false;
+                if (previousGpi2.HasValue)
+                {
+                    if (_gpiPortStates[1] != previousGpi2.Value)
+                    {
+                        gpi2HasChanged = true;
+                    }
+                    else
+                    {
+                        gpi2HasChanged = false;
+                    }
+                }
+                else
+                {
+                    gpi2HasChanged = true;
+                }
+                previousGpi2 = _gpiPortStates[1];
+            }
+
+
+
+            //if (File.Exists(gpi1File))
+            //{
+            //    if (!_gpiPortStates.ContainsKey(0)) _gpiPortStates.TryAdd(0, false);
+            //    // read file content into a string
+            //    var fileContent = File.ReadAllText(gpi1File);
+
+            //    // compare TextBox content with file content
+            //    if (fileContent.Contains("1"))
+            //    {
+            //        _gpiPortStates[0] = true;
+            //        if (previousGpi1.HasValue)
+            //        {
+            //            if (_gpiPortStates[0] != previousGpi1.Value)
+            //            {
+            //                gpi1HasChanged = true;
+            //            }
+            //            else
+            //            {
+            //                gpi1HasChanged = false;
+            //            }
+            //        }
+            //        else
+            //        {
+            //            gpi1HasChanged = true;
+            //        }
+
+            //        previousGpi1 = _gpiPortStates[0];
+            //    }
+            //    else
+            //    {
+            //        _gpiPortStates[0] = false;
+            //        if (previousGpi1.HasValue)
+            //        {
+            //            if (_gpiPortStates[0] != previousGpi1.Value)
+            //            {
+            //                gpi1HasChanged = true;
+            //            }
+            //            else
+            //            {
+            //                gpi1HasChanged = false;
+            //            }
+            //        }
+            //        else
+            //        {
+            //            gpi1HasChanged = true;
+            //        }
+
+            //        //gpi1HasChanged = true;                    
+
+            //        previousGpi1 = _gpiPortStates[0];
+            //    }
+
+            //}
+
+            //if (File.Exists(gpi2File))
+            //{
+            //    if (!_gpiPortStates.ContainsKey(1)) _gpiPortStates.TryAdd(1, false);
+            //    // read file content into a string
+            //    var fileContent = File.ReadAllText(gpi2File);
+
+            //    // compare TextBox content with file content
+            //    //if (fileContent.Contains("1"))
+            //    //    _gpiPortStates[1] = true;
+            //    //else
+            //    //    _gpiPortStates[1] = false;
+
+            //    if (fileContent.Contains("1"))
+            //    {
+            //        _gpiPortStates[1] = true;
+            //        if (previousGpi2.HasValue)
+            //        {
+            //            if (_gpiPortStates[1] != previousGpi2.Value)
+            //            {
+            //                gpi2HasChanged = true;
+            //            }
+            //            else
+            //            {
+            //                gpi2HasChanged = false;
+            //            }
+            //        }
+            //        else
+            //        {
+            //            gpi2HasChanged = true;
+            //        }
+
+            //        previousGpi2 = _gpiPortStates[0];
+            //    }
+            //    else
+            //    {
+            //        _gpiPortStates[1] = false;
+            //        if (previousGpi2.HasValue)
+            //        {
+            //            if (_gpiPortStates[1] != previousGpi2.Value)
+            //            {
+            //                gpi2HasChanged = true;
+            //            }
+            //            else
+            //            {
+            //                gpi2HasChanged = false;
+            //            }
+            //        }
+            //        else
+            //        {
+            //            gpi2HasChanged = true;
+            //        }
+            //        //gpi1HasChanged = true;
+
+            //        previousGpi2 = _gpiPortStates[1];
+            //    }
+            //}
 
             try
             {
                 if (gpi1HasChanged || gpi2HasChanged)
                 {
+                    //fileContent1
+                    _logger.LogInformation($"GPI status: gpi1: {fileContent1}, gpi2: {fileContent2}");
+                    //_logger.LogInformation($"GPI status: gpi1HasChanged: {gpi1HasChanged}, gpi2HasChanged: {gpi2HasChanged}");
                     ProcessGpiStatus();
                 }
 
@@ -1221,7 +1339,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (_iotDeviceInterfaceClient == null)
                 _iotDeviceInterfaceClient =
-                    new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword);
+                    new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
 
             var info = await _iotDeviceInterfaceClient.GetSystemInfoAsync();
 
@@ -1258,7 +1376,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         var returnData = new List<SmartreaderRunningStatusDto>();
         if (_iotDeviceInterfaceClient == null)
             _iotDeviceInterfaceClient =
-                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword);
+                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
 
         var readerStatus = await _iotDeviceInterfaceClient.GetStatusAsync();
         var readerStatusData = new SmartreaderRunningStatusDto();
@@ -1278,7 +1396,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     {
         if (_iotDeviceInterfaceClient == null)
             _iotDeviceInterfaceClient =
-                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword);
+                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
 
         try
         {
@@ -1326,13 +1444,27 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (_standaloneConfigDTO.isEnabled == "1" && _isStarted) SaveStartCommandToDb();
         }
+
+        try
+        {
+            if(_standaloneConfigDTO != null 
+                && string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
+            {
+                using var scope = Services.CreateScope();
+                var summaryQueueBackgroundService = scope.ServiceProvider.GetRequiredService<ISummaryQueueBackgroundService>();
+                summaryQueueBackgroundService.StartQueue();
+            }          
+        }
+        catch (Exception)
+        {           
+        }
     }
 
     public async Task StopPresetAsync()
     {
         if (_iotDeviceInterfaceClient == null)
             _iotDeviceInterfaceClient =
-                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword);
+                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
         try
         {
             await _iotDeviceInterfaceClient.StopPresetAsync();
@@ -1348,13 +1480,28 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         catch (Exception)
         {
         }
+
+
+        try
+        {
+            if (_standaloneConfigDTO != null
+                && string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
+            {
+                using var scope = Services.CreateScope();
+                var summaryQueueBackgroundService = scope.ServiceProvider.GetRequiredService<ISummaryQueueBackgroundService>();
+                summaryQueueBackgroundService.StopQueue();
+            }
+        }
+        catch (Exception)
+        {
+        }
     }
 
     public async Task StartTasksAsync()
     {
         if (_iotDeviceInterfaceClient == null)
             _iotDeviceInterfaceClient =
-                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword);
+                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
         if (_isStarted)
             try
             {
@@ -1425,22 +1572,69 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         try
         {
             await _iotDeviceInterfaceClient.StartAsync("SmartReader");
+            //await _iotDeviceInterfaceClient.StartPresetAsync("SmartReader");
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Error starting SmartReader preset, scheduling start command to background worker. " + ex.Message);
             if (_standaloneConfigDTO.isEnabled == "1" && _isStarted) SaveStartCommandToDb();
         }
 
+        try
+        {
+            StartTcpBarcodeClient();
+        }
+        catch (Exception ex)
+        {
 
-        StartTcpBarcodeClient();
-        StartTcpSocketServer();
-        StartUdpServer();
-        StartTcpSocketCommandServer();
+            _logger.LogError(ex, "Error starting tcp barcode. " + ex.Message);
+        }
+
+        try
+        {
+            StartTcpSocketServer();
+        }
+        catch (Exception ex)
+        {
+
+            _logger.LogError(ex, "Error starting tcp socket server. " + ex.Message);
+        }
+
+        try
+        {
+            StartUdpServer();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error starting udp socket server. " + ex.Message);
+
+        }
 
 
-        var mqttManagementEvents = new Dictionary<string, string>();
-        mqttManagementEvents.Add("smartreader-status", "started");
-        PublishMqttManagementEvent(mqttManagementEvents);
+        try
+        {
+            StartTcpSocketCommandServer();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error starting tcp socket server commands receiver. " + ex.Message);
+
+        }
+
+
+        try
+        {
+            var mqttManagementEvents = new Dictionary<string, object>();
+            mqttManagementEvents.Add("smartreader-status", "started");
+            PublishMqttManagementEvent(mqttManagementEvents);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error publishing mqtt app status. " + ex.Message);
+
+        }
+
+        
     }
 
     public async Task StopTasksAsync()
@@ -1448,7 +1642,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _isStarted = false;
         if (_iotDeviceInterfaceClient == null)
             _iotDeviceInterfaceClient =
-                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword);
+                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
 
         try
         {
@@ -1485,12 +1679,25 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         //}
 
+        try
+        {
+            if (_standaloneConfigDTO != null
+                && string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
+            {
+                using var scope = Services.CreateScope();
+                var summaryQueueBackgroundService = scope.ServiceProvider.GetRequiredService<ISummaryQueueBackgroundService>();
+                summaryQueueBackgroundService.StartQueue();
+            }
+        }
+        catch (Exception)
+        {
+        }
         StopTcpBarcodeClient();
         StopTcpSocketServer();
         StopUdpServer();
         StopTcpSocketCommandServer();
 
-        var mqttManagementEvents = new Dictionary<string, string>();
+        var mqttManagementEvents = new Dictionary<string, object>();
         mqttManagementEvents.Add("smartreader-status", "stopped");
         PublishMqttManagementEvent(mqttManagementEvents);
     }
@@ -1499,7 +1706,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     {
         if (_iotDeviceInterfaceClient == null)
             _iotDeviceInterfaceClient =
-                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword);
+                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
         try
         {
             //var configHelper = new IniConfigHelper();
@@ -1524,7 +1731,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     _logger.LogError(exClientReturn, "Unexpected saving preset (ApplySettingsAsync).");
             }
 
-            var mqttManagementEvents = new Dictionary<string, string>();
+            var mqttManagementEvents = new Dictionary<string, object>();
             mqttManagementEvents.Add("smartreader-status", "settings-applied");
             PublishMqttManagementEvent(mqttManagementEvents);
 
@@ -1643,7 +1850,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _isStarted = false;
         if (_iotDeviceInterfaceClient == null)
             _iotDeviceInterfaceClient =
-                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword);
+                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
 
 
         try
@@ -1671,7 +1878,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _isStarted = false;
         if (_iotDeviceInterfaceClient == null)
             _iotDeviceInterfaceClient =
-                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword);
+                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
 
 
         try
@@ -1703,7 +1910,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     {
         if (_iotDeviceInterfaceClient == null)
             _iotDeviceInterfaceClient =
-                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword);
+                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
 
         var presets = await _iotDeviceInterfaceClient.GetReaderInventoryPresetListAsync();
         return presets;
@@ -1718,7 +1925,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             Dictionary<object, object> gpiConfigurations1 = new Dictionary<object, object>();
             Dictionary<object, object> gpiConfigurations2 = new Dictionary<object, object>();
 
+            if (_iotDeviceInterfaceClient == null)
+                _iotDeviceInterfaceClient =
+                    new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+
             gpiStatusEvent.Add("eventType", "gpi-status");
+            gpiStatusEvent.Add("readerName", _standaloneConfigDTO.readerName);
+            gpiStatusEvent.Add("mac", _iotDeviceInterfaceClient.MacAddress);
+            gpiStatusEvent.Add("timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now));
 
             if (_gpiPortStates.ContainsKey(0))
             {
@@ -1734,6 +1948,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
 
             }
+            else
+            {
+                gpiConfigurations1.Add("gpi", 1);
+                gpiConfigurations1.Add("state", "low");
+            }
 
             if (_gpiPortStates.ContainsKey(1))
             {
@@ -1747,6 +1966,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     gpiConfigurations2.Add("gpi", 2);
                     gpiConfigurations2.Add("state", "low");
                 }
+            }
+            else
+            {
+                gpiConfigurations2.Add("gpi", 2);
+                gpiConfigurations2.Add("state", "low");
             }
 
             var gpiConfigurationsList = new List<object>();
@@ -1790,7 +2014,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 //_messageQueueTagSmartReaderTagEventMqtt.Enqueue(dataToPublish);
                 var mqttCommandResponseTopic = $"{mqttManagementEventsTopic}";
                 var serializedData = JsonConvert.SerializeObject(dataToPublish);
-                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
+                _ = _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
             }
             catch (Exception)
             {
@@ -1923,17 +2147,17 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             if (_gpiPortStates.ContainsKey(0))
             {
                 if (_gpiPortStates[0])
-                    statusEvent.Add("gpi1", "1");
+                    statusEvent.Add("gpi1", "high");
                 else
-                    statusEvent.Add("gpi1", "0");
+                    statusEvent.Add("gpi1", "low");
             }
 
-            if (_gpiPortStates.ContainsKey(1) && _gpiPortStates[1])
+            if (_gpiPortStates.ContainsKey(1))
             {
                 if (_gpiPortStates[1])
-                    statusEvent.Add("gpi2", "1");
+                    statusEvent.Add("gpi2", "high");
                 else
-                    statusEvent.Add("gpi2", "0");
+                    statusEvent.Add("gpi2", "low");
             }
         }
 
@@ -2158,17 +2382,17 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             if (_gpiPortStates.ContainsKey(0))
             {
                 if (_gpiPortStates[0])
-                    statusEvent.Add("gpi1", "1");
+                    statusEvent.Add("gpi1", "high");
                 else
-                    statusEvent.Add("gpi1", "0");
+                    statusEvent.Add("gpi1", "low");
             }
 
-            if (_gpiPortStates.ContainsKey(1) && _gpiPortStates[1])
+            if (_gpiPortStates.ContainsKey(1))
             {
                 if (_gpiPortStates[1])
-                    statusEvent.Add("gpi2", "1");
+                    statusEvent.Add("gpi2", "high");
                 else
-                    statusEvent.Add("gpi2", "0");
+                    statusEvent.Add("gpi2", "low");
             }
         }
 
@@ -2409,17 +2633,17 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             if (_gpiPortStates.ContainsKey(0))
             {
                 if (_gpiPortStates[0])
-                    tagRead.Gpi1Status = 1;
+                    tagRead.Gpi1Status = "high";
                 else
-                    tagRead.Gpi1Status = 0;
+                    tagRead.Gpi1Status = "low";
             }
 
-            if (_gpiPortStates.ContainsKey(1) && _gpiPortStates[1])
+            if (_gpiPortStates.ContainsKey(1))
             {
                 if (_gpiPortStates[1])
-                    tagRead.Gpi2Status = 1;
+                    tagRead.Gpi2Status = "high";
                 else
-                    tagRead.Gpi2Status = 0;
+                    tagRead.Gpi2Status = "low";
             }
         }
 
@@ -2531,7 +2755,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     {
         try
         {
-            var mqttManagementEvents = new Dictionary<string, string>();
+            var mqttManagementEvents = new Dictionary<string, object>();
             if (eventStatus.Status == InventoryStatusEventStatus.Idle)
                 mqttManagementEvents.Add("smartreader-status", "inventory-idle");
             else
@@ -2585,6 +2809,19 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             //_logger.LogInformation("Inventory status : " + eventStatus.Status, SeverityType.Debug);
             if (eventStatus.Status == InventoryStatusEventStatus.Running)
             {
+                try
+                {
+                    if (_standaloneConfigDTO != null
+                        && string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var scope = Services.CreateScope();
+                        var summaryQueueBackgroundService = scope.ServiceProvider.GetRequiredService<ISummaryQueueBackgroundService>();
+                        summaryQueueBackgroundService.StartQueue();
+                    }
+                }
+                catch (Exception)
+                {
+                }
                 _logger.LogInformation("Inventory Running.  (START)");
                 //if(string.IsNullOrEmpty(_standaloneConfigDTO.stopTriggerDuration) 
                 //    || string.Equals("0", _standaloneConfigDTO.stopTriggerDuration, StringComparison.OrdinalIgnoreCase))
@@ -2672,6 +2909,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             else if (eventStatus.Status == InventoryStatusEventStatus.Idle)
             {
+                
                 var shouldAcceptEventStatus = false;
                 if (!_stopwatchLastIddleEvent.IsRunning)
                 {
@@ -3205,7 +3443,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     && string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
                 {
                     var skuArray = JArray.FromObject(skuSummaryList.Values);
-                    SaveJsonSkuSummaryToDb(skuArray);
+                    AddJsonSkuSummaryToQueue(skuArray);
                 }
 
                 return;
@@ -3461,7 +3699,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         StringComparison.OrdinalIgnoreCase))
                                 {
                                     var skuArray = JArray.FromObject(skuSummaryList.Values);
-                                    SaveJsonSkuSummaryToDb(skuArray);
+                                    AddJsonSkuSummaryToQueue(skuArray);
                                 }
 
                                 shouldPublish = true;
@@ -3481,7 +3719,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         StringComparison.OrdinalIgnoreCase))
                                 {
                                     var skuArray = JArray.FromObject(skuSummaryList.Values);
-                                    SaveJsonSkuSummaryToDb(skuArray);
+                                    AddJsonSkuSummaryToQueue(skuArray);
                                 }
 
                                 shouldPublish = true;
@@ -3499,7 +3737,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         StringComparison.OrdinalIgnoreCase))
                                 {
                                     var skuArray = JArray.FromObject(skuSummaryList.Values);
-                                    SaveJsonSkuSummaryToDb(skuArray);
+                                    AddJsonSkuSummaryToQueue(skuArray);
                                 }
 
                                 shouldPublish = true;
@@ -3517,7 +3755,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         StringComparison.OrdinalIgnoreCase))
                                 {
                                     var skuArray = JArray.FromObject(skuSummaryList.Values);
-                                    SaveJsonSkuSummaryToDb(skuArray);
+                                    AddJsonSkuSummaryToQueue(skuArray);
                                 }
 
                                 shouldPublish = true;
@@ -5666,7 +5904,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     _logger.LogInformation(
                         "OnRunPeriodicTasksJobManagerEvent - Exit due to POST timeout (600 seconds) ");
-                    Environment.Exit(0);
+
+                    await Task.Delay(TimeSpan.FromSeconds(2));
+                    _logger.LogInformation("Restarting process");
+                    // Restart the application by spawning a new process with the same arguments
+                    var process = Process.GetCurrentProcess();
+                    process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
+                    Process.Start(process.MainModule.FileName);
+                    Environment.Exit(1);
                 }
         }
         catch (Exception)
@@ -5786,6 +6031,26 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDb>();
                 try
                 {
+                    try
+                    {
+                        var currentTime = await _iotDeviceInterfaceClient.DeviceReaderTimeGetAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogInformation(ex,
+                        "[OnRunPeriodicTasksJobManagerEvent] GET READER TIME - Unexpected error. ");
+                        // exits the app
+                        await Task.Delay(TimeSpan.FromSeconds(2));
+                        _logger.LogInformation("Restarting process");
+                        // Restart the application by spawning a new process with the same arguments
+                        var process = Process.GetCurrentProcess();
+                        process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
+                        Process.Start(process.MainModule.FileName);
+                        Environment.Exit(1);
+                        //Environment.Exit(0);
+                    }
+                    
+
                     var statusData = await GetReaderStatusAsync();
 
                     var existingStatusData = await dbContext.ReaderStatus.FindAsync("READER_STATUS");
@@ -5845,15 +6110,27 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     _readerAddress = _configuration.GetValue<string>("ReaderInfo:Address");
 
                                 _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true,
-                                    _readerUsername, _readerPassword);
+                                    _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
                             }
                             else if (ex.Message.Contains("No route to host"))
                             {
                                 _readerAddress = _configuration.GetValue<string>("ReaderInfo:Address");
 
                                 _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true,
-                                    _readerUsername, _readerPassword);
+                                    _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
                             }
+                        }
+                        else if(ex.Message.Contains("Status: 404"))
+                        {
+                            // exits the app
+
+                            await Task.Delay(TimeSpan.FromSeconds(2));
+                            _logger.LogInformation("Restarting process");
+                            // Restart the application by spawning a new process with the same arguments
+                            var process = Process.GetCurrentProcess();
+                            process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
+                            Process.Start(process.MainModule.FileName);
+                            Environment.Exit(1);
                         }
                     }
                     catch (Exception)
@@ -6197,13 +6474,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             try
             {
                 if (_standaloneConfigDTO != null) SaveConfigDtoToDb(_standaloneConfigDTO);
+                _proxyAddress = _standaloneConfigDTO.networkProxy;
+                _proxyPort = int.Parse(_standaloneConfigDTO.networkProxyPort);
             }
             catch (Exception)
             {
             }
 
             _iotDeviceInterfaceClient =
-                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword);
+                new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
             try
             {
                 _iotDeviceInterfaceClient.UpdateReaderRfidInterface(
@@ -6218,7 +6497,20 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 if (_iotDeviceInterfaceClient == null)
                     _iotDeviceInterfaceClient =
-                        new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword);
+                        new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+
+                await _iotDeviceInterfaceClient.StopPresetAsync();
+
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                if (_iotDeviceInterfaceClient == null)
+                    _iotDeviceInterfaceClient =
+                        new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
 
                 var _readerSystemInfo = await _iotDeviceInterfaceClient.GetSystemInfoAsync();
 
@@ -6247,7 +6539,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 if (_iotDeviceInterfaceClient == null)
                     _iotDeviceInterfaceClient =
-                        new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword);
+                        new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
 
                 var _readerAntennaHubInfo = _iotDeviceInterfaceClient.GetSystemAntennaHubInfoAsync();
                 if (_readerAntennaHubInfo != null && _readerAntennaHubInfo.Result != null)
@@ -6396,7 +6688,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 if (_iotDeviceInterfaceClient == null)
                     _iotDeviceInterfaceClient =
-                        new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword);
+                        new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
 
                 var _readerRegionInfo = _iotDeviceInterfaceClient.GetSystemRegionInfoAsync().Result;
                 var systemInfo = _iotDeviceInterfaceClient.GetSystemInfoAsync().Result;
@@ -6843,6 +7135,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _timerTagPublisherOpcUa.AutoReset = false;
             _timerTagPublisherOpcUa.Start();
 
+            _logger.LogInformation("App started. ");
 
             while (!stoppingToken.IsCancellationRequested)
                 //_logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
@@ -6852,6 +7145,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             _logger.LogError(ex, "Run: unexpected error.");
             _logger.LogInformation("Run: unexpected error. " + ex.Message);
+
+            await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+            _logger.LogInformation("Restarting process - ExecuteAsync");
+            // Restart the application by spawning a new process with the same arguments
+            var process = Process.GetCurrentProcess();
+            process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
+            Process.Start(process.MainModule.FileName);
+            Environment.Exit(1);
         }
     }
 
@@ -7360,16 +7661,32 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     {
                         var deserializedCmdData = JsonConvert.DeserializeObject<JObject>(mqttMessage);
                         if (deserializedCmdData != null)
-                            if (deserializedCmdData.ContainsKey("command"))
+                            if (deserializedCmdData.ContainsKey("command") || deserializedCmdData.ContainsKey("cmd"))
                             {
+                                var commandValue = "";
                                 var commandStatus = "success";
-                                var commandValue = deserializedCmdData["command"].Value<string>();
+                                if (deserializedCmdData.ContainsKey("command"))
+                                {
+                                    commandValue = deserializedCmdData["command"].Value<string>();
+                                }
+                                if (deserializedCmdData.ContainsKey("cmd"))
+                                {
+                                    commandValue = deserializedCmdData["cmd"].Value<string>();
+                                }
                                 try
                                 {
-                                    if (deserializedCmdData.ContainsKey("command_id"))
+                                    if (deserializedCmdData.ContainsKey("command_id") || deserializedCmdData.ContainsKey("id"))
                                     {
+                                        var commandIdValue = "";
                                         var previousCommandId = ReadMqttCommandIdFromFile().Result;
-                                        var commandIdValue = deserializedCmdData["command_id"].Value<string>();
+                                        if (deserializedCmdData.ContainsKey("command_id"))
+                                        {
+                                            commandIdValue = deserializedCmdData["command_id"].Value<string>();
+                                        }
+                                        if (deserializedCmdData.ContainsKey("id"))
+                                        {
+                                            commandIdValue = deserializedCmdData["id"].Value<string>();
+                                        }
                                         if (!string.IsNullOrEmpty(commandIdValue))
                                         {
                                             WriteMqttCommandIdToFile(commandIdValue);
@@ -7687,9 +8004,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         _logger.LogError(e, "Unexpected error");
                                     }
 
-                                    if (deserializedCmdData.ContainsKey("payload"))
+                                    if (deserializedCmdData.ContainsKey("payload") || deserializedCmdData.ContainsKey("fields"))
                                     {
-                                        deserializedCmdData["payload"] = JObject.Parse(resultPayload);
+                                        if (deserializedCmdData.ContainsKey("payload"))
+                                        {
+                                            deserializedCmdData["payload"] = JObject.Parse(resultPayload);
+                                        }
+                                        else if(deserializedCmdData.ContainsKey("fields"))
+                                        {
+                                            deserializedCmdData["fields"] = JObject.Parse(resultPayload);
+                                        }                                        
                                     }
                                     else
                                     {
@@ -7739,12 +8063,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData,
                                         mqttQualityOfServiceLevel, retain);
                                 }
-                                else if ("mode".Equals(commandValue))
+                                else if ("mode".Equals(commandValue) || "setcfg".Equals(commandValue))
                                 {
                                     var modeCmdResult = "success";
                                     try
                                     {
-                                        if (deserializedCmdData.ContainsKey("payload"))
+                                        if (deserializedCmdData.ContainsKey("payload") || deserializedCmdData.ContainsKey("fields"))
                                             try
                                             {
                                                 modeCmdResult = ProcessModeJsonCommand(mqttMessage);
@@ -7832,15 +8156,23 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         _logger.LogError(e, "Unexpected error");
                                     }
 
-                                    if (deserializedCmdData.ContainsKey("payload"))
+                                    if (deserializedCmdData.ContainsKey("payload") || deserializedCmdData.ContainsKey("fields"))
                                     {
-                                        deserializedCmdData["payload"] = JObject.Parse(resultPayload);
+                                        if (deserializedCmdData.ContainsKey("payload"))
+                                        {
+                                            deserializedCmdData["payload"] = JObject.Parse(resultPayload);
+                                        }
+                                        else if (deserializedCmdData.ContainsKey("fields"))
+                                        {
+                                            deserializedCmdData["fields"] = JObject.Parse(resultPayload);
+                                        }
                                     }
                                     else
                                     {
                                         var commandResponsePayload = new JProperty("payload", JObject.Parse(resultPayload));
                                         deserializedCmdData.Add(commandResponsePayload);
                                     }
+                                    
 
                                     if (deserializedCmdData.ContainsKey("response"))
                                     {
@@ -7888,20 +8220,38 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     var resultPayload = "";
 
-                                    if (deserializedCmdData.ContainsKey("payload"))
+                                    if (deserializedCmdData.ContainsKey("payload") || deserializedCmdData.ContainsKey("fields"))
                                     {
-                                        var commandPayloadJObject =
+                                        if (deserializedCmdData.ContainsKey("payload"))
+                                        {
+                                            var commandPayloadJObject =
                                             deserializedCmdData["payload"].Value<StandaloneConfigDTO>();
-                                        if (commandPayloadJObject != null)
-                                            try
-                                            {
-                                                SaveConfigDtoToDb(commandPayloadJObject);
-                                            }
-                                            catch (Exception e)
-                                            {
-                                                commandStatus = "error";
-                                                _logger.LogError(e, "Unexpected error");
-                                            }
+                                            if (commandPayloadJObject != null)
+                                                try
+                                                {
+                                                    SaveConfigDtoToDb(commandPayloadJObject);
+                                                }
+                                                catch (Exception e)
+                                                {
+                                                    commandStatus = "error";
+                                                    _logger.LogError(e, "Unexpected error");
+                                                }
+                                        }
+                                        else if (deserializedCmdData.ContainsKey("fields"))
+                                        {
+                                            var commandPayloadJObject =
+                                            deserializedCmdData["fields"].Value<StandaloneConfigDTO>();
+                                            if (commandPayloadJObject != null)
+                                                try
+                                                {
+                                                    SaveConfigDtoToDb(commandPayloadJObject);
+                                                }
+                                                catch (Exception e)
+                                                {
+                                                    commandStatus = "error";
+                                                    _logger.LogError(e, "Unexpected error");
+                                                }
+                                        }
                                     }
 
                                     if (deserializedCmdData.ContainsKey("response"))
@@ -7949,10 +8299,18 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     try
                                     {
-                                        if (deserializedCmdData.ContainsKey("payload"))
+                                        if (deserializedCmdData.ContainsKey("payload") || deserializedCmdData.ContainsKey("fields"))
                                         {
+                                            JObject commandPayloadJObject = new();
                                             var remoteUrl = _standaloneConfigDTO.systemImageUpgradeUrl;
-                                            var commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
+                                            if (deserializedCmdData.ContainsKey("payload"))
+                                            {
+                                                commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
+                                            }
+                                            else if(deserializedCmdData.ContainsKey("fields"))
+                                            {
+                                                commandPayloadJObject = deserializedCmdData["fields"].Value<JObject>();
+                                            }
                                             if (commandPayloadJObject != null &&
                                                 commandPayloadJObject.ContainsKey("upgradeUrl"))
                                             {
@@ -8040,12 +8398,20 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     var resultPayload = "";
                                     try
                                     {
-                                        if (deserializedCmdData.ContainsKey("payload"))
+                                        if (deserializedCmdData.ContainsKey("payload") || deserializedCmdData.ContainsKey("fields"))
                                         {
                                             var impinjIotApiEndpoint = "";
                                             var impinjIotApiVerb = "";
                                             var impinjIotApiRequest = "";
-                                            var commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
+                                            JObject commandPayloadJObject = new();
+                                            if (deserializedCmdData.ContainsKey("payload"))
+                                            {
+                                                commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
+                                            }
+                                            if (deserializedCmdData.ContainsKey("fields"))
+                                            {
+                                                commandPayloadJObject = deserializedCmdData["fields"].Value<JObject>();
+                                            }
                                             if (commandPayloadJObject != null &&
                                                 commandPayloadJObject.ContainsKey("impinjIotApiEndpoint"))
                                             {
@@ -8101,6 +8467,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     if (deserializedCmdData.ContainsKey("payload"))
                                     {
                                         deserializedCmdData["payload"] = JObject.Parse(resultPayload);
+                                    }
+                                    else if (deserializedCmdData.ContainsKey("fields"))
+                                    {
+                                        deserializedCmdData["fields"] = JObject.Parse(resultPayload);
                                     }
                                     else
                                     {
@@ -8184,14 +8554,31 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     //var deserializedCmdData = JsonDocument.Parse(mqttMessage);
                     var deserializedCmdData = JsonConvert.DeserializeObject<JObject>(mqttMessage);
                     if (deserializedCmdData != null)
-                        if (deserializedCmdData.ContainsKey("command"))
+                        if (deserializedCmdData.ContainsKey("command") || deserializedCmdData.ContainsKey("cmd"))
                         {
+                            
                             var commandStatus = "success";
-                            var commandValue = deserializedCmdData["command"].Value<string>();
-                            if (deserializedCmdData.ContainsKey("command_id"))
+                            var commandValue = "";
+                            if (deserializedCmdData.ContainsKey("command"))
+                            {
+                                commandValue = deserializedCmdData["command"].Value<string>();
+                            }
+                            if (deserializedCmdData.ContainsKey("cmd"))
+                            {
+                                commandValue = deserializedCmdData["cmd"].Value<string>();
+                            }
+                            if (deserializedCmdData.ContainsKey("command_id") || deserializedCmdData.ContainsKey("id"))
                             {
                                 var previousCommandId = ReadMqttCommandIdFromFile().Result;
-                                var commandIdValue = deserializedCmdData["command_id"].Value<string>();
+                                var commandIdValue = "";
+                                if (deserializedCmdData.ContainsKey("command_id"))
+                                {
+                                    commandIdValue = deserializedCmdData["command_id"].Value<string>();
+                                }
+                                if (deserializedCmdData.ContainsKey("id"))
+                                {
+                                    commandIdValue = deserializedCmdData["id"].Value<string>();
+                                }
                                 if (!string.IsNullOrEmpty(commandIdValue))
                                 {
                                     WriteMqttCommandIdToFile(commandIdValue);
@@ -8218,7 +8605,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                                             var payloadCommandStatus = new Dictionary<string, string>();
                                             payloadCommandStatus.Add("detail",
-                                                $"command_id {commandIdValue} already processed.");
+                                                $"id {commandIdValue} already processed.");
                                             if (deserializedCmdData.ContainsKey("message"))
                                             {
                                                 deserializedCmdData["message"] =
@@ -8392,6 +8779,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     deserializedCmdData["payload"] = JObject.Parse(resultPayload);
                                 }
+                                else if (deserializedCmdData.ContainsKey("fields"))
+                                {
+                                    deserializedCmdData["fields"] = JObject.Parse(resultPayload);
+                                }
                                 else
                                 {
                                     var commandResponsePayload = new JProperty("payload", JObject.Parse(resultPayload));
@@ -8444,7 +8835,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var modeCmdResult = "success";
                                 try
                                 {
-                                    if (deserializedCmdData.ContainsKey("payload"))
+                                    if (deserializedCmdData.ContainsKey("payload") || deserializedCmdData.ContainsKey("fields"))
                                         try
                                         {
                                             modeCmdResult = ProcessModeJsonCommand(mqttMessage);
@@ -8523,10 +8914,18 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var gpoCmdResult = "success";
                                 try
                                 {
-                                    if (deserializedCmdData.ContainsKey("payload"))
+                                    if (deserializedCmdData.ContainsKey("payload") || deserializedCmdData.ContainsKey("fields"))
                                         try
                                         {
-                                            var commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
+                                            JObject commandPayloadJObject = new();
+                                            if(deserializedCmdData.ContainsKey("payload"))
+                                            {
+                                                commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
+                                            }
+                                            else if (deserializedCmdData.ContainsKey("fields"))
+                                            {
+                                                commandPayloadJObject = deserializedCmdData["fields"].Value<JObject>();
+                                            }
                                             if (commandPayloadJObject.ContainsKey("gpoConfigurations"))
                                                 try
                                                 {
@@ -8704,12 +9103,21 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var resultPayload = "";
                                 try
                                 {
-                                    if (deserializedCmdData.ContainsKey("payload"))
+                                    if (deserializedCmdData.ContainsKey("payload") || deserializedCmdData.ContainsKey("fields"))
                                     {
                                         var impinjIotApiEndpoint = "";
                                         var impinjIotApiVerb = "";
                                         var impinjIotApiRequest = "";
-                                        var commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
+                                        JObject commandPayloadJObject = new();
+                                        if(deserializedCmdData.ContainsKey("payload"))
+                                        {
+                                            commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
+                                        }
+                                        else if (deserializedCmdData.ContainsKey("fields"))
+                                        {
+                                            commandPayloadJObject = deserializedCmdData["fields"].Value<JObject>();
+                                        }
+
                                         if (commandPayloadJObject != null &&
                                             commandPayloadJObject.ContainsKey("impinjIotApiEndpoint"))
                                         {
@@ -8765,6 +9173,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 if (deserializedCmdData.ContainsKey("payload"))
                                 {
                                     deserializedCmdData["payload"] = JObject.Parse(resultPayload);
+                                }
+                                else if (deserializedCmdData.ContainsKey("fields"))
+                                {
+                                    deserializedCmdData["fields"] = JObject.Parse(resultPayload);
                                 }
                                 else
                                 {
@@ -8994,7 +9406,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             if (deserializedConfigData != null)
                 try
                 {
-                    var commandPayloadJObject = deserializedConfigData["payload"].Value<JObject>();
+                    JObject commandPayloadJObject = new();
+                    if(deserializedConfigData.ContainsKey("payload"))
+                    {
+                        commandPayloadJObject = deserializedConfigData["payload"].Value<JObject>();
+                    }
+                    else if(deserializedConfigData.ContainsKey("fields"))
+                    {
+                        commandPayloadJObject = deserializedConfigData["fields"].Value<JObject>();
+                    }
                     if (commandPayloadJObject != null && commandPayloadJObject.ContainsKey("type"))
                     {
                         var antennaZone = "zone1";
@@ -9033,7 +9453,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                         var commandType = commandPayloadJObject["type"].Value<string>();
                         if (!string.IsNullOrEmpty(commandType)
-                            && string.Equals("INVENTORY", commandType, StringComparison.OrdinalIgnoreCase))
+                            && (string.Equals("INVENTORY", commandType, StringComparison.OrdinalIgnoreCase) 
+                                || string.Equals("Inv", commandType, StringComparison.OrdinalIgnoreCase)))
                         {
                             if (commandPayloadJObject.ContainsKey("antennaZone"))
                             {
@@ -9045,7 +9466,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     commandResult = "error setting the antenna zone.";
                                     _logger.LogError(ex,
-                                        "ProcessMqttModeJsonCommand (antennaZone): Unexpected error" + ex.Message);
+                                        "ProcessMqttSetCfgJsonCommand (antennaZone): Unexpected error" + ex.Message);
                                     return commandResult;
                                 }
 
@@ -9059,7 +9480,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     {
                                         commandResult = "error setting the antenna zone.";
                                         _logger.LogError(ex,
-                                            "ProcessMqttModeJsonCommand (antennaZoneState): Unexpected error" + ex.Message);
+                                            "ProcessMqttSetCfgJsonCommand (antennaZoneState): Unexpected error" + ex.Message);
                                         return commandResult;
                                     }
                                 }
@@ -9074,12 +9495,20 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             }
 
 
-                            if (commandPayloadJObject.ContainsKey("antennas"))
+                            if (commandPayloadJObject.ContainsKey("antennas") || commandPayloadJObject.ContainsKey("ants"))
                                 try
                                 {
-                                    var antennaListJArray =
-                                        commandPayloadJObject["antennas"].Value<JArray>(); // Value<List<int>>();
-                                    if (antennaListJArray != null)
+                                    JArray antennaListJArray = new();
+                                    if(commandPayloadJObject.ContainsKey("antennas"))
+                                    {
+                                        antennaListJArray = commandPayloadJObject["antennas"].Value<JArray>(); // Value<List<int>>();
+                                    }
+                                    else if (commandPayloadJObject.ContainsKey("ants"))
+                                    {
+                                        antennaListJArray = commandPayloadJObject["ants"].Value<JArray>(); // Value<List<int>>();
+                                    }
+
+                                    if (antennaListJArray != null && antennaListJArray.Count > 0)
                                     {
                                         antennaList.Clear();
                                         antennaList = antennaListJArray.ToObject<List<int>>();
@@ -9090,7 +9519,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     commandResult = "error setting active antennas.";
                                     _logger.LogError(ex,
-                                        "ProcessMqttModeJsonCommand (antennas): Unexpected error" + ex.Message);
+                                        "ProcessMqttSetCfgJsonCommand (antennas): Unexpected error" + ex.Message);
                                     return commandResult;
                                 }
 
@@ -9105,7 +9534,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     commandResult = "error setting transmit power.";
                                     _logger.LogError(ex,
-                                        "ProcessMqttModeJsonCommand (transmitPower): Unexpected error" + ex.Message);
+                                        "ProcessMqttSetCfgJsonCommand (transmitPower): Unexpected error" + ex.Message);
                                     return commandResult;
                                 }
 
@@ -9120,7 +9549,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     commandResult = "error setting rssi filter.";
                                     _logger.LogError(ex,
-                                        "ProcessMqttModeJsonCommand (rssiFilter): Unexpected error" + ex.Message);
+                                        "ProcessMqttSetCfgJsonCommand (rssiFilter): Unexpected error" + ex.Message);
                                     return commandResult;
                                 }
 
@@ -9162,7 +9591,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             {
                                 commandResult = "error trying to enable antennas.";
                                 _logger.LogError(ex,
-                                    "ProcessMqttModeJsonCommand (enable antennas): Unexpected error" + ex.Message);
+                                    "ProcessMqttsetCfgJsonCommand (enable antennas): Unexpected error" + ex.Message);
                                 return commandResult;
                             }
 
@@ -9197,7 +9626,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             {
                                 commandResult = "error saving settings.";
                                 _logger.LogError(ex,
-                                    "ProcessMqttModeJsonCommand (set tx power): Unexpected error" + ex.Message);
+                                    "ProcessMqttsetCfgJsonCommand (set tx power): Unexpected error" + ex.Message);
                                 return commandResult;
                             }
 
@@ -9219,7 +9648,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     commandResult = "error setting group interval in ms.";
                                     _logger.LogError(ex,
-                                        "ProcessMqttModeJsonCommand (groupIntervalInMs): Unexpected error" +
+                                        "ProcessMqttSetCfgJsonCommand (groupIntervalInMs): Unexpected error" +
                                         ex.Message);
                                     return commandResult;
                                 }
@@ -9249,7 +9678,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     commandResult = "error setting group interval in ms.";
                                     _logger.LogError(ex,
-                                        "ProcessMqttModeJsonCommand (groupIntervalInMs): Unexpected error" +
+                                        "ProcessMqttSetCfgJsonCommand (groupIntervalInMs): Unexpected error" +
                                         ex.Message);
                                     return commandResult;
                                 }
@@ -9271,7 +9700,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     commandResult = "error setting session.";
                                     _logger.LogError(ex,
-                                        "ProcessMqttModeJsonCommand (session): Unexpected error" +
+                                        "ProcessMqttSetCfgJsonCommand (session): Unexpected error" +
                                         ex.Message);
                                     return commandResult;
                                 }
@@ -9290,7 +9719,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     commandResult = "error setting tag population.";
                                     _logger.LogError(ex,
-                                        "ProcessMqttModeJsonCommand (tagPopulation): Unexpected error" +
+                                        "ProcessMqttSetCfgJsonCommand (tagPopulation): Unexpected error" +
                                         ex.Message);
                                     return commandResult;
                                 }
@@ -9354,7 +9783,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     commandResult = "error setting searchMode.";
                                     _logger.LogError(ex,
-                                        "ProcessMqttModeJsonCommand (searchMode): Unexpected error" +
+                                        "ProcessMqttSetCfgJsonCommand (searchMode): Unexpected error" +
                                         ex.Message);
                                     return commandResult;
                                 }
@@ -9398,7 +9827,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     commandResult = "error setting filter.";
                                     _logger.LogError(ex,
-                                        "ProcessMqttModeJsonCommand (filter): Unexpected error" +
+                                        "ProcessMqttSetCfgJsonCommand (filter): Unexpected error" +
                                         ex.Message);
                                     return commandResult;
                                 }
@@ -9428,10 +9857,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     }
                                 }
                                 catch (Exception ex)
+
+
                                 {
                                     commandResult = "error setting filter header list.";
                                     _logger.LogError(ex,
-                                        "ProcessMqttModeJsonCommand (filter epc header list): Unexpected error" +
+                                        "ProcessMqttSetCfgJsonCommand (filter epc header list): Unexpected error" +
                                         ex.Message);
                                     return commandResult;
                                 }
@@ -9784,8 +10215,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
                     _logger.LogInformation("### CONNECTED WITH SERVER ### " + _standaloneConfigDTO.mqttBrokerAddress,
                         SeverityType.Debug);
-                var mqttManagementEvents = new Dictionary<string, string>();
+                var mqttManagementEvents = new Dictionary<string, object>();
                 mqttManagementEvents.Add("smartreader-mqtt-status", "connected");
+                mqttManagementEvents.Add("readerName", _standaloneConfigDTO.readerName);
+                mqttManagementEvents.Add("mac", _iotDeviceInterfaceClient.MacAddress);
+                mqttManagementEvents.Add("timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now));
                 PublishMqttManagementEvent(mqttManagementEvents);
 
                 try
@@ -9896,7 +10330,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         return lastWillMessage;
     }
 
-    private void PublishMqttManagementEvent(Dictionary<string, string> mqttManagementEvents)
+    private void PublishMqttManagementEvent(Dictionary<string, object> mqttManagementEvents)
     {
         if (_standaloneConfigDTO != null)
         {
@@ -9980,7 +10414,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     {
                         Console.WriteLine(_standaloneConfigDTO.licenseKey.Trim());
                         _logger.LogInformation("Invalid license key. ", SeverityType.Error);
-                        var mqttManagementEvents = new Dictionary<string, string>();
+                        var mqttManagementEvents = new Dictionary<string, object>();
+                        mqttManagementEvents.Add("readerName", _standaloneConfigDTO.readerName);
+                        mqttManagementEvents.Add("mac", _iotDeviceInterfaceClient.MacAddress);
+                        mqttManagementEvents.Add("ip", _iotDeviceInterfaceClient.IpAddresses);
+                        mqttManagementEvents.Add("serial", _standaloneConfigDTO.readerSerial);
+                        mqttManagementEvents.Add("timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now));
                         mqttManagementEvents.Add("smartreader-status", "invalid-license-key");
                         PublishMqttManagementEvent(mqttManagementEvents);
                         return;
@@ -9995,7 +10434,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     Console.WriteLine(_standaloneConfigDTO.licenseKey.Trim());
                     _logger.LogInformation("Invalid license key. ", SeverityType.Error);
-                    var mqttManagementEvents = new Dictionary<string, string>();
+                    var mqttManagementEvents = new Dictionary<string, object>();
+                    mqttManagementEvents.Add("readerName", _standaloneConfigDTO.readerName);
+                    mqttManagementEvents.Add("mac", _iotDeviceInterfaceClient.MacAddress);
+                    mqttManagementEvents.Add("ip", _iotDeviceInterfaceClient.IpAddresses);
+                    mqttManagementEvents.Add("serial", _standaloneConfigDTO.readerSerial);
+                    mqttManagementEvents.Add("timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now));
                     mqttManagementEvents.Add("smartreader-status", "invalid-license-key");
                     PublishMqttManagementEvent(mqttManagementEvents);
                     return;
@@ -10209,17 +10653,17 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 if (_gpiPortStates.ContainsKey(0))
                 {
                     if (_gpiPortStates[0])
-                        tagRead.Gpi1Status = 1;
+                        tagRead.Gpi1Status = "high";
                     else
-                        tagRead.Gpi1Status = 0;
+                        tagRead.Gpi1Status = "low";
                 }
 
-                if (_gpiPortStates.ContainsKey(1) && _gpiPortStates[1])
+                if (_gpiPortStates.ContainsKey(1))
                 {
                     if (_gpiPortStates[1])
-                        tagRead.Gpi2Status = 1;
+                        tagRead.Gpi2Status = "high";
                     else
-                        tagRead.Gpi2Status = 0;
+                        tagRead.Gpi2Status = "low";
                 }
             }
 
@@ -10545,7 +10989,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         skuSummary.EventTimestamp = eventTimestamp;
                         skuSummaryList.Add(tagDataKeyValue, skuSummary);
                         var skuArray = JArray.FromObject(skuSummaryList.Values);
-                        SaveJsonSkuSummaryToDb(skuArray);
+                        AddJsonSkuSummaryToQueue(skuArray);
                     }
                 }
 
@@ -11281,18 +11725,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
-    public async void SaveJsonSkuSummaryToDb(JArray dto)
+    public async void AddJsonSkuSummaryToQueue(JArray dto)
     {
         try
         {
             _logger.LogInformation("SaveJsonSkuSummaryToDb... ");
             await readLock.WaitAsync();
             using var scope = Services.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDb>();
-            var configModel = new SmartReaderSkuSummaryModel();
-            configModel.Value = JsonConvert.SerializeObject(dto);
-            dbContext.SmartReaderSkuSummaryModels.Add(configModel);
-            await dbContext.SaveChangesAsync();
+            var summaryQueueBackgroundService = scope.ServiceProvider.GetRequiredService<ISummaryQueueBackgroundService>();
+            var JsonSkuSummary = JsonConvert.SerializeObject(dto);
+            summaryQueueBackgroundService.AddData(JsonSkuSummary);
         }
         catch (Exception ex)
         {
@@ -11303,6 +11745,29 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             readLock.Release();
         }
     }
+
+    //public async void SaveJsonSkuSummaryToDb(JArray dto)
+    //{
+    //    try
+    //    {
+    //        _logger.LogInformation("SaveJsonSkuSummaryToDb... ");
+    //        await readLock.WaitAsync();
+    //        using var scope = Services.CreateScope();
+    //        var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDb>();
+    //        var configModel = new SmartReaderSkuSummaryModel();
+    //        configModel.Value = JsonConvert.SerializeObject(dto);
+    //        dbContext.SmartReaderSkuSummaryModels.Add(configModel);
+    //        await dbContext.SaveChangesAsync();
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        _logger.LogError(ex, "Unexpected error on SaveJsonTagEventToDb. " + ex.Message);
+    //    }
+    //    finally
+    //    {
+    //        readLock.Release();
+    //    }
+    //}
 
     public async void SaveConfigDtoToDb(StandaloneConfigDTO dto)
     {

@@ -10,13 +10,19 @@
 #endregion
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Http;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Serilog;
@@ -28,6 +34,7 @@ using SmartReaderJobs.Utils;
 using SmartReaderJobs.ViewModel.Mqtt.Endpoint;
 using SmartReaderStandalone.Authentication;
 using SmartReaderStandalone.Entities;
+using SmartReaderStandalone.Services;
 using SmartReaderStandalone.Utils;
 using SmartReaderStandalone.ViewModel;
 using SmartReaderStandalone.ViewModel.Status;
@@ -56,11 +63,29 @@ builder.Host.UseSerilog((ctx, lc) => lc
         fileSizeLimitBytes: 102400, rollOnFileSizeLimit: true, retainedFileCountLimit: 2));
 
 
-builder.Services.AddLogging();
+//builder.Services.AddLogging();
+// Register the Serilog logger with DI
+builder.Services.AddLogging(loggingBuilder =>
+{
+    loggingBuilder.AddSerilog();
+});
+
 builder.Services.AddControllers();
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddHttpClient();
+//builder.Services.AddHttpClient("smartreaderHttpClient", client =>
+//{
+//    client.BaseAddress = new Uri("https://localhost");
+//});
+//builder.Services.Configure<HttpClientFactoryOptions>("smartreaderHttpClient", options =>
+//{
+//    options.HttpClientHandler = new HttpClientHandler
+//    {
+//        Proxy = new WebProxy("http://proxy.example.com:8888") // Replace with your proxy URL and port
+//    };
+//});
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 //builder.Services.AddCors();
@@ -71,27 +96,30 @@ builder.Services.AddCors(o => o.AddPolicy("AllowAll", builder =>
         .AllowAnyHeader();
 }));
 
-
-
 builder.Services.AddScoped<IUserService, UserService>();
 
 builder.Services.AddDbContext<RuntimeDb>(opt => opt.UseInMemoryDatabase("RuntimeDb"));
 
 builder.Services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
-builder.Services.AddHostedService<IotInterfaceService>();
 
 builder.Services.AddDirectoryBrowser();
-
 
 builder.WebHost.ConfigureKestrel(opt =>
 {
     opt.ListenAnyIP(8443, listOpt => { listOpt.UseHttps(@"/customer/localhost.pfx", "r700"); });
 });
 //builder.Services.AddRouting();
+//builder.Services.AddHostedService<SummaryQueueBackgroundService>();
+builder.Services.AddHostedService<IotInterfaceService>();
+builder.Services.AddScoped<ISummaryQueueBackgroundService, SummaryQueueBackgroundService>();
+
 
 var app = builder.Build();
 
-ILogger logger = app.Services.GetService<ILogger<Program>>();
+//ILogger logger = app.Services.GetService<ILogger<Program>>();
+var logger = app.Services.GetRequiredService<ILogger<Program>>();
+
+
 
 var readerAddress = app.Configuration["ReaderInfo:Address"] ?? "127.0.0.1";
 
@@ -151,57 +179,114 @@ if (Directory.Exists("/customer/wwwroot/logs"))
     });
 
 
+//app.MapGet("/api/stream/volumes", async (RuntimeDb db, HttpContext context) =>
+//{
+
+//    async IAsyncEnumerable<List<JsonDocument>> StreamSmartReaderSkuSummaryModelAsync()
+//    {
+
+//        var resp = context.Response;
+//        resp.Headers.ContentType = "text/event-stream";
+//        var keepaliveStopWatch = new Stopwatch();
+//        keepaliveStopWatch.Start();
+//        //var serializer = new JsonSerializer();
+//        while (true)
+//        {
+//            //JObject returnedData;
+//            var dataModel = db.SmartReaderSkuSummaryModels.LastOrDefault();
+//            if (dataModel != null && !string.IsNullOrEmpty(dataModel.Value))
+//            {
+             
+//                var json = dataModel.Value;
+
+//                var jsonOject = JsonDocument.Parse(json);
+//                //JObject jsonOject = JObject.Parse(json);
+
+//                var jsonString = JsonSerializer.Serialize(jsonOject);
+//                var returnedData = Regex.Unescape(jsonString);
+
+//                if (returnedData.StartsWith("[")) returnedData = returnedData.Substring(1);
+
+//                db.SmartReaderSkuSummaryModels.Remove(dataModel);
+//                await db.SaveChangesAsync();
+
+//                List<JsonDocument> result = new();
+//                result.Add(jsonOject);
+
+//                yield return result;
+
+//            }
+//            else if (keepaliveStopWatch.IsRunning && keepaliveStopWatch.Elapsed.TotalSeconds > 10)
+//            {
+//                keepaliveStopWatch.Restart();
+//                var jsonOject = JsonDocument.Parse(@"{}");
+//                List<JsonDocument> result = new();
+//                result.Add(jsonOject);
+//                yield return result;
+//            }
+
+//            await Task.Delay(100);
+//        }
+//    }
+
+//    return StreamSmartReaderSkuSummaryModelAsync();
+//});
+
 app.MapGet("/api/stream/volumes", async (RuntimeDb db, HttpContext context) =>
 {
+    var producerService = context.RequestServices.GetRequiredService<ISummaryQueueBackgroundService>();
 
-    async IAsyncEnumerable<List<JsonDocument>> StreamSmartReaderSkuSummaryModelAsync()
-    {
 
-        var resp = context.Response;
-        resp.Headers.ContentType = "text/event-stream";
-        var keepaliveStopWatch = new Stopwatch();
-        keepaliveStopWatch.Start();
-        //var serializer = new JsonSerializer();
-        while (true)
+        async IAsyncEnumerable<List<JsonDocument>> StreamSmartReaderSkuSummaryModelAsync()
         {
-            //JObject returnedData;
-            var dataModel = db.SmartReaderSkuSummaryModels.LastOrDefault();
-            if (dataModel != null && !string.IsNullOrEmpty(dataModel.Value))
+
+            var resp = context.Response;
+            resp.Headers.ContentType = "text/event-stream";
+            var keepaliveStopWatch = new Stopwatch();
+            keepaliveStopWatch.Start();
+            //var serializer = new JsonSerializer();
+            while (true)
             {
-             
-                var json = dataModel.Value;
+                string dataModel = null;
+                if (producerService.HasDataAvailable() )
+                {
+                    dataModel = producerService.GetData();
+                    if(!string.IsNullOrEmpty(dataModel))
+                    {
+                        var json = dataModel;
 
-                var jsonOject = JsonDocument.Parse(json);
-                //JObject jsonOject = JObject.Parse(json);
+                        var jsonOject = JsonDocument.Parse(json);
+                        //JObject jsonOject = JObject.Parse(json);
 
-                var jsonString = JsonSerializer.Serialize(jsonOject);
-                var returnedData = Regex.Unescape(jsonString);
+                        var jsonString = JsonSerializer.Serialize(jsonOject);
+                        var returnedData = Regex.Unescape(jsonString);
 
-                if (returnedData.StartsWith("[")) returnedData = returnedData.Substring(1);
+                        if (returnedData.StartsWith("[")) returnedData = returnedData.Substring(1);
 
-                db.SmartReaderSkuSummaryModels.Remove(dataModel);
-                db.SaveChangesAsync();
+                        List<JsonDocument> result = new();
+                        result.Add(jsonOject);
 
-                List<JsonDocument> result = new();
-                result.Add(jsonOject);
+                        yield return result;
+                    }
+                   
+                }
+                else if (keepaliveStopWatch.IsRunning && keepaliveStopWatch.Elapsed.TotalSeconds > 10)
+                {
+                    keepaliveStopWatch.Restart();
+                    var jsonOject = JsonDocument.Parse(@"{}");
+                    List<JsonDocument> result = new();
+                    result.Add(jsonOject);
+                    yield return result;
+                }
 
-                yield return result;
-
+                await Task.Delay(100);
             }
-            else if (keepaliveStopWatch.IsRunning && keepaliveStopWatch.Elapsed.TotalSeconds > 10)
-            {
-                keepaliveStopWatch.Restart();
-                var jsonOject = JsonDocument.Parse(@"{}");
-                List<JsonDocument> result = new();
-                result.Add(jsonOject);
-                yield return result;
-            }
-
-            await Task.Delay(100);
         }
-    }
 
-    return StreamSmartReaderSkuSummaryModelAsync();
+        return StreamSmartReaderSkuSummaryModelAsync();
+
+
+    
 });
 
 app.MapGet("/api/stream/tags", async (RuntimeDb db, HttpContext context) =>
@@ -231,7 +316,7 @@ app.MapGet("/api/stream/tags", async (RuntimeDb db, HttpContext context) =>
                 if (returnedData.StartsWith("[")) returnedData = returnedData.Substring(1);
 
                 db.SmartReaderTagReadModels.Remove(dataModel);
-                db.SaveChangesAsync();
+                await db.SaveChangesAsync();
 
                 List<JsonDocument> result = new();
                 result.Add(jsonOject);
@@ -442,10 +527,44 @@ app.MapGet("/api/query/external/product/{gtin}", [AuthorizeBasicAuth]
                 var host = fullUriData.Host;
                 var baseUri = fullUriData.GetLeftPart(UriPartial.Authority);
                 var rightActionPath = url.Replace(baseUri, "");
+                var httpClientHandler = new HttpClientHandler
+                {
+
+
+                    ServerCertificateCustomValidationCallback =
+                   (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
+                       chain, errors) => true)
+                };
+
                 HttpClient httpClient = new()
                 {
                     BaseAddress = new Uri(url)
                 };
+
+                if (!string.IsNullOrEmpty(configDto.networkProxy))
+                {
+                    WebProxy webProxy = new WebProxy(configDto.networkProxy, int.Parse(configDto.networkProxyPort));
+                    webProxy.Credentials = CredentialCache.DefaultNetworkCredentials;
+                    webProxy.BypassProxyOnLocal = true;
+                    webProxy.BypassList.Append("169.254.1.1");
+                    webProxy.BypassList.Append(readerAddress);
+                    webProxy.BypassList.Append("localhost");
+
+                    httpClientHandler = new HttpClientHandler
+                    {
+
+                        Proxy = webProxy,
+                        UseProxy = true,
+                        ServerCertificateCustomValidationCallback =
+                        (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
+                            chain, errors) => true)
+                    };
+                    httpClient = new HttpClient(httpClientHandler)
+                    {
+                        BaseAddress = new Uri(url)
+                    };
+
+                }
 
                 var request = new HttpRequestMessage
                 {
@@ -462,13 +581,13 @@ app.MapGet("/api/query/external/product/{gtin}", [AuthorizeBasicAuth]
                     .Accept
                     .Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-                Log.Debug(url);
+                logger.LogInformation(url);
 
                 var response = await httpClient.SendAsync(request).ConfigureAwait(false);
                 var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-                Log.Debug(content);
-                Console.WriteLine(content);
+                logger.LogInformation(content);
+                logger.LogInformation(content);
 
                 if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
                 {
@@ -521,10 +640,44 @@ app.MapPost("/api/query/external/order", [AuthorizeBasicAuth]
                 var host = fullUriData.Host;
                 var baseUri = fullUriData.GetLeftPart(UriPartial.Authority);
                 var rightActionPath = url.Replace(baseUri, "");
+                var httpClientHandler = new HttpClientHandler
+                {
+
+
+                    ServerCertificateCustomValidationCallback =
+                   (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
+                       chain, errors) => true)
+                };
                 HttpClient httpClient = new()
                 {
                     BaseAddress = new Uri(url)
                 };
+
+                if (!string.IsNullOrEmpty(configDto.networkProxy))
+                {
+                    WebProxy webProxy = new WebProxy(configDto.networkProxy, int.Parse(configDto.networkProxyPort));
+                    webProxy.Credentials = CredentialCache.DefaultNetworkCredentials;
+                    webProxy.BypassProxyOnLocal = true;
+                    webProxy.BypassList.Append("169.254.1.1");
+                    webProxy.BypassList.Append(readerAddress);
+                    webProxy.BypassList.Append("localhost");
+
+                    httpClientHandler = new HttpClientHandler
+                    {
+
+                        Proxy = webProxy,
+                        UseProxy = true,
+                        ServerCertificateCustomValidationCallback =
+                        (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
+                            chain, errors) => true)
+                    };
+                    httpClient = new HttpClient(httpClientHandler)
+                    {
+                        BaseAddress = new Uri(url)
+                    };
+
+                }
+                
 
                 var request = new HttpRequestMessage
                 {
@@ -555,7 +708,7 @@ app.MapPost("/api/query/external/order", [AuthorizeBasicAuth]
 
                 //Log.Debug(content);
                 if (logger != null) logger.LogInformation(content);
-                Console.WriteLine(content);
+                logger.LogInformation(content);
 
                 if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
                 {
@@ -580,6 +733,120 @@ app.MapPost("/api/query/external/order", [AuthorizeBasicAuth]
             return Results.BadRequest(requestResult);
         }
     });
+
+app.MapGet("/api/query/external/order/{order}", [AuthorizeBasicAuth]
+async (HttpRequest readerRequest, string order, RuntimeDb db) =>
+{
+    var requestResult = "";
+
+    try
+    {
+
+
+        var configDto = ConfigFileHelper.ReadFile();
+        if (configDto != null && !string.IsNullOrEmpty(configDto.enableExternalApiVerification)
+                              && "1".Equals(configDto.enableExternalApiVerification))
+        {
+            if (logger != null)
+                logger.LogInformation("enableExternalApiVerification -> " +
+                                      configDto.enableExternalApiVerification);
+            var url = configDto.externalApiVerificationSearchOrderUrl + order;
+            var fullUriData = new Uri(url);
+            var host = fullUriData.Host;
+            var baseUri = fullUriData.GetLeftPart(UriPartial.Authority);
+            var rightActionPath = url.Replace(baseUri, "");
+            var httpClientHandler = new HttpClientHandler
+            {
+
+
+                ServerCertificateCustomValidationCallback =
+               (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
+                   chain, errors) => true)
+            };
+            
+            HttpClient httpClient = new()
+            {
+                BaseAddress = new Uri(url)
+            };
+
+            if (!string.IsNullOrEmpty(configDto.networkProxy))
+            {
+                WebProxy webProxy = new WebProxy(configDto.networkProxy, int.Parse(configDto.networkProxyPort));
+                webProxy.Credentials = CredentialCache.DefaultNetworkCredentials;
+                webProxy.BypassProxyOnLocal = true;
+                webProxy.BypassList.Append("169.254.1.1");
+                webProxy.BypassList.Append(readerAddress);
+                webProxy.BypassList.Append("localhost");
+
+                httpClientHandler = new HttpClientHandler
+                {
+
+                    Proxy = webProxy,
+                    UseProxy = true,
+                    ServerCertificateCustomValidationCallback =
+                    (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
+                        chain, errors) => true)
+                };
+
+                httpClient = new HttpClient(httpClientHandler)
+                {
+                    BaseAddress = new Uri(url)
+                };
+
+            }
+
+            var request = new HttpRequestMessage
+            {
+                Method = HttpMethod.Get,
+                RequestUri = new Uri(url),
+            };
+            request.Headers.Add("Accept", "application/json");
+            request.Headers.Add(configDto.externalApiVerificationHttpHeaderName,
+                configDto.externalApiVerificationHttpHeaderValue);
+            ;
+
+
+            httpClient.DefaultRequestHeaders
+                .Accept
+                .Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            if (logger != null)
+            {
+                logger.LogInformation(url);
+                //logger.LogInformation(jsonDocumentStr);
+            }
+            //Console.WriteLine(jsonDocument);
+
+            var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+            var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+            //Log.Debug(content);
+            if (logger != null) logger.LogInformation(content);
+            Console.WriteLine(content);
+
+            if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
+            {
+                requestResult = response.Content.ReadAsStringAsync().Result;
+                //Log.Debug(requestResult);
+                if (logger != null) logger.LogInformation(requestResult);
+
+                return Results.Ok(JsonDocument.Parse(requestResult));
+            }
+        }
+        else
+        {
+            if (logger != null) logger.LogError("enableExternalApiVerification disabled or null ");
+        }
+
+        return Results.Ok(requestResult);
+    }
+    catch (Exception exDb)
+    {
+        if (logger != null) logger.LogError(exDb, "Error processing order request.");
+        File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
+        return Results.BadRequest(requestResult);
+    }
+});
 
 app.MapPost("/api/publish/external", [AuthorizeBasicAuth]
     async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
@@ -606,10 +873,43 @@ app.MapPost("/api/publish/external", [AuthorizeBasicAuth]
                 var host = fullUriData.Host;
                 var baseUri = fullUriData.GetLeftPart(UriPartial.Authority);
                 var rightActionPath = url.Replace(baseUri, "");
+                var httpClientHandler = new HttpClientHandler
+                {
+
+
+                    ServerCertificateCustomValidationCallback =
+                   (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
+                       chain, errors) => true)
+                };
                 HttpClient httpClient = new()
                 {
                     BaseAddress = new Uri(url)
                 };
+
+                if (!string.IsNullOrEmpty(configDto.networkProxy))
+                {
+                    WebProxy webProxy = new WebProxy(configDto.networkProxy, int.Parse(configDto.networkProxyPort));
+                    webProxy.Credentials = CredentialCache.DefaultNetworkCredentials;
+                    webProxy.BypassProxyOnLocal = true;
+                    webProxy.BypassList.Append("169.254.1.1");
+                    webProxy.BypassList.Append(readerAddress);
+                    webProxy.BypassList.Append("localhost");
+
+                    httpClientHandler = new HttpClientHandler
+                    {
+
+                        Proxy = webProxy,
+                        UseProxy = true,
+                        ServerCertificateCustomValidationCallback =
+                        (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
+                            chain, errors) => true)
+                    };
+                    httpClient = new HttpClient(httpClientHandler)
+                    {
+                        BaseAddress = new Uri(url)
+                    };
+
+                }
 
                 var request = new HttpRequestMessage
                 {
@@ -674,15 +974,53 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
         if (configDto != null && !string.IsNullOrEmpty(configDto.enableExternalApiVerification)
                               && "1".Equals(configDto.enableExternalApiVerification))
         {
-            var url = configDto.externalApiVerificationPublishDataUrl;
+            
+            var url = configDto.externalApiVerificationChangeOrderStatusUrl;
+            if(url.Contains("/searches/results"))
+            {
+                url = url.Replace("/searches/results", "");
+            }
             var fullUriData = new Uri(url);
             var host = fullUriData.Host;
             var baseUri = fullUriData.GetLeftPart(UriPartial.Authority);
             var rightActionPath = url.Replace(baseUri, "");
+            var httpClientHandler = new HttpClientHandler
+            {
+
+
+                ServerCertificateCustomValidationCallback =
+                   (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
+                       chain, errors) => true)
+            };
             HttpClient httpClient = new()
             {
                 BaseAddress = new Uri(url)
             };
+
+            if (!string.IsNullOrEmpty(configDto.networkProxy))
+            {
+                WebProxy webProxy = new WebProxy(configDto.networkProxy, int.Parse(configDto.networkProxyPort));
+                webProxy.Credentials = CredentialCache.DefaultNetworkCredentials;
+                webProxy.BypassProxyOnLocal = true;
+                webProxy.BypassList.Append("169.254.1.1");
+                webProxy.BypassList.Append(readerAddress);
+                webProxy.BypassList.Append("localhost");
+
+                httpClientHandler = new HttpClientHandler
+                {
+
+                    Proxy = webProxy,
+                    UseProxy = true,
+                    ServerCertificateCustomValidationCallback =
+                    (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
+                        chain, errors) => true)
+                };
+                httpClient = new HttpClient(httpClientHandler)
+                {
+                    BaseAddress = new Uri(url)
+                };
+
+            }
 
             var request = new HttpRequestMessage
             {
@@ -701,19 +1039,19 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
                 .Accept
                 .Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            Log.Debug(url);
-            Log.Debug(jsonDocumentStr);
+            logger.LogDebug(url);
+            logger.LogDebug(jsonDocumentStr);
 
             var response = await httpClient.SendAsync(request).ConfigureAwait(false);
             var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-            Log.Debug(content);
+            logger.LogDebug(content);
             Console.WriteLine(content);
 
             if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
             {
                 requestResult = response.Content.ReadAsStringAsync().Result;
-                Log.Debug(requestResult);
+                logger.LogDebug(requestResult);
                 return Results.Ok(JsonDocument.Parse(requestResult));
             }
         }
@@ -915,6 +1253,12 @@ app.MapGet("/api/reload", [AuthorizeBasicAuth] async (RuntimeDb db) =>
         }
 
         // exits the app
+        //await Task.Delay(TimeSpan.FromSeconds(2));
+        logger.LogInformation("Restarting process");
+        //// Restart the application by spawning a new process with the same arguments
+        //var process = Process.GetCurrentProcess();
+        //process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
+        //Process.Start(process.MainModule.FileName);
         Environment.Exit(0);
 
         return Results.Ok();
@@ -925,48 +1269,84 @@ app.MapGet("/api/reload", [AuthorizeBasicAuth] async (RuntimeDb db) =>
     }
 });
 
-app.MapGet("/api/getcapabilities", [AuthorizeBasicAuth] async (RuntimeDb db) =>
+app.MapGet("/api/getcapabilities", async (RuntimeDb db) =>
 {
+    List<SmartReaderCapabilities> capabilities = new List<SmartReaderCapabilities>();
 
-    IR700IotReader _iotDeviceInterfaceClient = new R700IotReader(readerAddress, "", true, true, rshellAuthUserName, rshellAuthUserName);
-    var systemInfo = _iotDeviceInterfaceClient.GetSystemInfoAsync().Result;
-    var systemRegion =_iotDeviceInterfaceClient.GetSystemRegionInfoAsync().Result;
-    var systemPower = _iotDeviceInterfaceClient.GetSystemPowerAsync().Result;
-    bool isPoePlus = false;
-    if(systemPower.PowerSource.Equals(Impinj.Atlas.PowerSource.Poeplus))
+
+
+    using (IR700IotReader _iotDeviceInterfaceClient = new R700IotReader(readerAddress, "", true, true, rshellAuthUserName, rshellAuthPassword))
     {
-        isPoePlus = true;
-    }
-    var capabilities = new List<SmartReaderCapabilities>();
-    var capability = new SmartReaderCapabilities();
-    capability.RxTable = Utils.GetDefaultRxTable();
-    capability.TxTable = Utils.GetDefaultTxTable(systemInfo.ProductModel, isPoePlus, systemRegion.OperatingRegion);
-    capability.RfModeTable = Utils.GetDefaultRfModeTable();
-    capability.MaxAntennas = 4;
-    capability.SearchModeTable = Utils.GetDefaultSearchModeTable();
-    capability.LicenseValid = 1;
-    capability.ValidAntennas = "1,2,3,4";
-    capability.ModelName = "R700";
-    try
-    {
-        var configModel = db.ReaderConfigs.FindAsync("READER_CONFIG").Result;
-        if (configModel != null && !string.IsNullOrEmpty(configModel.Value))
+        //IR700IotReader _iotDeviceInterfaceClient = new R700IotReader(readerAddress, "", true, true, rshellAuthUserName, rshellAuthUserName);
+        var systemInfo = _iotDeviceInterfaceClient.GetSystemInfoAsync().Result;
+        var systemRegion = _iotDeviceInterfaceClient.GetSystemRegionInfoAsync().Result;
+        var systemPower = _iotDeviceInterfaceClient.GetSystemPowerAsync().Result;
+        bool isPoePlus = false;
+        if (systemPower.PowerSource.Equals(Impinj.Atlas.PowerSource.Poeplus))
         {
-            var storedSettingsDto = JsonConvert.DeserializeObject<StandaloneConfigDTO>(configModel.Value);
-            if (storedSettingsDto != null)
+            isPoePlus = true;
+        }
+        else
+        {
+            var rshell = new RShellUtil(readerAddress, rshellAuthUserName, rshellAuthPassword);
+            try
             {
-                storedSettingsDto = StandaloneConfigDTO.CleanupUrlEncoding(storedSettingsDto);
-                var currentAntennas = storedSettingsDto.antennaPorts.Split(",");
-                capability.MaxAntennas = currentAntennas.Length;
-                capability.ValidAntennas = storedSettingsDto.antennaPorts;
+                var resultRfidStat = rshell.SendCommand("show system power");
+                rshell.Disconnect();
+                var lines = resultRfidStat.Split("\n");
+                foreach (var line in lines)
+                {
+                    if (line.StartsWith("PowerSource"))
+                    {
+                        if (line.Contains("PoE+") || line.Contains("poe+"))
+                        {
+                            isPoePlus = true;
+                        }
+                        else
+                        {
+                            isPoePlus = false;
+                        }
+                        break;
+                    }
+                }
+            }
+            catch (Exception)
+            {
             }
         }
-    }
-    catch (Exception)
-    {
+
+        var capability = new SmartReaderCapabilities();
+        capability.RxTable = Utils.GetDefaultRxTable();
+        capability.TxTable = Utils.GetDefaultTxTable(systemInfo.ProductModel, isPoePlus, systemRegion.OperatingRegion);
+        capability.RfModeTable = Utils.GetDefaultRfModeTable();
+        capability.MaxAntennas = 4;
+        capability.SearchModeTable = Utils.GetDefaultSearchModeTable();
+        capability.LicenseValid = 1;
+        capability.ValidAntennas = "1,2,3,4";
+        capability.ModelName = "R700";
+        try
+        {
+            var configModel = db.ReaderConfigs.FindAsync("READER_CONFIG").Result;
+            if (configModel != null && !string.IsNullOrEmpty(configModel.Value))
+            {
+                var storedSettingsDto = JsonConvert.DeserializeObject<StandaloneConfigDTO>(configModel.Value);
+                if (storedSettingsDto != null)
+                {
+                    storedSettingsDto = StandaloneConfigDTO.CleanupUrlEncoding(storedSettingsDto);
+                    var currentAntennas = storedSettingsDto.antennaPorts.Split(",");
+                    capability.MaxAntennas = currentAntennas.Length;
+                    capability.ValidAntennas = storedSettingsDto.antennaPorts;
+                }
+            }
+        }
+        catch (Exception)
+        {
+        }
+
+        capabilities.Add(capability);
     }
 
-    capabilities.Add(capability);
+    
 
     return Results.Ok(capabilities);
 });
@@ -1066,12 +1446,15 @@ app.MapGet("/api/restore", [AuthorizeBasicAuth] async (RuntimeDb db) =>
         var startInfo = new ProcessStartInfo
         {
             FileName = "/usr/bin/cp",
-            Arguments = "/customer/config/smartreader_backup.ini /customer/config/smartreader.ini"
+            Arguments = "/customer/config/smartreader_backup.json /customer/config/smartreader.json"
         };
-        var proc = new Process {StartInfo = startInfo};
-        proc.Start();
-
-        Environment.Exit(0);
+        await Task.Delay(TimeSpan.FromSeconds(2));
+        logger.LogInformation("Restarting process");
+        // Restart the application by spawning a new process with the same arguments
+        var process = Process.GetCurrentProcess();
+        process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
+        Process.Start(process.MainModule.FileName);
+        Environment.Exit(1);
 
         return Results.Ok();
     }
@@ -1093,15 +1476,52 @@ app.MapPost("/api/test", [AuthorizeBasicAuth] async ([FromBody] BearerDTO bearer
             var host = fullUriData.Host;
             var baseUri = fullUriData.GetLeftPart(UriPartial.Authority);
             var rightActionPath = url.Replace(baseUri, "");
+            var configDto = ConfigFileHelper.ReadFile();
+            var httpClientHandler = new HttpClientHandler
+            {
+
+
+                ServerCertificateCustomValidationCallback =
+                   (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
+                       chain, errors) => true)
+            };
             HttpClient httpClient = new()
             {
                 BaseAddress = new Uri(bearerDTO.httpAuthenticationTokenApiUrl)
             };
 
+            if (!string.IsNullOrEmpty(configDto.networkProxy))
+            {
+                WebProxy webProxy = new WebProxy(configDto.networkProxy, int.Parse(configDto.networkProxyPort));
+                webProxy.Credentials = CredentialCache.DefaultNetworkCredentials;
+                webProxy.BypassProxyOnLocal = true;
+                webProxy.BypassList.Append("169.254.1.1");
+                webProxy.BypassList.Append(readerAddress);
+                webProxy.BypassList.Append("localhost");
+
+
+                httpClientHandler = new HttpClientHandler
+                {
+
+                    Proxy = webProxy,
+                    UseProxy = true,
+                    ServerCertificateCustomValidationCallback =
+                    (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
+                        chain, errors) => true)
+                };
+                httpClient = new HttpClient(httpClientHandler)
+                {
+                    BaseAddress = new Uri(bearerDTO.httpAuthenticationTokenApiUrl)
+                };
+
+            }
+        
+
+
             var request = new HttpRequestMessage
             {
                 Method = HttpMethod.Post,
-                RequestUri = new Uri(url),
+                RequestUri = new Uri(bearerDTO.httpAuthenticationTokenApiUrl),
                 Content = new StringContent(bearerDTO.httpAuthenticationTokenApiBody, Encoding.UTF8,
                     "application/json" /* or "application/json" in older versions */)
             };
@@ -1410,6 +1830,7 @@ async (HttpRequest request, RuntimeDb db) =>
 
 app.UseSwagger();
 app.UseSwaggerUI();
+
 
 
 app.Run();

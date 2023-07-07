@@ -8,6 +8,7 @@
 //
 //****************************************************************************************************
 #endregion
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Mime;
 using System.Text;
@@ -458,7 +459,7 @@ public class HttpUtil
         //var bodyRequest = "{\"login\": \"inventario\",\"password\": \"inventario\"}";
 
         var client = new RestClient(url);
-
+        
         //var request = new RestSharp.RestRequest();
         var request = new RestRequest(actionPath, Method.Post);
         //{
@@ -491,11 +492,12 @@ public class HttpUtil
         var returnedData = "";
         try
         {
+            
             var httpClient = _httpClientFactory.CreateClient();
-
+            
             //httpClient.DefaultRequestHeaders.ExpectContinue = true;
             httpClient.Timeout = TimeSpan.FromSeconds(3);
-
+            
             var param = JsonConvert.SerializeObject(bodyRequest);
             var completeUrl = "";
 
@@ -525,7 +527,7 @@ public class HttpUtil
             if (!string.IsNullOrEmpty(authHeader) && !string.IsNullOrEmpty(authHeaderValue))
                 request.Headers.Add(authHeader, authHeaderValue);
 
-
+            
             httpClient.DefaultRequestHeaders
                 .Accept
                 .Add(new MediaTypeWithQualityHeaderValue("application/json"));

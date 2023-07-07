@@ -13,8 +13,9 @@ var vueApplication = new Vue({
 			username: "",
 			password: ""
 		},
-		applicationLabel: 'version 4.0.0.2',
+		applicationLabel: 'version 4.0.0.6',
 		applicationBy: 'Smartreader R700',
+		//applicationBy: 'SoLink R700',
 
 		applicationLogo: 'none',
 		selectTxPowerOptions: [],

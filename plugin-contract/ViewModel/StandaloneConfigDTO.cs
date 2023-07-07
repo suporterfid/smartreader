@@ -583,6 +583,8 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
     public string externalApiVerificationPublishDataUrl { get; set; } = "";
 
+    public string externalApiVerificationChangeOrderStatusUrl { get; set; } = "";
+
     public string externalApiVerificationHttpHeaderName { get; set; } = "";
 
     public string externalApiVerificationHttpHeaderValue { get; set; } = "";
@@ -608,6 +610,10 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
     public string tagPresenceTimeoutEnabled { get; set; } = "0";
 
     public string tagPresenceTimeoutInSec { get; set; } = "2";
+
+    public string networkProxy{ get; set; } = "";
+
+    public string networkProxyPort { get; set; } = "";
 
 
 
@@ -1398,6 +1404,11 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
         if (!externalApiVerificationPublishDataUrl.Equals(
                 otherStandaloneConfigDTO.externalApiVerificationPublishDataUrl)) return false;
 
+        if (!externalApiVerificationChangeOrderStatusUrl.Equals(
+               otherStandaloneConfigDTO.externalApiVerificationChangeOrderStatusUrl)) return false;
+
+        
+
         if (!externalApiVerificationHttpHeaderName.Equals(
                 otherStandaloneConfigDTO.externalApiVerificationHttpHeaderName)) return false;
 
@@ -1432,6 +1443,15 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
         if (!tagPresenceTimeoutEnabled.Equals(otherStandaloneConfigDTO.tagPresenceTimeoutEnabled)) return false;
 
         if (!tagPresenceTimeoutInSec.Equals(otherStandaloneConfigDTO.tagPresenceTimeoutInSec)) return false;
+
+        if (!networkProxy.Equals(otherStandaloneConfigDTO.networkProxy)) return false;
+
+        if (!networkProxyPort.Equals(otherStandaloneConfigDTO.networkProxyPort)) return false;
+
+        
+
+
+
 
 
         return true;
@@ -2048,6 +2068,9 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
             config.externalApiVerificationAuthLoginUrl = HttpUtility.UrlDecode(config.externalApiVerificationAuthLoginUrl);
 
+            config.externalApiVerificationChangeOrderStatusUrl = HttpUtility.UrlDecode(config.externalApiVerificationChangeOrderStatusUrl);
+
+            
             config.operatingRegion =
                 HttpUtility.UrlDecode(config.operatingRegion);
 
@@ -2066,6 +2089,14 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
             config.tagPresenceTimeoutEnabled = HttpUtility.UrlDecode(config.tagPresenceTimeoutEnabled);
 
             config.tagPresenceTimeoutInSec = HttpUtility.UrlDecode(config.tagPresenceTimeoutInSec);
+
+            config.networkProxy = HttpUtility.UrlDecode(config.networkProxy);
+
+            config.networkProxyPort = HttpUtility.UrlDecode(config.networkProxyPort);
+
+            
+
+
 
 
 

@@ -93,16 +93,16 @@ public class TagRead
     public long? RfChannel { get; set; }
 
     [JsonProperty("gpi1Status", NullValueHandling = NullValueHandling.Ignore)]
-    public long? Gpi1Status { get; set; }
+    public string Gpi1Status { get; set; }
 
     [JsonProperty("gpi2Status", NullValueHandling = NullValueHandling.Ignore)]
-    public long? Gpi2Status { get; set; }
+    public string Gpi2Status { get; set; }
 
     [JsonProperty("gpi3Status", NullValueHandling = NullValueHandling.Ignore)]
-    public long? Gpi3Status { get; set; }
+    public string Gpi3Status { get; set; }
 
     [JsonProperty("gpi4Status", NullValueHandling = NullValueHandling.Ignore)]
-    public long? Gpi4Status { get; set; }
+    public string Gpi4Status { get; set; }
 
     [JsonProperty("tagDataKey", NullValueHandling = NullValueHandling.Ignore)]
     public string TagDataKey { get; set; }

@@ -291,9 +291,33 @@ public class IoTInterfaceMapper
             var inventoryAntennaConfiguration = new InventoryAntennaConfiguration();
             var currentAntenna = antennaPorts[i];
             var currentState = int.Parse(antennaStates[i]);
+
+
+
             if (!string.IsNullOrEmpty(antennaStates[i]) && 1 == currentState)
             {
                 inventoryAntennaConfiguration.AntennaPort = int.Parse(currentAntenna);
+
+                //Enables a tag authentication challenge to be sent to each inventoried tag.
+                //inventoryAntennaConfiguration.TagAuthentication = new Impinj.Atlas.TagAuthentication();
+
+                // A 12-character hex string that is converted to a 48-bit command.
+                // The first 5 bits must be 0. If the sixth bit is 1, then the TID will be included in the tag's response.
+                // The remaining 42 bits make up the challenge sent to the tag.
+                //inventoryAntennaConfiguration.TagAuthentication.MessageHex = "";
+
+                //inventoryAntennaConfiguration.TagSecurityModesWrite = new Impinj.Atlas.TagSecurityModes();
+                //inventoryAntennaConfiguration.TagSecurityModesWrite.ShortRange = false;
+
+                // set to specified true/false value (enabling/disabling) protected mode
+                //inventoryAntennaConfiguration.TagSecurityModesWrite.Protected = false;
+                //inventoryAntennaConfiguration.TagAccessPasswordHex = "";
+                //inventoryAntennaConfiguration.TagAccessPasswordWriteHex = "";
+
+                // if enabling protected mode, do not need 'protectedModePinHex'
+                // if disabling protected mode, add 'protecteModePinHex' with current PIN
+                // inventoryAntennaConfiguration.ProtectedModePinHex = "";
+
                 if (!string.IsNullOrEmpty(antennaZones[i])) inventoryAntennaConfiguration.AntennaName = antennaZones[i];
 
                 inventoryAntennaConfiguration.EstimatedTagPopulation = int.Parse(smartReaderConfig.tagPopulation);

@@ -56,6 +56,7 @@ using Timer = System.Timers.Timer;
 using McMaster.NETCore.Plugins;
 using SmartReaderStandalone.Plugins;
 using SmartReaderStandalone.Services;
+using System;
 
 namespace SmartReader.IotDeviceInterface;
 
@@ -76,7 +77,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     private static string _readerUsername = "root";
     private static string _readerPassword = "impinj";
 
-    private static string _proxyAddress= "";
+    private static string _proxyAddress = "";
 
     private static int _proxyPort = 8080;
 
@@ -349,7 +350,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 await Task.Delay(100);
             }
-            
+
         }
         catch (Exception ex)
         {
@@ -1447,16 +1448,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         try
         {
-            if(_standaloneConfigDTO != null 
+            if (_standaloneConfigDTO != null
                 && string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
             {
                 using var scope = Services.CreateScope();
                 var summaryQueueBackgroundService = scope.ServiceProvider.GetRequiredService<ISummaryQueueBackgroundService>();
                 summaryQueueBackgroundService.StartQueue();
-            }          
+            }
         }
         catch (Exception)
-        {           
+        {
         }
     }
 
@@ -1634,7 +1635,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         }
 
-        
+
     }
 
     public async Task StopTasksAsync()
@@ -2909,7 +2910,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             else if (eventStatus.Status == InventoryStatusEventStatus.Idle)
             {
-                
+
                 var shouldAcceptEventStatus = false;
                 if (!_stopwatchLastIddleEvent.IsRunning)
                 {
@@ -5410,9 +5411,19 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 && !string.IsNullOrEmpty(_standaloneConfigDTO.httpAuthenticationTokenApiValue))
                 bearerToken = _standaloneConfigDTO.httpAuthenticationTokenApiValue;
 
+            object dataToPost = smartReaderTagEventData;
+            if (!string.IsNullOrEmpty(_standaloneConfigDTO.jsonFormat))
+            {
+                if (string.Equals("1", _standaloneConfigDTO.jsonFormat,
+                  StringComparison.OrdinalIgnoreCase))
+                {
+                    dataToPost = GetIotInterfaceTagEventReport(smartReaderTagEventData);
+                }
+            }
 
-            //if (!_httpUtil.PostJsonListBodyDataAsync(_standaloneConfigDTO.httpPostURL, smartReaderTagEventData, username, password, bearerToken, checkResult, null).Result)
-            if (!_httpUtil.PostJsonObjectDataAsync(_standaloneConfigDTO.httpPostURL, smartReaderTagEventData, username,
+
+                //if (!_httpUtil.PostJsonListBodyDataAsync(_standaloneConfigDTO.httpPostURL, smartReaderTagEventData, username, password, bearerToken, checkResult, null).Result)
+                if (!_httpUtil.PostJsonObjectDataAsync(_standaloneConfigDTO.httpPostURL, dataToPost, username,
                         password, bearerToken, checkResult, null, httpAuthenticationHeader,
                         httpAuthenticationHeaderValue)
                     .Result.StartsWith("20"))
@@ -6049,7 +6060,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         Environment.Exit(1);
                         //Environment.Exit(0);
                     }
-                    
+
 
                     var statusData = await GetReaderStatusAsync();
 
@@ -6120,7 +6131,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
                             }
                         }
-                        else if(ex.Message.Contains("Status: 404"))
+                        else if (ex.Message.Contains("Status: 404"))
                         {
                             // exits the app
 
@@ -7136,6 +7147,39 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _timerTagPublisherOpcUa.Start();
 
             _logger.LogInformation("App started. ");
+            try
+            {
+                if (_standaloneConfigDTO != null
+                   && string.Equals("1", _standaloneConfigDTO.systemDisableImageFallbackStatus, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!File.Exists("/customer/disable-fallback"))
+                    {
+                        File.WriteAllText("/customer/disable-fallback", "ok");
+                        _logger.LogInformation("Disabling image fallback. ");
+                        var rshell = new RShellUtil(_readerAddress, _readerUsername, _readerPassword);
+                        try
+                        {
+                            var resultDisableImageFallback = rshell.SendCommand("config image disablefallback");
+                            var lines = resultDisableImageFallback.Split("\n");
+                            foreach (var line in lines)
+                            {
+                                _logger.LogInformation(line);
+                            }
+
+                            var resultDisableImageFallbackReboot = rshell.SendCommand("reboot");
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+
+                }
+            }
+            catch (Exception exFallback)
+            {
+                _logger.LogError(exFallback, "unexpected error disabling fallback.");
+            }
+
 
             while (!stoppingToken.IsCancellationRequested)
                 //_logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
@@ -8010,10 +8054,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         {
                                             deserializedCmdData["payload"] = JObject.Parse(resultPayload);
                                         }
-                                        else if(deserializedCmdData.ContainsKey("fields"))
+                                        else if (deserializedCmdData.ContainsKey("fields"))
                                         {
                                             deserializedCmdData["fields"] = JObject.Parse(resultPayload);
-                                        }                                        
+                                        }
                                     }
                                     else
                                     {
@@ -8172,7 +8216,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         var commandResponsePayload = new JProperty("payload", JObject.Parse(resultPayload));
                                         deserializedCmdData.Add(commandResponsePayload);
                                     }
-                                    
+
 
                                     if (deserializedCmdData.ContainsKey("response"))
                                     {
@@ -8307,7 +8351,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                             {
                                                 commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
                                             }
-                                            else if(deserializedCmdData.ContainsKey("fields"))
+                                            else if (deserializedCmdData.ContainsKey("fields"))
                                             {
                                                 commandPayloadJObject = deserializedCmdData["fields"].Value<JObject>();
                                             }
@@ -8556,7 +8600,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     if (deserializedCmdData != null)
                         if (deserializedCmdData.ContainsKey("command") || deserializedCmdData.ContainsKey("cmd"))
                         {
-                            
+
                             var commandStatus = "success";
                             var commandValue = "";
                             if (deserializedCmdData.ContainsKey("command"))
@@ -8918,7 +8962,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         try
                                         {
                                             JObject commandPayloadJObject = new();
-                                            if(deserializedCmdData.ContainsKey("payload"))
+                                            if (deserializedCmdData.ContainsKey("payload"))
                                             {
                                                 commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
                                             }
@@ -9109,7 +9153,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         var impinjIotApiVerb = "";
                                         var impinjIotApiRequest = "";
                                         JObject commandPayloadJObject = new();
-                                        if(deserializedCmdData.ContainsKey("payload"))
+                                        if (deserializedCmdData.ContainsKey("payload"))
                                         {
                                             commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
                                         }
@@ -9407,11 +9451,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 try
                 {
                     JObject commandPayloadJObject = new();
-                    if(deserializedConfigData.ContainsKey("payload"))
+                    if (deserializedConfigData.ContainsKey("payload"))
                     {
                         commandPayloadJObject = deserializedConfigData["payload"].Value<JObject>();
                     }
-                    else if(deserializedConfigData.ContainsKey("fields"))
+                    else if (deserializedConfigData.ContainsKey("fields"))
                     {
                         commandPayloadJObject = deserializedConfigData["fields"].Value<JObject>();
                     }
@@ -9453,7 +9497,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                         var commandType = commandPayloadJObject["type"].Value<string>();
                         if (!string.IsNullOrEmpty(commandType)
-                            && (string.Equals("INVENTORY", commandType, StringComparison.OrdinalIgnoreCase) 
+                            && (string.Equals("INVENTORY", commandType, StringComparison.OrdinalIgnoreCase)
                                 || string.Equals("Inv", commandType, StringComparison.OrdinalIgnoreCase)))
                         {
                             if (commandPayloadJObject.ContainsKey("antennaZone"))
@@ -9499,7 +9543,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 try
                                 {
                                     JArray antennaListJArray = new();
-                                    if(commandPayloadJObject.ContainsKey("antennas"))
+                                    if (commandPayloadJObject.ContainsKey("antennas"))
                                     {
                                         antennaListJArray = commandPayloadJObject["antennas"].Value<JArray>(); // Value<List<int>>();
                                     }
@@ -11921,6 +11965,96 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     await dbContext.SaveChangesAsync();
                 }
         }
+    }
+
+    public JArray GetIotInterfaceTagEventReport(JObject smartReaderTagEventData)
+    {
+        JArray iotTagEventReportObject = new JArray();
+        try
+        {
+            List<object> iotTagEventReport = new List<object>();
+
+            string hostname = "";
+            string eventType = "tagInventory";
+
+
+            if (smartReaderTagEventData.ContainsKey("readerName"))
+            {
+                hostname = smartReaderTagEventData["readerName"].Value<String>();
+            }
+
+            if (smartReaderTagEventData.ContainsKey("readerName"))
+            {
+                foreach (JObject currentEventItem in smartReaderTagEventData["tag_reads"])
+                {
+                    long firstSeenTimestamp = currentEventItem["firstSeenTimestamp"].Value<long>() / 1000;                   
+                    var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(firstSeenTimestamp);
+                     
+                    string tagEpc = currentEventItem["epc"].Value<string>();
+                    int antennaPort = 0;
+                    if (currentEventItem.ContainsKey("antennaPort"))
+                    {
+                        antennaPort = currentEventItem["antennaPort"].Value<int>();
+                    }
+
+                    string antennaZone = "";
+                    if (currentEventItem.ContainsKey("antennaZone"))
+                    {
+                        antennaZone = currentEventItem["antennaZone"].Value<string>();
+                    }
+
+                    int peakRssi = 0;
+                    if (currentEventItem.ContainsKey("peakRssi"))
+                    {
+                        peakRssi = currentEventItem["peakRssi"].Value<int>();
+                    }
+
+                    double txPower = 0.00;
+                    if (currentEventItem.ContainsKey("peakRssi"))
+                    {
+                        txPower = currentEventItem["txPower"].Value<double>();
+                    }
+                    Dictionary<object, object> iotEvent = new Dictionary<object, object>();
+                    iotEvent.Add("timestamp", dateTimeOffsetLastSeenTimestamp.ToString("o"));
+                    iotEvent.Add("hostname", hostname);
+                    iotEvent.Add("eventType", eventType);
+
+                    Dictionary<object, object> iotEventItem = new Dictionary<object, object>();
+                    iotEventItem.Add("epcHex", tagEpc);
+                    if(!string.IsNullOrEmpty(antennaZone))
+                    {
+                        iotEventItem.Add("antennaName", antennaZone);
+                    }
+
+                    if(antennaPort > 0)
+                    {
+                        iotEventItem.Add("antennaPort", antennaPort);
+                    }
+
+                    if (peakRssi != 0)
+                    {
+                        peakRssi = peakRssi * 100;
+                        iotEventItem.Add("peakRssiCdbm", peakRssi);
+                    }
+
+                    if(txPower != 0)
+                    {
+                        txPower = txPower * 100;
+                        iotEventItem.Add("transmitPowerCdbm", txPower);
+                    }
+
+                    iotEvent.Add("tagInventoryEvent", iotEventItem);
+                    iotTagEventReport.Add(iotEvent);
+                }
+            }
+            iotTagEventReportObject = JArray.FromObject(iotTagEventReport);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error on GetIotInterfaceTagEventReport. " );
+        }
+        
+        return iotTagEventReportObject;
     }
 
     public bool IsOnPause()

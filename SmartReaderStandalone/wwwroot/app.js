@@ -4,6 +4,8 @@ var vueApplication = new Vue({
 	el: '#configApp',
 
 	data: {
+		jsonImageSummaryData: {},
+		showImageSummaryPanelBody: true,
 		input: {
 			username: "",
 			password: ""
@@ -13,7 +15,7 @@ var vueApplication = new Vue({
 			username: "",
 			password: ""
 		},
-		applicationLabel: 'version 4.0.0.6',
+		applicationLabel: 'version 4.0.0.7',
 		applicationBy: 'Smartreader R700',
 		//applicationBy: 'SoLink R700',
 
@@ -48,6 +50,7 @@ var vueApplication = new Vue({
 		this.fetchReaderSerial();
 		this.populateTxList();
 		this.parseAntennaConfig();
+		this.fetchImageSummaryStatus();
 		this.timer = setInterval(this.fetchReaderStatus, 2000);
 
 	},
@@ -179,6 +182,9 @@ var vueApplication = new Vue({
 			this.readConfigFile();
 		},
 
+		togglePanelBody: function () {
+			this.showImageSummaryPanelBody = !this.showImageSummaryPanelBody;
+		},
 
 		alertSettingsApplied: function (event) {
 		      alert('Settings applied, please stop and then reload the application.');
@@ -231,7 +237,20 @@ var vueApplication = new Vue({
 				console.log(err);
 			});
 		},
-		
+
+		fetchImageSummaryStatus: function () {
+			var imageSummaryStatus = {};
+
+			this.$http.get('/api/image')
+				.success(function (imageSummaryStatus) {
+					this.$set('jsonImageSummaryData', imageSummaryStatus);
+					console.log('jsonImageSummaryData: ' + imageSummaryStatus);
+				})
+				.error(function (err) {
+					console.log(err);
+				});
+		},
+
 		fetchRfidStatus: function () {
 			var rfidStatus = [];
 

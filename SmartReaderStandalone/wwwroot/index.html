@@ -108,8 +108,11 @@
                         <li>
                             <a data-toggle="pill" href="#backup-restore">Backup/Restore</a>
                         </li>
-
-
+                        <!--
+                        <li>
+                            <a data-toggle="pill" href="#maintenance">Management</a>
+                        </li>
+                            -->
                         <!--
                         <template v-if="readerMaxAntennas <= 4">
                             <li><a data-toggle="pill" href="#toi">ToI</a></li>
@@ -122,16 +125,14 @@
                 </ul>
                 <div id="my-tab-content" class="tab-content">
                     <div id="home" class="tab-pane fade in active">
-                        <br>
-                        <br>
+
                         <span class="label label-default">Application Version: {{applicationLabel}}</span>
-                        <br>
-                        <br>
                         <br>
                         <br>
                         <span class="label label-default">Reader Serial Number: {{readerSN}}</span>
                         <br>
                         <br>
+
                         <template v-if="readerConfigs[0].isSmartReaderInterface == '1'">
 
 
@@ -158,12 +159,37 @@
                         </template>
                         <label for="license">License:</label>
                         <input id="license" class="form-control" placeholder="license" v-model="readerConfigs[0].licenseKey">
-                        <br>
                         {{{ readerLicenses[0].isValid }}}
 
                         <span class="me btn-primary"> </span>
                         <br>
                         <button class="btn btn-primary" v-on:click="verifyLicense">Verify/Apply License</button>
+                        <br />
+                        <br />
+                        <br />
+                        <br />
+                        <div class="panel panel-default">
+                            <div class="panel-heading" @click="togglePanelBody">
+                                <h3 class="panel-title">Image Summary</h3>
+                            </div>
+                            <div class="panel-body" v-show="showImageSummaryPanelBody">
+                                <div v-for="(key, value) in jsonImageSummaryData">
+
+                                    <b>{{ key }}:</b>  {{ value }}
+
+                                </div>
+                            </div>
+                        </div>
+                        <br>
+                        <label>
+                            Avoid system fallback due to reboot loop
+                        </label>
+                        <br />
+                        <input id="systemDisableImageFallbackStatus" type="checkbox"
+                               v-model="readerConfigs[0].systemDisableImageFallbackStatus"
+                               v-bind:true-value="1"
+                               v-bind:false-value="0">
+                        <label for="systemDisableImageFallbackStatus">Enable</label>
                         <br>
                         <br>
                         <button class="btn btn-primary pull-right" v-on:click="applySettings">Apply Settings</button>
@@ -338,21 +364,21 @@
                                 </template>
                             </template>
                             <!--
-                                            <option value="100">100</option>
-                <option value="120">120</option>
-                <option value="140">140</option>
-                <option value="142">142</option>
-                <option value="185">185</option>
-                <option value="201">201</option>
-                <option value="221">221</option>
-                <option value="243">243</option>
-                <option value="284">284</option>
-                <option value="301">301</option>
-                <option value="322">322</option>
-                <option value="340">340</option>
-                <option value="341">341</option>
-                <option value="381">381</option>
-        -->
+                                                                <option value="100">100</option>
+                                    <option value="120">120</option>
+                                    <option value="140">140</option>
+                                    <option value="142">142</option>
+                                    <option value="185">185</option>
+                                    <option value="201">201</option>
+                                    <option value="221">221</option>
+                                    <option value="243">243</option>
+                                    <option value="284">284</option>
+                                    <option value="301">301</option>
+                                    <option value="322">322</option>
+                                    <option value="340">340</option>
+                                    <option value="341">341</option>
+                                    <option value="381">381</option>
+                            -->
                             <template v-if="readerConfigs[0].operatingRegion.indexOf('ETSI') > -1">
                                 <template v-if="readerConfigs[0].operatingRegion.indexOf('915') == -1">
                                     <select id="gen2RFMode" class="form-control" v-model="readerConfigs[0].readerMode">
@@ -487,6 +513,7 @@
                                         </td>
                                         -->
                                         <template v-if="readerConfigs[0].isCloudInterface == '1'">
+                                            =
                                             <td align="center">
                                                 <input class="form-control" v-model="antennaConfigItem.antennaZone">
                                             </td>
@@ -1509,6 +1536,12 @@
                                 <br>
                             </template>
                             <br />
+                            <label for="jsonFormat">JSON Format:</label>
+                            <select id="jsonFormat" class="form-control" v-model="readerConfigs[0].jsonFormat">
+                                <option value="0">Smartreader</option>
+                                <option value="1">IoT Device Interface</option>
+                            </select>
+                            <br />
                             <label for="outputHttpUrl">Remote Server URL:</label>
                             <input id="outputHttpUrl" class="form-control" v-model="readerConfigs[0].httpPostURL">
                             <label for="outputHttpPostInterval">POST interval in seconds:</label>
@@ -1692,9 +1725,9 @@
                                     <input id="softwareFilterWindowSec" class="form-control" v-model="readerConfigs[0].softwareFilterWindowSec">
                                     <br />
                                     <!--
-            <label for="packageHeaders">Package Headers:</label>
-            <input id="packageHeaders" class="form-control" v-model="readerConfigs[0].packageHeaders">
-            -->
+                                    <label for="packageHeaders">Package Headers:</label>
+                                    <input id="packageHeaders" class="form-control" v-model="readerConfigs[0].packageHeaders">
+                                    -->
                                 </template>
                                 <br>
                                 <input id="enablePluginShipmentVerification" type="checkbox"
@@ -1725,57 +1758,57 @@
                             </template>
 
                         </template>
-                            <!--
-    <template v-if="readerMaxAntennas <= 4">
-    -->
-                            <h3>Serial Port (USB)</h3>
-                            <input id="outputSerialPortEnabled" type="checkbox"
-                                   v-model="readerConfigs[0].serialPort"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
-                            <label for="outputSerialPortEnabled">Enable</label>
-                            <br>
+                        <!--
+                        <template v-if="readerMaxAntennas <= 4">
+                        -->
+                        <h3>Serial Port (USB)</h3>
+                        <input id="outputSerialPortEnabled" type="checkbox"
+                               v-model="readerConfigs[0].serialPort"
+                               v-bind:true-value="1"
+                               v-bind:false-value="0">
+                        <label for="outputSerialPortEnabled">Enable</label>
+                        <br>
 
-                            <template v-if="readerConfigs[0].serialPort == '1'">
-                                <select id="outputSerialPortBaudRate" class="form-control" v-model="readerConfigs[0].baudRate">
-                                    <option value="1200">1200</option>
-                                    <option value="2400">2400</option>
-                                    <option value="4800">4800</option>
-                                    <option value="9600">9600</option>
-                                    <option value="19200">19200</option>
-                                    <option value="38400">38400</option>
-                                    <option value="57600">57600</option>
-                                    <option value="115200">115200</option>
-                                </select>
-                            </template>
-                            <!--
-    </template>
-    -->
-                            <!--
-    <h3>Keyboard emulation</h3>
-    <input id="outputKeyboardEmulationEnabled" type="checkbox"
-           v-model="readerConfigs[0].usbHid"
-           v-bind:true-value="1"
-           v-bind:false-value="0">
-    <label for="outputKeyboardEmulationEnabled">Enable</label>
-    -->
-                            <br>
-
-
-                            <h3>USB Flash Drive</h3>
-                            <input id="outputUsbFlashDriveEnabled" type="checkbox"
-                                   v-model="readerConfigs[0].usbFlashDrive"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
-                            <label for="outputUsbFlashDriveEnabled">Enable</label>
-                            <br>
+                        <template v-if="readerConfigs[0].serialPort == '1'">
+                            <select id="outputSerialPortBaudRate" class="form-control" v-model="readerConfigs[0].baudRate">
+                                <option value="1200">1200</option>
+                                <option value="2400">2400</option>
+                                <option value="4800">4800</option>
+                                <option value="9600">9600</option>
+                                <option value="19200">19200</option>
+                                <option value="38400">38400</option>
+                                <option value="57600">57600</option>
+                                <option value="115200">115200</option>
+                            </select>
+                        </template>
+                        <!--
+                        </template>
+                        -->
+                        <!--
+                        <h3>Keyboard emulation</h3>
+                        <input id="outputKeyboardEmulationEnabled" type="checkbox"
+                               v-model="readerConfigs[0].usbHid"
+                               v-bind:true-value="1"
+                               v-bind:false-value="0">
+                        <label for="outputKeyboardEmulationEnabled">Enable</label>
+                        -->
+                        <br>
 
 
-                            <br>
-                            <br>
-                            <button class="btn btn-primary pull-right" v-on:click="applySettings">Apply Settings</button>
+                        <h3>USB Flash Drive</h3>
+                        <input id="outputUsbFlashDriveEnabled" type="checkbox"
+                               v-model="readerConfigs[0].usbFlashDrive"
+                               v-bind:true-value="1"
+                               v-bind:false-value="0">
+                        <label for="outputUsbFlashDriveEnabled">Enable</label>
+                        <br>
 
-</div>
+
+                        <br>
+                        <br>
+                        <button class="btn btn-primary pull-right" v-on:click="applySettings">Apply Settings</button>
+
+                    </div>
 
                     <!--
                     <div id="toi" class="tab-pane fade">
@@ -1872,7 +1905,28 @@
                         <br>
                         <br>
                         <label>Click the button below to retrieve the reader configuration file:</label> <br>
-                        <button class="btn btn-info" @click="downloadFile()">DownLoad Configuration File</button>
+                        <button class="btn btn-info" @click="downloadFile()">Download Configuration File</button>
+                        <br>
+                    </div>
+
+                    <div id="maintenance" class="tab-pane fade">
+                        <h3>
+                            Management:
+                        </h3><br>
+                        <br>
+                        <br>
+                        <label>
+                            Avoid system fallback due to reboot loop
+                        </label>
+                        <br />
+                        <input id="systemDisableImageFallbackStatus" type="checkbox"
+                               v-model="readerConfigs[0].systemDisableImageFallbackStatus"
+                               v-bind:true-value="1"
+                               v-bind:false-value="0">
+                        <label for="systemDisableImageFallbackStatus">Enable</label>
+                        <br>
+                        <br>
+                        <button class="btn btn-primary pull-right" v-on:click="applySettings">Apply Settings</button>
                         <br>
                     </div>
 

@@ -123,7 +123,7 @@ var logger = app.Services.GetRequiredService<ILogger<Program>>();
 
 var readerAddress = app.Configuration["ReaderInfo:Address"] ?? "127.0.0.1";
 
-var rshellAuthUserName = app.Configuration["RShellAuth:UserName"]  ?? "root";
+var rshellAuthUserName = app.Configuration["RShellAuth:UserName"] ?? "root";
 
 var rshellAuthPassword = app.Configuration["RShellAuth:Password"] ?? "impinj";
 
@@ -134,7 +134,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+
 //app.UseCors(x => x
 //        .AllowAnyOrigin()
 //        .AllowAnyMethod()
@@ -149,7 +149,7 @@ app.UseMiddleware<BasicAuthMiddleware>();
 
 app.UseDefaultFiles(new DefaultFilesOptions
 {
-    DefaultFileNames = new List<string> {"index.html"}
+    DefaultFileNames = new List<string> { "index.html" }
 });
 
 app.UseStaticFiles(new StaticFileOptions
@@ -159,7 +159,7 @@ app.UseStaticFiles(new StaticFileOptions
         if (ctx.Context.Items["BasicAuth"] is not true)
         {
             // respond HTTP 401 Unauthorized.
-            ctx.Context.Response.StatusCode = (int) HttpStatusCode.Unauthorized;
+            ctx.Context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
             ctx.Context.Response.ContentLength = 0;
             ctx.Context.Response.Body = Stream.Null;
             ctx.Context.Response.Headers.Add("WWW-Authenticate", string.Format("Basic realm=\"{0}\"", "R700"));
@@ -196,7 +196,7 @@ if (Directory.Exists("/customer/wwwroot/logs"))
 //            var dataModel = db.SmartReaderSkuSummaryModels.LastOrDefault();
 //            if (dataModel != null && !string.IsNullOrEmpty(dataModel.Value))
 //            {
-             
+
 //                var json = dataModel.Value;
 
 //                var jsonOject = JsonDocument.Parse(json);
@@ -237,56 +237,56 @@ app.MapGet("/api/stream/volumes", async (RuntimeDb db, HttpContext context) =>
     var producerService = context.RequestServices.GetRequiredService<ISummaryQueueBackgroundService>();
 
 
-        async IAsyncEnumerable<List<JsonDocument>> StreamSmartReaderSkuSummaryModelAsync()
+    async IAsyncEnumerable<List<JsonDocument>> StreamSmartReaderSkuSummaryModelAsync()
+    {
+
+        var resp = context.Response;
+        resp.Headers.ContentType = "text/event-stream";
+        var keepaliveStopWatch = new Stopwatch();
+        keepaliveStopWatch.Start();
+        //var serializer = new JsonSerializer();
+        while (true)
         {
-
-            var resp = context.Response;
-            resp.Headers.ContentType = "text/event-stream";
-            var keepaliveStopWatch = new Stopwatch();
-            keepaliveStopWatch.Start();
-            //var serializer = new JsonSerializer();
-            while (true)
+            string dataModel = null;
+            if (producerService.HasDataAvailable())
             {
-                string dataModel = null;
-                if (producerService.HasDataAvailable() )
+                dataModel = producerService.GetData();
+                if (!string.IsNullOrEmpty(dataModel))
                 {
-                    dataModel = producerService.GetData();
-                    if(!string.IsNullOrEmpty(dataModel))
-                    {
-                        var json = dataModel;
+                    var json = dataModel;
 
-                        var jsonOject = JsonDocument.Parse(json);
-                        //JObject jsonOject = JObject.Parse(json);
+                    var jsonOject = JsonDocument.Parse(json);
+                    //JObject jsonOject = JObject.Parse(json);
 
-                        var jsonString = JsonSerializer.Serialize(jsonOject);
-                        var returnedData = Regex.Unescape(jsonString);
+                    var jsonString = JsonSerializer.Serialize(jsonOject);
+                    var returnedData = Regex.Unescape(jsonString);
 
-                        if (returnedData.StartsWith("[")) returnedData = returnedData.Substring(1);
+                    if (returnedData.StartsWith("[")) returnedData = returnedData.Substring(1);
 
-                        List<JsonDocument> result = new();
-                        result.Add(jsonOject);
-
-                        yield return result;
-                    }
-                   
-                }
-                else if (keepaliveStopWatch.IsRunning && keepaliveStopWatch.Elapsed.TotalSeconds > 10)
-                {
-                    keepaliveStopWatch.Restart();
-                    var jsonOject = JsonDocument.Parse(@"{}");
                     List<JsonDocument> result = new();
                     result.Add(jsonOject);
+
                     yield return result;
                 }
 
-                await Task.Delay(100);
             }
+            else if (keepaliveStopWatch.IsRunning && keepaliveStopWatch.Elapsed.TotalSeconds > 10)
+            {
+                keepaliveStopWatch.Restart();
+                var jsonOject = JsonDocument.Parse(@"{}");
+                List<JsonDocument> result = new();
+                result.Add(jsonOject);
+                yield return result;
+            }
+
+            await Task.Delay(100);
         }
+    }
 
-        return StreamSmartReaderSkuSummaryModelAsync();
+    return StreamSmartReaderSkuSummaryModelAsync();
 
 
-    
+
 });
 
 app.MapGet("/api/stream/tags", async (RuntimeDb db, HttpContext context) =>
@@ -427,10 +427,50 @@ app.MapPost("/api/settings", [AuthorizeBasicAuth] async ([FromBody] StandaloneCo
             db.SaveChangesAsync();
             Console.WriteLine(config.licenseKey);
             Console.WriteLine(config.session);
+            logger.LogInformation("Settings saved.");
         }
         catch (Exception exDb1)
         {
             File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb1.Message);
+        }
+
+        try
+        {
+            if (config != null)
+                if (string.Equals("1", config.systemDisableImageFallbackStatus, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!File.Exists("/customer/disable-fallback"))
+                    {
+                        File.WriteAllText("/customer/disable-fallback", "ok");
+                        logger.LogInformation("Requesting image fallback to be disabled. ");
+                        var rshell = new RShellUtil(readerAddress, rshellAuthUserName, rshellAuthPassword);
+                        try
+                        {
+                            var resultDisableImageFallback = rshell.SendCommand("config image disablefallback");
+                            var lines = resultDisableImageFallback.Split("\n");
+                            foreach (var line in lines)
+                            {
+                                logger.LogInformation(line);
+                            }
+                            var resultDisableImageFallbackReboot = rshell.SendCommand("reboot");
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+
+                }
+                else if (string.Equals("0", config.systemDisableImageFallbackStatus, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (File.Exists("/customer/disable-fallback"))
+                    {
+                        File.Delete("/customer/disable-fallback");
+                    }
+                }
+        }
+        catch (Exception exFallback)
+        {
+            logger.LogError(exFallback, "unexpected error disabling fallback.");
         }
 
 
@@ -512,7 +552,7 @@ app.MapPost("/api/rshell", [AuthorizeBasicAuth] async ([FromBody] JsonDocument j
 */
 
 app.MapGet("/api/query/external/product/{gtin}", [AuthorizeBasicAuth]
-    async (HttpRequest readerRequest, string gtin, RuntimeDb db) =>
+async (HttpRequest readerRequest, string gtin, RuntimeDb db) =>
     {
         var requestResult = "";
 
@@ -607,7 +647,7 @@ app.MapGet("/api/query/external/product/{gtin}", [AuthorizeBasicAuth]
     });
 
 app.MapPost("/api/query/external/order", [AuthorizeBasicAuth]
-    async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
+async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
     {
         var requestResult = "";
 
@@ -616,7 +656,7 @@ app.MapPost("/api/query/external/order", [AuthorizeBasicAuth]
             var jsonDocumentStr = "";
             using (var stream = new MemoryStream())
             {
-                var writer = new Utf8JsonWriter(stream, new JsonWriterOptions {Indented = true});
+                var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
                 jsonDocument.WriteTo(writer);
                 writer.Flush();
                 jsonDocumentStr = Encoding.UTF8.GetString(stream.ToArray());
@@ -677,7 +717,7 @@ app.MapPost("/api/query/external/order", [AuthorizeBasicAuth]
                     };
 
                 }
-                
+
 
                 var request = new HttpRequestMessage
                 {
@@ -763,7 +803,7 @@ async (HttpRequest readerRequest, string order, RuntimeDb db) =>
                (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
                    chain, errors) => true)
             };
-            
+
             HttpClient httpClient = new()
             {
                 BaseAddress = new Uri(url)
@@ -849,7 +889,7 @@ async (HttpRequest readerRequest, string order, RuntimeDb db) =>
 });
 
 app.MapPost("/api/publish/external", [AuthorizeBasicAuth]
-    async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
+async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
     {
         var requestResult = "";
 
@@ -858,7 +898,7 @@ app.MapPost("/api/publish/external", [AuthorizeBasicAuth]
             var jsonDocumentStr = "";
             using (var stream = new MemoryStream())
             {
-                var writer = new Utf8JsonWriter(stream, new JsonWriterOptions {Indented = true});
+                var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
                 jsonDocument.WriteTo(writer);
                 writer.Flush();
                 jsonDocumentStr = Encoding.UTF8.GetString(stream.ToArray());
@@ -974,9 +1014,9 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
         if (configDto != null && !string.IsNullOrEmpty(configDto.enableExternalApiVerification)
                               && "1".Equals(configDto.enableExternalApiVerification))
         {
-            
+
             var url = configDto.externalApiVerificationChangeOrderStatusUrl;
-            if(url.Contains("/searches/results"))
+            if (url.Contains("/searches/results"))
             {
                 url = url.Replace("/searches/results", "");
             }
@@ -1078,7 +1118,20 @@ app.MapGet("/api/getserial", [AuthorizeBasicAuth] async (RuntimeDb db) =>
     }
 
     return Results.NotFound();
-}); 
+});
+
+app.MapGet("/api/deviceid", [AuthorizeBasicAuth] async (RuntimeDb db) =>
+{
+    var configDto = ConfigFileHelper.ReadFile();
+    if (configDto != null && !string.IsNullOrEmpty(configDto.readerName))
+    {
+        var json = new Dictionary<object, object>();
+        json.Add("readerName", configDto.readerName);
+        return Results.Ok(json);
+    }
+
+    return Results.NotFound();
+});
 
 app.MapGet("/api/getstatus", [AuthorizeBasicAuth] async (RuntimeDb db) =>
 {
@@ -1199,7 +1252,7 @@ app.MapGet("/api/gpo/{port}/status/{status}", [AuthorizeBasicAuth] async (int po
             statusToSet = true;
         else if ("1".Equals(status)) statusToSet = true;
 
-       
+
         var command = new ReaderCommands();
         command.Id = "SET_GPO_" + port;
         command.Value = "" + statusToSet;
@@ -1218,7 +1271,7 @@ app.MapGet("/api/filter/clean", [AuthorizeBasicAuth] async (RuntimeDb db) =>
 {
     try
     {
-       
+
         var command = new ReaderCommands();
         command.Id = "CLEAN_EPC_SOFTWARE_HISTORY_FILTERS";
         command.Value = "ALL";
@@ -1346,7 +1399,7 @@ app.MapGet("/api/getcapabilities", async (RuntimeDb db) =>
         capabilities.Add(capability);
     }
 
-    
+
 
     return Results.Ok(capabilities);
 });
@@ -1408,7 +1461,7 @@ app.MapGet("/api/getrfidstatus", [AuthorizeBasicAuth] async (RuntimeDb db) =>
     //statusRf.Antenna4LastPowerLevel = "0";
 
     //rfidStatus.Add(statusRf);
- 
+
     return Results.Ok(rfidStatus);
 });
 
@@ -1423,7 +1476,7 @@ app.MapGet("/api/verify_key/{key}", [AuthorizeBasicAuth] async (RuntimeDb db, [F
 
         if (serial != null)
         {
-            
+
             var json = JsonConvert.DeserializeObject<List<SmartreaderSerialNumberDto>>(serial.Result.Value);
             var expectedLicense = Utils.CreateMD5Hash("sM@RTrEADER2022-" + json.FirstOrDefault().SerialNumber);
             if (string.Equals(key, expectedLicense, StringComparison.OrdinalIgnoreCase)) readerLicense.isValid = "pass";
@@ -1438,11 +1491,39 @@ app.MapGet("/api/verify_key/{key}", [AuthorizeBasicAuth] async (RuntimeDb db, [F
     return Results.Ok(readerLicenses);
 });
 
+app.MapGet("/api/image", [AuthorizeBasicAuth] async (RuntimeDb db) =>
+{
+    var imageStatus = new Dictionary<object, object>();
+    logger.LogInformation("Requesting image status. ");
+    var rshell = new RShellUtil(readerAddress, rshellAuthUserName, rshellAuthPassword);
+    try
+    {
+        var resultImageStatus = rshell.SendCommand("show image summary");
+        var lines = resultImageStatus.Split("\n");
+        foreach (var line in lines)
+        {
+            logger.LogInformation(line);
+            if(line.ToUpper().Contains("STATUS"))
+            {
+                continue;
+            }
+            var lineData = line.Split("=");
+            imageStatus.Add(lineData[0], lineData[1]);
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "error loading image status");
+    }
+
+    return Results.Ok(imageStatus);
+});
+
 app.MapGet("/api/restore", [AuthorizeBasicAuth] async (RuntimeDb db) =>
 {
     try
     {
-        
+
         var startInfo = new ProcessStartInfo
         {
             FileName = "/usr/bin/cp",
@@ -1515,7 +1596,7 @@ app.MapPost("/api/test", [AuthorizeBasicAuth] async ([FromBody] BearerDTO bearer
                 };
 
             }
-        
+
 
 
             var request = new HttpRequestMessage
@@ -1592,7 +1673,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
             return Results.BadRequest(requestResult);
 
         }
-        
+
 
         using (var stream = new MemoryStream())
         {
@@ -1619,7 +1700,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
 });
 
 app.MapPost("/mqtt", [AuthorizeBasicAuth]
-    async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
+async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
     {
         var requestResult = "";
 
@@ -1635,7 +1716,7 @@ app.MapPost("/mqtt", [AuthorizeBasicAuth]
     });
 
 app.MapPut("/mqtt", [AuthorizeBasicAuth]
-    async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
+async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
     {
         var requestResult = "";
 
@@ -1749,12 +1830,12 @@ async (HttpRequest request, RuntimeDb db) =>
 
     try
     {
-        if(!request.Form.Files.Any())
+        if (!request.Form.Files.Any())
         {
             return Results.BadRequest("Atleast one file is needed");
         }
 
-        if(!Directory.Exists(@"/customer/config/ca/"))
+        if (!Directory.Exists(@"/customer/config/ca/"))
         {
             try
             {
@@ -1764,7 +1845,7 @@ async (HttpRequest request, RuntimeDb db) =>
             {
 
                 logger.LogError(ex, "Error creating CA directory.");
-            }           
+            }
         }
 
         foreach (var file in request.Form.Files)
@@ -1843,7 +1924,7 @@ static IResult ProcessMqttEndpointRequest(JsonDocument jsonDocument, RuntimeDb d
         MqttConfigurationDto mqttConfigurationDto = null;
         using (var stream = new MemoryStream())
         {
-            var writer = new Utf8JsonWriter(stream, new JsonWriterOptions {Indented = true});
+            var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
             jsonDocument.WriteTo(writer);
             writer.Flush();
             jsonDocumentStr = Encoding.UTF8.GetString(stream.ToArray());

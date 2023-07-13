@@ -615,6 +615,10 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
     public string networkProxyPort { get; set; } = "";
 
+    public string systemDisableImageFallbackStatus { get; set; } = "0";
+
+    
+
 
 
 
@@ -1448,7 +1452,12 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
         if (!networkProxyPort.Equals(otherStandaloneConfigDTO.networkProxyPort)) return false;
 
+        if (!systemDisableImageFallbackStatus.Equals(otherStandaloneConfigDTO.systemDisableImageFallbackStatus)) return false;
+
         
+
+
+
 
 
 
@@ -2094,7 +2103,12 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
             config.networkProxyPort = HttpUtility.UrlDecode(config.networkProxyPort);
 
+            config.systemDisableImageFallbackStatus = HttpUtility.UrlDecode(config.systemDisableImageFallbackStatus);
+
             
+
+
+
 
 
 

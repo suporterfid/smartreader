@@ -11,6 +11,8 @@
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Mime;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -20,6 +22,7 @@ using Serilog;
 using SmartReaderJobs.ViewModel.Antenna;
 using SmartReaderJobs.ViewModel.Events;
 using SmartReaderJobs.ViewModel.Mqtt;
+using SmartReaderJobs.ViewModel.Mqtt.Endpoint;
 using SmartReaderJobs.ViewModel.Reader;
 using SmartReaderJobs.ViewModel.ReaderCommand;
 
@@ -568,10 +571,16 @@ public class HttpUtil
 
             Log.Debug(content);
             Console.WriteLine(content);
-            if (checkResult)
-                returnedData = response.StatusCode + " - " + content;
-            else
-                returnedData = content;
+            var statusCode = (int)response.StatusCode;
+            
+            returnedData = statusCode + " - " + content;
+            //if (checkResult)
+            //    returnedData = response.StatusCode + " - " + content;
+            //else
+            //    returnedData = content;
+
+            Log.Debug("returnedData: "+ returnedData);
+
         }
         catch (Exception ex)
         {
@@ -648,6 +657,92 @@ public class HttpUtil
                 await stream.CopyToAsync(fileStream);
             }
         }
+    }
+
+    public async Task UploadFileAsync(string readerAddress, string localFile, string basicAuthUsername, string basicAuthPassword)
+    {
+
+
+        var httpClientHandler = new HttpClientHandler
+        {
+
+
+            ServerCertificateCustomValidationCallback =
+                   (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
+                       chain, errors) => true)
+        };
+
+        //var httpClient = new HttpClient(httpClientHandler);
+
+        try
+        {
+            using (HttpClient httpClient = new HttpClient(httpClientHandler))
+            {
+                if (!string.IsNullOrEmpty(basicAuthUsername) && !string.IsNullOrEmpty(basicAuthPassword))
+                {
+                    var authToken = Encoding.ASCII.GetBytes($"{basicAuthUsername}:{basicAuthPassword}");
+                    httpClient.DefaultRequestHeaders.Authorization =
+                        new AuthenticationHeaderValue("Basic", Convert.ToBase64String(authToken));
+                    //request.Headers.Add("Authorization", _token);
+                }
+
+                using (MultipartFormDataContent formData = new MultipartFormDataContent())
+                {
+                    // Create the file stream content
+                    //FileStreamContent fileContent = new FileStreamContent(File.OpenRead(localFile));
+                    var filestream = File.OpenRead(localFile);
+                    var fileContent = new StreamContent(filestream);
+                    //fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                    //fileContent.Headers.ContentType = new MediaTypeHeaderValue("multipart/form-data");
+                    
+
+                    var localFilename = Path.GetFileName(localFile);
+                    // Add the file content to the form data
+                    formData.Add(fileContent, "upgradeFile", localFilename);
+
+                    var url = "https://" + readerAddress + "/api/v1/system/image/upgrade";
+                    httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
+                    httpClient.Timeout = TimeSpan.FromSeconds(120);
+                    // Send the POST request
+                    HttpResponseMessage response = await httpClient.PostAsync(url, formData);
+
+                    // Handle the response
+                    if (response.IsSuccessStatusCode)
+                    {
+                        Log.Information("File uploaded successfully!");
+                    }
+                    else
+                    {
+                        Log.Information($"Error uploading file. StatusCode: {response.StatusCode}");
+                    }
+                }
+            }
+
+            //var request = new HttpRequestMessage(HttpMethod.Post, "https://" + readerAddress + "/api/v1/system/image/upgrade");
+            //request.Headers.Add("Accept", "application/json");
+            ////request.Headers.Add("Content-Type", "multipart/form-data");
+
+            //if (!string.IsNullOrEmpty(basicAuthUsername) && !string.IsNullOrEmpty(basicAuthPassword))
+            //{
+            //    var authToken = Encoding.ASCII.GetBytes($"{basicAuthUsername}:{basicAuthPassword}");
+            //    httpClient.DefaultRequestHeaders.Authorization =
+            //        new AuthenticationHeaderValue("Basic", Convert.ToBase64String(authToken));
+            //    //request.Headers.Add("Authorization", _token);
+            //}
+            ////request.Headers.Add("Authorization", "Basic cm9vdDppbXBpbmo=");
+            //var content = new MultipartFormDataContent();
+            //content.Add(new StreamContent(File.OpenRead(localFile)), "upgradeFile", localFile);
+            //request.Content = content;
+            //var response = await httpClient.SendAsync(request);
+            //response.EnsureSuccessStatusCode();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Unexpected error uploading image.");
+            throw;
+        }
+
+
     }
 
     public string ExternalApiAuthenticateAsync(string url, string data)

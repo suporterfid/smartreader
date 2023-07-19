@@ -48,6 +48,26 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
     .CreateBootstrapLogger();
 
+//var configuration = new ConfigurationBuilder()
+//    .AddJsonFile("appsettings.json")
+//    .Build();
+
+//// Get the current build configuration
+//string buildConfiguration = "Release"; // Default to Debug if unable to determine
+//#if DEBUG
+//    buildConfiguration = "Debug";
+//#endif
+
+
+//// Get the value based on the build configuration
+//if("Debug".Equals(buildConfiguration))
+//{
+//    var debugAddress = configuration.GetValue<string>("ReaderInfo:DebugAddress");
+//    string mySettingValue = configuration["ReaderInfo:Address"] = debugAddress;
+
+//}
+
+
 var builder = WebApplication.CreateBuilder(args);
 
 //builder.Host.UseSerilog((ctx, lc) => lc
@@ -119,9 +139,17 @@ var app = builder.Build();
 //ILogger logger = app.Services.GetService<ILogger<Program>>();
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
 
-
-
 var readerAddress = app.Configuration["ReaderInfo:Address"] ?? "127.0.0.1";
+// Get the current build configuration
+string buildConfiguration = "Release"; // Default to Debug if unable to determine
+#if DEBUG
+buildConfiguration = "Debug";
+#endif
+// Get the value based on the build configuration
+if ("Debug".Equals(buildConfiguration))
+{
+    readerAddress = app.Configuration["ReaderInfo:DebugAddress"] ?? readerAddress;
+}
 
 var rshellAuthUserName = app.Configuration["RShellAuth:UserName"] ?? "root";
 
@@ -1508,7 +1536,11 @@ app.MapGet("/api/image", [AuthorizeBasicAuth] async (RuntimeDb db) =>
                 continue;
             }
             var lineData = line.Split("=");
-            imageStatus.Add(lineData[0], lineData[1]);
+            if(lineData.Length > 1)
+            {
+                imageStatus.Add(lineData[0], lineData[1]);
+            }
+            
         }
     }
     catch (Exception ex)

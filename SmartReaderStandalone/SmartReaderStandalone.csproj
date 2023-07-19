@@ -90,7 +90,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Content Update="cap_template\config\smartreader-ytem.json">
+	  <Content Update="appsettings.json">
 	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 	  </Content>
 	  <Content Update="cap_template\config\smartreader.json">

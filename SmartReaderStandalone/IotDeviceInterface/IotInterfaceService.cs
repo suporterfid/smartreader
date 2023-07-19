@@ -57,6 +57,7 @@ using McMaster.NETCore.Plugins;
 using SmartReaderStandalone.Plugins;
 using SmartReaderStandalone.Services;
 using System;
+using Renci.SshNet;
 
 namespace SmartReader.IotDeviceInterface;
 
@@ -184,7 +185,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventUsbDrive = new();
 
-    private readonly List<string> _oldReadEpcList = new();
+    private static List<string> _oldReadEpcList = new();
 
     private readonly List<int> _positioningAntennaPorts = new();
 
@@ -207,6 +208,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     private readonly Stopwatch _stopwatchStopTriggerDuration = new();
     private readonly Stopwatch _stopwatchStopTagEventsListBatchOnChange = new();
     private readonly Stopwatch _mqttPublisherStopwatch = new();
+    private readonly Stopwatch _gpoNoNewTagSeenStopwatch = new();
+
 
     private readonly Timer _timerStopTriggerDuration;
 
@@ -279,6 +282,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         var serverToken = _configuration.GetValue<string>("ServerInfo:AuthToken");
 
         _readerAddress = _configuration.GetValue<string>("ReaderInfo:Address") ?? "127.0.0.1";
+        string buildConfiguration = "Release"; // Default to Debug if unable to determine
+#if DEBUG
+        buildConfiguration = "Debug";
+#endif
+        // Get the value based on the build configuration
+        if ("Debug".Equals(buildConfiguration))
+        {
+            _readerAddress = _configuration.GetValue<string>("ReaderInfo:DebugAddress") ?? _readerAddress;
+        }
         _readerUsername = _configuration.GetValue<string>("RShell:UserName") ?? "root";
         _readerPassword = _configuration.GetValue<string>("RShell:Password") ?? "impinj";
 
@@ -678,11 +690,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             catch (Exception exSymLink1)
                             {
                                 _logger.LogError(exSymLink1, "Error setting USB drive symbolic link.");
+                                _ = ProcessGpoErrorPortAsync();
                             }
                         }
                         catch (Exception ex)
                         {
                             _logger.LogError(ex, "Error setting USB drive options.");
+                            _ = ProcessGpoErrorPortAsync();
                         }
 
                         break;
@@ -691,11 +705,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 catch (IOException ex)
                 {
                     _logger.LogError(ex, "Error setting USB drive options.");
+                    _ = ProcessGpoErrorPortAsync();
                 }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error configuring USB Flash Drive..");
+            _ = ProcessGpoErrorPortAsync();
         }
         //}
     }
@@ -724,7 +740,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             catch (Exception ex)
             {
                 //_logger.LogInformation("Error starting tcp socket client. " + ex.Message, SeverityType.Error);
-                _logger.LogError(ex, "Error starting tcp socket client..");
+                _logger.LogError(ex, "Error starting tcp barcode socket client..");
+                _ = ProcessGpoErrorPortAsync();
             }
     }
 
@@ -744,6 +761,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             //_logger.LogInformation("Error starting tcp socket client. " + ex.Message, SeverityType.Error);
             _logger.LogError(ex, "Error starting tcp socket client. ");
+            _ = ProcessGpoErrorPortAsync();
         }
     }
 
@@ -785,6 +803,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             //_logger.LogInformation("Events_DataReceived. " + ex.Message, SeverityType.Error);
             _logger.LogError(ex, "Events_DataReceived. ");
+            _ = ProcessGpoErrorPortAsync();
         }
     }
 
@@ -1050,6 +1069,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 //_logger.LogInformation("Error starting tcp socket server. " + ex.Message, SeverityType.Error);
                 _logger.LogError(ex, "Error starting tcp socket server. [" + _standaloneConfigDTO.socketPort + "] ");
+                _ = ProcessGpoErrorPortAsync();
             }
     }
 
@@ -1401,6 +1421,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         try
         {
+            _oldReadEpcList.Clear();
+        }
+        catch (Exception)
+        {
+        }
+
+        try
+        {
             _iotDeviceInterfaceClient.TagInventoryEvent -= OnTagInventoryEvent;
             _iotDeviceInterfaceClient.GpiTransitionEvent -= OnGpiTransitionEvent;
             await _iotDeviceInterfaceClient.StopAsync();
@@ -1427,6 +1455,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         catch (Exception ex)
         {
             _logger.LogInformation("Error applying settings. " + ex.Message);
+            await ProcessGpoErrorPortAsync();
         }
 
         //try
@@ -1458,6 +1487,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
         catch (Exception)
         {
+            await ProcessGpoErrorPortAsync();
         }
     }
 
@@ -1472,6 +1502,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
         catch (Exception)
         {
+            await ProcessGpoErrorPortAsync();
         }
 
         try
@@ -1500,6 +1531,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     public async Task StartTasksAsync()
     {
+
+        try
+        {
+            _oldReadEpcList.Clear();
+        }
+        catch (Exception)
+        {
+        }
+
         if (_iotDeviceInterfaceClient == null)
             _iotDeviceInterfaceClient =
                 new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
@@ -1744,7 +1784,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
-    public async Task BlinkTagStatusGpoPortAsync(int timeInSec)
+    public async Task ProcessGpoBlinkTagStatusGpoPortAsync(int timeInSec)
     {
         try
         {
@@ -1756,7 +1796,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     _ = SetGpoPortAsync(1, true);
                     await Task.Delay(timeInSec * 1000);
-                    _ = SetGpoPortAsync(2, false);
+                    _ = SetGpoPortAsync(1, false);
                 }
 
                 if (!string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoMode2)
@@ -1900,6 +1940,120 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
 
             await _iotDeviceInterfaceClient.UpdateReaderGpoAsync(gpoConfigurations);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error saving gpo. " + ex.Message);
+        }
+    }
+
+    public async Task ProcessGpoNoNewTagPortAsync(bool isNewTag, long timeout = 500)
+    {
+        try
+        {
+            if (_standaloneConfigDTO != null)
+            {
+                if (string.Equals("1", _standaloneConfigDTO.advancedGpoEnabled,
+                                            StringComparison.OrdinalIgnoreCase))
+                {
+                    if (string.Equals("9", _standaloneConfigDTO.advancedGpoMode1,
+                                            StringComparison.OrdinalIgnoreCase)
+                        || string.Equals("9", _standaloneConfigDTO.advancedGpoMode2,
+                                            StringComparison.OrdinalIgnoreCase)
+                        || string.Equals("9", _standaloneConfigDTO.advancedGpoMode2,
+                                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!_gpoNoNewTagSeenStopwatch.IsRunning)
+                        {
+                            _gpoNoNewTagSeenStopwatch.Start();
+                        }
+
+                        if (isNewTag)
+                        {
+                            if (string.Equals("9", _standaloneConfigDTO.advancedGpoMode1,
+                                           StringComparison.OrdinalIgnoreCase))
+                            {
+                                _ = SetGpoPortAsync(1, true);
+                            }
+                            if (string.Equals("9", _standaloneConfigDTO.advancedGpoMode2,
+                                                    StringComparison.OrdinalIgnoreCase))
+                            {
+                                _ = SetGpoPortAsync(2, true);
+                            }
+                            if (string.Equals("9", _standaloneConfigDTO.advancedGpoMode3,
+                                                    StringComparison.OrdinalIgnoreCase))
+                            {
+                                _ = SetGpoPortAsync(3, true);
+                            }
+                            if (_gpoNoNewTagSeenStopwatch.IsRunning)
+                            {
+                                _gpoNoNewTagSeenStopwatch.Restart();
+                            }
+                        }
+                        else
+                        {
+                            if (_gpoNoNewTagSeenStopwatch.ElapsedMilliseconds > timeout)
+                            {
+                                if (string.Equals("9", _standaloneConfigDTO.advancedGpoMode1,
+                                               StringComparison.OrdinalIgnoreCase))
+                                {
+                                    _ = SetGpoPortAsync(1, false);
+                                }
+                                if (string.Equals("9", _standaloneConfigDTO.advancedGpoMode2,
+                                                        StringComparison.OrdinalIgnoreCase))
+                                {
+                                    _ = SetGpoPortAsync(2, false);
+                                }
+                                if (string.Equals("9", _standaloneConfigDTO.advancedGpoMode3,
+                                                        StringComparison.OrdinalIgnoreCase))
+                                {
+                                    _ = SetGpoPortAsync(3, false);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing no new tags seen state. ");
+            _ = ProcessGpoErrorPortAsync();
+        }
+    }
+
+    public async Task ProcessGpoErrorPortAsync()
+    {
+        try
+        {
+            if (_standaloneConfigDTO != null)
+            {
+                if (string.Equals("1", _standaloneConfigDTO.advancedGpoEnabled,
+                                            StringComparison.OrdinalIgnoreCase))
+                {
+                    if (string.Equals("10", _standaloneConfigDTO.advancedGpoMode1,
+                                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        _ = SetGpoPortAsync(1, true);
+                        await Task.Delay(1000);
+                        _ = SetGpoPortAsync(1, false);
+                    }
+                    if (string.Equals("10", _standaloneConfigDTO.advancedGpoMode2,
+                                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        _ = SetGpoPortAsync(2, true);
+                        await Task.Delay(1000);
+                        _ = SetGpoPortAsync(2, false);
+                    }
+                    if (string.Equals("10", _standaloneConfigDTO.advancedGpoMode3,
+                                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        _ = SetGpoPortAsync(3, true);
+                        await Task.Delay(1000);
+                        _ = SetGpoPortAsync(3, false);
+                    }
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -2244,6 +2398,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
                 catch (Exception)
                 {
+
                 }
 
 
@@ -2254,6 +2409,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             catch (Exception)
             {
+                ProcessGpoErrorPortAsync();
             }
         }
 
@@ -2605,6 +2761,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             catch (Exception)
             {
+                await ProcessGpoErrorPortAsync();
             }
         }
 
@@ -2711,6 +2868,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             catch (Exception)
             {
+
             }
 
 
@@ -2749,6 +2907,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             catch (Exception)
             {
+                await ProcessGpoErrorPortAsync();
             }
     }
 
@@ -3344,7 +3503,25 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     try
                     {
                         //await Task.Run(async () => { await BlinkTagStatusGpoPortAsync(1); });
-                        await BlinkTagStatusGpoPortAsync(1);
+                        await ProcessGpoBlinkTagStatusGpoPortAsync(1);
+
+                    }
+                    catch (Exception)
+                    {
+                    }
+                    try
+                    {
+                        await ProcessGpoNoNewTagPortAsync(true);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        await ProcessGpoNoNewTagPortAsync(false, 500);
                     }
                     catch (Exception)
                     {
@@ -4954,6 +5131,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
 
             _logger.LogInformation(ex, "Unexpected error on ProcessTagEventData " + ex.Message);
+            await ProcessGpoErrorPortAsync();
         }
     }
 
@@ -5422,11 +5600,18 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
 
 
-                //if (!_httpUtil.PostJsonListBodyDataAsync(_standaloneConfigDTO.httpPostURL, smartReaderTagEventData, username, password, bearerToken, checkResult, null).Result)
-                if (!_httpUtil.PostJsonObjectDataAsync(_standaloneConfigDTO.httpPostURL, dataToPost, username,
-                        password, bearerToken, checkResult, null, httpAuthenticationHeader,
-                        httpAuthenticationHeaderValue)
-                    .Result.StartsWith("20"))
+            //if (!_httpUtil.PostJsonListBodyDataAsync(_standaloneConfigDTO.httpPostURL, smartReaderTagEventData, username, password, bearerToken, checkResult, null).Result)
+            var postResult = _httpUtil.PostJsonObjectDataAsync(_standaloneConfigDTO.httpPostURL, dataToPost, username,
+                    password, bearerToken, checkResult, null, httpAuthenticationHeader,
+                    httpAuthenticationHeaderValue)
+                .Result;
+            if (!postResult.StartsWith("20"))
+            {
+                if (checkResult)
+                {
+                    ProcessGpoErrorPortAsync();
+                }
+
                 if (!string.IsNullOrEmpty(_standaloneConfigDTO.httpAuthenticationType)
                     && string.Equals("BEARER", _standaloneConfigDTO.httpAuthenticationType,
                         StringComparison.OrdinalIgnoreCase)
@@ -5444,6 +5629,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     {
                         _messageQueueTagSmartReaderTagEventHttpPostRetry.Enqueue(smartReaderTagEventData);
                     }
+            }
+
         }
         catch (Exception ex)
         {
@@ -6048,16 +6235,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogInformation(ex,
+                        _logger.LogInformation(
                         "[OnRunPeriodicTasksJobManagerEvent] GET READER TIME - Unexpected error. ");
                         // exits the app
-                        await Task.Delay(TimeSpan.FromSeconds(2));
-                        _logger.LogInformation("Restarting process");
-                        // Restart the application by spawning a new process with the same arguments
-                        var process = Process.GetCurrentProcess();
-                        process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
-                        Process.Start(process.MainModule.FileName);
-                        Environment.Exit(1);
+                        //await Task.Delay(TimeSpan.FromSeconds(2));
+                        //_logger.LogInformation("Restarting process");
+                        //// Restart the application by spawning a new process with the same arguments
+                        //var process = Process.GetCurrentProcess();
+                        //process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
+                        //Process.Start(process.MainModule.FileName);
+                        //Environment.Exit(1);
                         //Environment.Exit(0);
                     }
 
@@ -6116,16 +6303,40 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             if (ex.Message.Contains("Timeout"))
                             {
                                 if (_readerAddress.EndsWith(".local"))
+                                {
                                     _readerAddress = "169.254.1.1";
+                                }
                                 else
+                                {
+                                    // Get the current build configuration
+                                    string buildConfiguration = "Release"; // Default to Debug if unable to determine
+#if DEBUG
+                                    buildConfiguration = "Debug";
+#endif
                                     _readerAddress = _configuration.GetValue<string>("ReaderInfo:Address");
+                                    // Get the value based on the build configuration
+                                    if ("Debug".Equals(buildConfiguration))
+                                    {
+                                        _readerAddress = _configuration.GetValue<string>("ReaderInfo:DebugAddress") ?? _readerAddress;
+                                    }
+                                }
 
                                 _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true,
                                     _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
                             }
                             else if (ex.Message.Contains("No route to host"))
                             {
+                                // Get the current build configuration
+                                string buildConfiguration = "Release"; // Default to Debug if unable to determine
+#if DEBUG
+                                buildConfiguration = "Debug";
+#endif
                                 _readerAddress = _configuration.GetValue<string>("ReaderInfo:Address");
+                                // Get the value based on the build configuration
+                                if ("Debug".Equals(buildConfiguration))
+                                {
+                                    _readerAddress = _configuration.GetValue<string>("ReaderInfo:DebugAddress") ?? _readerAddress;
+                                }
 
                                 _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true,
                                     _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
@@ -6318,14 +6529,37 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     try
                                     {
-                                        UpgradeSystemImage(commands[i].Value);
+                                        string commandValue = commands[i].Value;
+                                        dbContext.ReaderCommands.Remove(commands[i]);
+                                        await dbContext.SaveChangesAsync();
+
+                                        var cmdPayload = JsonConvert.DeserializeObject<Dictionary<object,object>>(commandValue);
+
+                                        long maxRetries = 1;
+                                        long timeoutInMinutes = 3;
+                                        var remoteUrl = "";
+                                        if(cmdPayload.ContainsKey("remoteUrl"))
+                                        {
+                                            remoteUrl = (string) cmdPayload["remoteUrl"];
+                                        }
+
+                                        if (cmdPayload.ContainsKey("timeoutInMinutes"))
+                                        {
+                                            timeoutInMinutes = (long)cmdPayload["timeoutInMinutes"];
+                                        }
+
+                                        if (cmdPayload.ContainsKey("maxRetries"))
+                                        {
+                                            maxRetries = (long)cmdPayload["maxRetries"];
+                                        }
+                                        UpgradeSystemImage(remoteUrl, timeoutInMinutes, maxRetries);
                                     }
-                                    catch (Exception)
+                                    catch (Exception ex)
                                     {
+                                        _logger.LogWarning(ex, "Unexpected error parsing upgrade command. " + ex.Message);
                                     }
 
-                                    dbContext.ReaderCommands.Remove(commands[i]);
-                                    await dbContext.SaveChangesAsync();
+                                    
                                 }
                             }
                             catch (Exception ex)
@@ -6849,6 +7083,22 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                 }
 
+            try
+            {
+                var gpoPorts = new GpoVm();
+                gpoPorts.GpoConfigurations = new List<SmartReaderGpoConfiguration>();
+                var gpoPort = new SmartReaderGpoConfiguration { Gpo = 1, State = false };
+                gpoPorts.GpoConfigurations.Add(new SmartReaderGpoConfiguration { Gpo = 1, State = false });
+                gpoPorts.GpoConfigurations.Add(new SmartReaderGpoConfiguration { Gpo = 2, State = false });
+                gpoPorts.GpoConfigurations.Add(new SmartReaderGpoConfiguration { Gpo = 3, State = false });
+                await SetGpoPortsAsync(gpoPorts);
+            }
+            catch (Exception exGpo)
+            {
+
+                _logger.LogError(exGpo, "Error setting gpo to off.");
+            }
+
             _stopwatchPositioningExpiration.Start();
 
 
@@ -6954,6 +7204,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         try
         {
             var readPointIpAddress = _configuration.GetValue<string>("ReaderInfo:Address");
+            string buildConfiguration = "Release"; // Default to Debug if unable to determine
+#if DEBUG
+            buildConfiguration = "Debug";
+#endif
+            // Get the value based on the build configuration
+            if ("Debug".Equals(buildConfiguration))
+            {
+                readPointIpAddress = _configuration.GetValue<string>("ReaderInfo:DebugAddress") ?? readPointIpAddress;
+            }
             _logger.LogInformation("Using initial ip address to get serial: " + readPointIpAddress, SeverityType.Debug);
 
             if (_standaloneConfigDTO != null && !string.IsNullOrEmpty(_standaloneConfigDTO.mqttEnabled)
@@ -7147,39 +7406,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _timerTagPublisherOpcUa.Start();
 
             _logger.LogInformation("App started. ");
-            try
-            {
-                if (_standaloneConfigDTO != null
-                   && string.Equals("1", _standaloneConfigDTO.systemDisableImageFallbackStatus, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!File.Exists("/customer/disable-fallback"))
-                    {
-                        File.WriteAllText("/customer/disable-fallback", "ok");
-                        _logger.LogInformation("Disabling image fallback. ");
-                        var rshell = new RShellUtil(_readerAddress, _readerUsername, _readerPassword);
-                        try
-                        {
-                            var resultDisableImageFallback = rshell.SendCommand("config image disablefallback");
-                            var lines = resultDisableImageFallback.Split("\n");
-                            foreach (var line in lines)
-                            {
-                                _logger.LogInformation(line);
-                            }
-
-                            var resultDisableImageFallbackReboot = rshell.SendCommand("reboot");
-                        }
-                        catch (Exception)
-                        {
-                        }
-                    }
-
-                }
-            }
-            catch (Exception exFallback)
-            {
-                _logger.LogError(exFallback, "unexpected error disabling fallback.");
-            }
-
+            UpdateSystemImageFallbackFlag();
 
             while (!stoppingToken.IsCancellationRequested)
                 //_logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
@@ -7200,6 +7427,55 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
+    private void UpdateSystemImageFallbackFlag()
+    {
+        try
+        {
+            if (_standaloneConfigDTO != null
+               && string.Equals("1", _standaloneConfigDTO.systemDisableImageFallbackStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                var rshell = new RShellUtil(_readerAddress, _readerUsername, _readerPassword);
+
+                try
+                {
+                    var resultSystemImageSummary = rshell.SendCommand("show image summary");
+                }
+                catch (Exception)
+                {
+
+
+                }
+                if (!File.Exists("/customer/disable-fallback"))
+                {
+                    File.WriteAllText("/customer/disable-fallback", "ok");
+                    _logger.LogInformation("Disabling image fallback. ");
+
+                    try
+                    {
+                        var resultDisableImageFallback = rshell.SendCommand("config image disablefallback");
+                        if (!string.IsNullOrEmpty(resultDisableImageFallback))
+                        {
+                            var lines = resultDisableImageFallback.Split("\n");
+                            foreach (var line in lines)
+                            {
+                                _logger.LogInformation(line);
+                            }
+
+                            var resultDisableImageFallbackReboot = rshell.SendCommand("reboot");
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+            }
+        }
+        catch (Exception exFallback)
+        {
+            _logger.LogError(exFallback, "unexpected error checking image fallback settings.");
+        }
+    }
 
     private void StartAsync()
     {
@@ -8347,6 +8623,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         {
                                             JObject commandPayloadJObject = new();
                                             var remoteUrl = _standaloneConfigDTO.systemImageUpgradeUrl;
+                                            var timeoutInMinutes = 3;
+                                            var maxRetries = 1;
+                                            var commandPayloadParams = new Dictionary<object, object>();
+
                                             if (deserializedCmdData.ContainsKey("payload"))
                                             {
                                                 commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
@@ -8364,6 +8644,45 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                                 {
                                                     remoteUrl = commandPayloadValue;
                                                     _logger.LogInformation($"Requesting image upgrade from {remoteUrl}");
+                                                    commandPayloadParams.Add("remoteUrl", remoteUrl);
+                                                }
+                                            }
+                                            else if (commandPayloadJObject != null &&
+                                                commandPayloadJObject.ContainsKey("url"))
+                                            {
+                                                var commandPayloadValue =
+                                                    commandPayloadJObject["url"].Value<string>();
+                                                if (!string.IsNullOrEmpty(commandPayloadValue))
+                                                {
+                                                    remoteUrl = commandPayloadValue;
+                                                    _logger.LogInformation($"Requesting image upgrade from {remoteUrl}");
+                                                    commandPayloadParams.Add("remoteUrl", remoteUrl);
+                                                }
+                                            }
+
+                                            if (commandPayloadJObject != null &&
+                                                commandPayloadJObject.ContainsKey("timeoutInMinutes"))
+                                            {
+                                                var commandPayloadValue =
+                                                    commandPayloadJObject["timeoutInMinutes"].Value<int>();
+                                                if (commandPayloadValue > 0)
+                                                {
+                                                    timeoutInMinutes = commandPayloadValue;
+                                                    _logger.LogInformation($"Image upgrade timetout set to {timeoutInMinutes}");
+                                                    commandPayloadParams.Add("timeoutInMinutes", timeoutInMinutes);
+                                                }
+                                            }
+
+                                            if (commandPayloadJObject != null &&
+                                                commandPayloadJObject.ContainsKey("maxRetries"))
+                                            {
+                                                var commandPayloadValue =
+                                                    commandPayloadJObject["maxRetries"].Value<int>();
+                                                if (commandPayloadValue > 0)
+                                                {
+                                                    maxRetries = commandPayloadValue;
+                                                    _logger.LogInformation($"Image upgrade max retries set to {maxRetries}");
+                                                    commandPayloadParams.Add("maxRetries", maxRetries);
                                                 }
                                             }
 
@@ -8375,7 +8694,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                                 if (deserializedConfigData != null)
                                                     try
                                                     {
-                                                        SaveUpgradeCommandToDb(remoteUrl);
+                                                        if (!string.IsNullOrEmpty(remoteUrl))
+                                                        {
+                                                            var cmdPayload = JsonConvert.SerializeObject(commandPayloadParams);
+                                                            SaveUpgradeCommandToDb(cmdPayload);
+                                                        }
+
                                                     }
                                                     catch (Exception e)
                                                     {
@@ -9975,33 +10299,133 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         return commandResult;
     }
 
-    private void UpgradeSystemImage(string imageRemoteUrl)
+    private void UpgradeSystemImage(string imageRemoteUrl, long timeoutInMinutes = 3, long maxUpgradeRetries = 1)
     {
         try
         {
             _logger.LogInformation($"UpgradeSystemImage: requesting image upgrade: {imageRemoteUrl}");
-            var localImageFile = "/tmp/upgrade.upgx";
-            var downloadTask = _httpUtil.DownloadFileAsync(imageRemoteUrl, localImageFile);
-            if (downloadTask.IsCompleted)
+
+            var rshell = new RShellUtil(_readerAddress, _readerUsername, _readerPassword);
+            try
             {
-                if (File.Exists(localImageFile))
-                    _iotDeviceInterfaceClient.SystemImageUpgradePostAsync(localImageFile);
-                else
-                    _logger.LogInformation(
-                        $"UpgradeSystemImage: Unable to find file downloaded from: {imageRemoteUrl}");
+
+                var stopwatchImageUpgrade = new Stopwatch();
+                stopwatchImageUpgrade.Start();
+                bool succeeded = false;
+                int tryCounter = 0;
+                while(!succeeded || (tryCounter < maxUpgradeRetries)) {
+                    
+                    try
+                    {
+                        if(succeeded)
+                        {
+                            _logger.LogInformation($"UpgradeSystemImage: operation done.");
+                            break;
+                        }
+                        var resultImageUpgrade = rshell.SendCommand("config image upgrade " + imageRemoteUrl);
+                        _logger.LogInformation(resultImageUpgrade);
+
+                        tryCounter = tryCounter + 1;
+                        _logger.LogInformation($"UpgradeSystemImage: trial # {tryCounter}");
+
+                        while (stopwatchImageUpgrade.Elapsed.TotalMinutes < timeoutInMinutes)
+                        {
+                            
+                            try
+                            {
+                                var resultImageUpgradeProcessing = rshell.SendCommand("show image summary ");
+                                if (resultImageUpgradeProcessing.Contains("Waiting for manual reboot"))
+                                {
+                                    succeeded = true;
+                                     
+                                    _logger.LogInformation($"UpgradeSystemImage: Upload done for image: {imageRemoteUrl}");
+                                    rshell.SendCommand("reboot");
+                                    _logger.LogInformation($"UpgradeSystemImage: restarting reader.");                                   
+                                    break;
+                                }
+                                else
+                                {
+                                    Task.Delay(1000).Wait();
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "UpgradeSystemImage - Unexpected timeout error on image summary " + ex.Message);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+
+                        _logger.LogError(ex, "UpgradeSystemImage - Unexpected error on image summary " + ex.Message);
+                    }
+                    
+                }
+                
+
             }
-            else
+            catch (Exception ex)
             {
-                _logger.LogInformation(
-                    $"UpgradeSystemImage: Unable to check if the download was successful: {imageRemoteUrl}");
+                _logger.LogError(ex, "UpgradeSystemImage - Unexpected error on image download " + ex.Message);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "UpgradeSystemImage - Unexpected error" + ex.Message);
-            throw;
+            _logger.LogError(ex, "UpgradeSystemImage - Unexpected error " + ex.Message);
         }
+
     }
+
+    //private void UpgradeSystemImage(string imageRemoteUrl)
+    //{
+    //    try
+    //    {
+    //        _logger.LogInformation($"UpgradeSystemImage: requesting image upgrade: {imageRemoteUrl}");
+    //        var localImageFile = "/tmp/upgrade.upgx";
+    //        try
+    //        {
+    //            if(File.Exists(localImageFile))
+    //            {
+    //                File.Delete(localImageFile);
+    //            }
+    //        }
+    //        catch (Exception)
+    //        {
+
+    //        }
+
+    //        var downloadTask = _httpUtil.DownloadFileAsync(imageRemoteUrl, localImageFile);
+    //        downloadTask.Wait();
+    //        if (downloadTask.IsCompleted)
+    //        {
+    //            if (File.Exists(localImageFile))
+    //            {
+    //                _logger.LogInformation(
+    //                   $"UpgradeSystemImage: Uploading local image: {localImageFile}");
+    //                var upgradeTask = _httpUtil.UploadFileAsync(_readerAddress, localImageFile, _readerUsername, _readerPassword);
+    //                //var upgradeTask = _iotDeviceInterfaceClient.SystemImageUpgradePostAsync(localImageFile);
+    //                upgradeTask.Wait();
+    //                _logger.LogInformation(
+    //                   $"UpgradeSystemImage: Upload done for image: {localImageFile}");
+    //            }
+    //            else
+    //            {
+    //                _logger.LogInformation(
+    //                    $"UpgradeSystemImage: Unable to find file downloaded from: {imageRemoteUrl}");
+    //            }
+    //        }
+    //        else
+    //        {
+    //            _logger.LogInformation(
+    //                $"UpgradeSystemImage: Unable to check if the download was successful: {imageRemoteUrl}");
+    //        }
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        _logger.LogError(ex, "UpgradeSystemImage - Unexpected error" + ex.Message);
+    //        throw;
+    //    }
+    //}
 
     private static string CallIotRestFulInterface(string bodyRequest, string endpointString, string method,
         string mqttCommandResponseTopic, bool publish)
@@ -10302,13 +10726,18 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     var diconnectDetails = $"Disconnection: ConnectResult {e.ConnectResult} \n";
                     diconnectDetails += $"Disconnection: Reason {e.Reason} \n";
+                    diconnectDetails += $" ResultCode {e.ConnectResult.ResultCode} \n";
                     diconnectDetails += $" ClientWasConnected {e.ClientWasConnected} \n";
+
                     _logger.LogInformation($"### Details {diconnectDetails}");
+
+                    await ProcessGpoErrorPortAsync();
                 }
                 catch (Exception)
                 {
 
                 }
+
             });
         }
         catch (Exception ex)
@@ -10419,6 +10848,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     }
                     catch (Exception)
                     {
+                        ProcessGpoErrorPortAsync();
                     }
                 }
         }
@@ -10432,6 +10862,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
         catch (Exception ex)
         {
+            ProcessGpoErrorPortAsync();
             _logger.LogError(ex, "Unexpected error on ProcessTagEventData " + ex.Message);
         }
     }
@@ -11987,9 +12418,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 foreach (JObject currentEventItem in smartReaderTagEventData["tag_reads"])
                 {
-                    long firstSeenTimestamp = currentEventItem["firstSeenTimestamp"].Value<long>() / 1000;                   
+                    long firstSeenTimestamp = currentEventItem["firstSeenTimestamp"].Value<long>() / 1000;
                     var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(firstSeenTimestamp);
-                     
+
                     string tagEpc = currentEventItem["epc"].Value<string>();
                     int antennaPort = 0;
                     if (currentEventItem.ContainsKey("antennaPort"))
@@ -12021,12 +12452,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                     Dictionary<object, object> iotEventItem = new Dictionary<object, object>();
                     iotEventItem.Add("epcHex", tagEpc);
-                    if(!string.IsNullOrEmpty(antennaZone))
+                    if (!string.IsNullOrEmpty(antennaZone))
                     {
                         iotEventItem.Add("antennaName", antennaZone);
                     }
 
-                    if(antennaPort > 0)
+                    if (antennaPort > 0)
                     {
                         iotEventItem.Add("antennaPort", antennaPort);
                     }
@@ -12037,7 +12468,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         iotEventItem.Add("peakRssiCdbm", peakRssi);
                     }
 
-                    if(txPower != 0)
+                    if (txPower != 0)
                     {
                         txPower = txPower * 100;
                         iotEventItem.Add("transmitPowerCdbm", txPower);
@@ -12051,9 +12482,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error on GetIotInterfaceTagEventReport. " );
+            _logger.LogError(ex, "Unexpected error on GetIotInterfaceTagEventReport. ");
         }
-        
+
         return iotTagEventReportObject;
     }
 

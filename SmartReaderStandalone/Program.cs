@@ -42,7 +42,10 @@ using Endpoint = SmartReaderJobs.ViewModel.Mqtt.Endpoint.Endpoint;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
-
+if(File.Exists("/customer/upgrading"))
+{
+    Environment.Exit(0);
+}
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()

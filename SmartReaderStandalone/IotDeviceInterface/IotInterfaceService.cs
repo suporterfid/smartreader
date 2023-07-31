@@ -10322,12 +10322,22 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             _logger.LogInformation($"UpgradeSystemImage: operation done.");
                             break;
                         }
+
+                        if (tryCounter > maxUpgradeRetries)
+                        {
+                            _logger.LogInformation($"UpgradeSystemImage: operation exceeded max tries.");
+                            break;
+                        }
                         var resultImageUpgrade = rshell.SendCommand("config image upgrade " + imageRemoteUrl);
+                        File.WriteAllText("/customer/upgrading", "1");
                         _logger.LogInformation(resultImageUpgrade);
+
+                        // exit the app
+                        Environment.Exit(0);
 
                         tryCounter = tryCounter + 1;
                         _logger.LogInformation($"UpgradeSystemImage: trial # {tryCounter}");
-
+                        stopwatchImageUpgrade.Restart();
                         while (stopwatchImageUpgrade.Elapsed.TotalMinutes < timeoutInMinutes)
                         {
                             

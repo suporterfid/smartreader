@@ -68,6 +68,9 @@
 		<None Update="cap_template\localhost.pfx">
 		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
+		<None Update="cap_template\plugins\FlipKartLicensePlugin.dll">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
 		<None Update="cap_template\start">
 		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
@@ -76,6 +79,9 @@
 		</None>
 		<None Update="Impinj.Atlas.dll">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+		<None Update="plugins\FlipKartLicensePlugin.dll">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
 
@@ -122,7 +128,6 @@
 	<ItemGroup>
 	  <Folder Include="cap_deploy\" />
 	  <Folder Include="cap_template\plugins\" />
-	  <Folder Include="plugins\" />
 	</ItemGroup>
 
 </Project>

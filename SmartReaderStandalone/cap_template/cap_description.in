@@ -6,7 +6,7 @@
 
 # Version is a 4 part number in decimal with each part limited to
 # 0-255. It is the version of the upgrade file to be generated.
-Version = 4.0.0.13
+Version = 4.0.0.14
 
 # Valid Reader Hardware is a string designating the reader models onto which
 # you can load the upgrade.  The following strings are acceptable values for
@@ -73,4 +73,4 @@ Input Directory = /etk/cap
 # Persist a file or directory across a CAP install.  This file or
 # directory will be copied from the existing CAP in to the new CAP
 # during install.  Path is relative to the root of the CAP.
-Persistent Data = config/smartreader.json
+# Persistent Data = config/smartreader.json

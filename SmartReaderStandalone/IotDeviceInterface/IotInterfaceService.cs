@@ -249,7 +249,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private ConcurrentDictionary<string, long> _readEpcs = new();
 
-    private SerialPort _serial_tty;
+    private SerialPort _serialTty;
 
     protected object _timerPeriodicTasksJobManagerLock = new();
 
@@ -733,8 +733,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     _socketBarcodeClient.Events.DataReceived += BarcodeSocketClientEventsDataReceived;
                     _socketBarcodeClient.Events.Connected += BarcodeSocketClientEventsConnected;
                     _socketBarcodeClient.Events.Disconnected += BarcodeSocketClientEventsDisconnected;
-
-                    _socketBarcodeClient.ConnectWithRetries(1000);
+                    //SimpleTcpKeepaliveSettings keepaliveSettings = new SimpleTcpKeepaliveSettings();
+                    //keepaliveSettings.EnableTcpKeepAlives = true;
+                    //keepaliveSettings.TcpKeepAliveTime = 0;
+                    //keepaliveSettings.TcpKeepAliveInterval = 200;
+                    //keepaliveSettings.TcpKeepAliveRetryCount = 1000;
+                    //_socketBarcodeClient.Keepalive = keepaliveSettings;
+                    
+                    _socketBarcodeClient.ConnectWithRetries(500);
                 }
             }
             catch (Exception ex)
@@ -7149,52 +7155,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
         }
 
-        try
-        {
-            if (_standaloneConfigDTO != null
-                && ((!string.IsNullOrEmpty(_standaloneConfigDTO.serialPort)
-                     && string.Equals("1", _standaloneConfigDTO.serialPort, StringComparison.OrdinalIgnoreCase))
-                    ||
-                    (!string.IsNullOrEmpty(_standaloneConfigDTO.enableBarcodeSerial)
-                     && string.Equals("1", _standaloneConfigDTO.enableBarcodeSerial,
-                         StringComparison.OrdinalIgnoreCase))
-                )
-               )
-            {
-                var ports = SerialPort.GetPortNames();
-                var serialPortName = "/dev/ttyUSB0";
-                foreach (var port in ports)
-                {
-                    _logger.LogInformation("serial port: " + port);
-                    if (port.Contains("/dev/ttyUSB")) serialPortName = port;
-                }
-
-                _logger.LogInformation("Selected serial port: " + serialPortName);
-
-                var baudrate = int.Parse(_standaloneConfigDTO.baudRate);
-                _serial_tty = new SerialPort(serialPortName, baudrate);
-                _serial_tty.DataReceived += BarcodeSerialDataReceivedHandler;
-                if (!_serial_tty.IsOpen)
-                    try
-                    {
-                        _serial_tty.Open();
-                    }
-                    catch (Exception)
-                    {
-                    }
-                //{
-                //    DataBits = 8,
-                //    //Parity = Parity.None,
-                //    //StopBits = StopBits.None,
-                //    WriteTimeout = TimeSpan.FromSeconds(3).Seconds,
-                //    ReadTimeout = TimeSpan.FromMilliseconds(30).Seconds
-                //};
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError("Serial init - " + ex.Message);
-        }
+        StartBarcodeSerialPort();
 
         PeriodicTasksTimerInventoryData.Elapsed += OnRunPeriodicTasksJobManagerEvent;
         PeriodicTasksTimerInventoryData.Interval = 1000;
@@ -7424,6 +7385,64 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
             Process.Start(process.MainModule.FileName);
             Environment.Exit(1);
+        }
+    }
+
+    private void StartBarcodeSerialPort()
+    {
+        try
+        {
+            if (_standaloneConfigDTO != null
+                && ((!string.IsNullOrEmpty(_standaloneConfigDTO.serialPort)
+                     && string.Equals("1", _standaloneConfigDTO.serialPort, StringComparison.OrdinalIgnoreCase))
+                    ||
+                    (!string.IsNullOrEmpty(_standaloneConfigDTO.enableBarcodeSerial)
+                     && string.Equals("1", _standaloneConfigDTO.enableBarcodeSerial,
+                         StringComparison.OrdinalIgnoreCase))
+                )
+               )
+            {
+                var ports = SerialPort.GetPortNames();
+                var serialPortName = "/dev/ttyUSB0";
+                foreach (var port in ports)
+                {
+                    _logger.LogInformation("serial port: " + port);
+                    if (port.Contains("/dev/ttyUSB")) serialPortName = port;
+                }
+
+                _logger.LogInformation("Selected serial port: " + serialPortName);
+
+                var baudrate = int.Parse(_standaloneConfigDTO.baudRate);
+                _serialTty = new SerialPort(serialPortName, baudrate);
+                _serialTty.ReadTimeout = 1000;
+                _serialTty.DiscardNull = true;
+                
+                _serialTty.DataReceived += BarcodeSerialDataReceivedHandler;
+                if (!_serialTty.IsOpen)
+                    try
+                    {
+                        _serialTty.Open();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error opening port " + serialPortName);
+                    }
+                //{
+                //    DataBits = 8,
+                //    //Parity = Parity.None,
+                //    //StopBits = StopBits.None,
+                //    WriteTimeout = TimeSpan.FromSeconds(3).Seconds,
+                //    ReadTimeout = TimeSpan.FromMilliseconds(30).Seconds
+                //};
+                if(_serialTty != null && _serialTty.IsOpen)
+                {
+
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Serial init: " + ex.Message);
         }
     }
 
@@ -11578,18 +11597,18 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var line = ExtractLineFromJsonObject(dataToPublish);
                     try
                     {
-                        if (_serial_tty != null)
+                        if (_serialTty != null)
                         {
-                            if (!_serial_tty.IsOpen) _serial_tty.Open();
+                            if (!_serialTty.IsOpen) _serialTty.Open();
 
-                            if (_serial_tty.IsOpen)
+                            if (_serialTty.IsOpen)
                             {
                                 if (!string.IsNullOrEmpty(line))
                                 {
                                     Console.WriteLine(line);
                                     var epcMessage = Encoding.UTF8.GetBytes(line);
 
-                                    _serial_tty.Write(epcMessage, 0, epcMessage.Length);
+                                    _serialTty.Write(epcMessage, 0, epcMessage.Length);
                                     //_serial_tty.WriteLine(line);
                                 }
                                 else

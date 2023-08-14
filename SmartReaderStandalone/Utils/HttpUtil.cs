@@ -586,6 +586,7 @@ public class HttpUtil
         {
             Log.Error(ex, "Unexpected error sending data");
             Console.WriteLine("Unexpected error sending data - " + ex.Message);
+            returnedData = "500 - Error";
             //throw;
         }
 

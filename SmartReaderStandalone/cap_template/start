@@ -11,7 +11,7 @@ chown root:cap /customer/config/error.txt
 #chmod -R 777 /customer/config/*.ini
 #chmod -R 777 /customer/config/*.json
 
-rm - rf /customer/upgrading
+rm -rf /tmp/upgrading
 #/opt/ys/rshell -c "config network https enable"
 #/opt/ys/rshell -c "config rfid interface rest"
 
@@ -36,7 +36,7 @@ while true ; do
         if [ -f /customer/SmartReaderStandalone ] ; then
                 # The /customer/SmartReaderStandalone exists, so tes whether it's executable
                 if [ -x /customer/SmartReaderStandalone ] ; then
-                    if [ ! -e /customer/upgrading ]; then
+                    if [ ! -e /tmp/upgrading ]; then
                             # /customer/SmartReaderStandalone is executable, so run it
                             appDir=/customer
                             /customer/SmartReaderStandalone

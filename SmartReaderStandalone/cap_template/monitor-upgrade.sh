@@ -12,12 +12,14 @@ load_upgrade() {
 # Initial load of the configuration
 load_config
 
+try_counter=0
+
 # Loop
 while true; do
     # Make use of the variables from the configuration
     echo "URL: $url_upgrade"
-    echo "Username: $username"
-    echo "Password: $password"
+    #echo "Username: $username"
+    #echo "Password: $password"
 
     # Some operations inside the loop
 
@@ -32,15 +34,24 @@ while true; do
 
     # Check the value of the "status" property and print the result
     if [ "$status" = "successful" ]; then
-    echo "upgrade succeeded."
+        echo "upgrade succeeded."
     #response=$(curl -s -k -u "$username:$password" "$url_reboot")
     curl -X POST -H "Content-Type: application/json" -d '{}' -k -u "$username:$password" "$url_reboot"
     elif [ "$status" = "verifying" ]; then
-    echo "verifying upgrade."    
+        echo "verifying upgrade."    
     elif [ "$status" = "installing" ]; then
-    echo "installing upgrade."
+        echo "installing upgrade."
     elif [ "$status" = "failed" ]; then
-    echo "upgrade failed."
+        try_counter=$((try_counter + 1))
+        echo "upgrade failed."
+        echo "$try_counter"
+        if [ "$try_counter" -gt 5 ]; then
+          echo "The script has tried more than $try_counter times, rebooting."
+        else
+            echo "config image upgrade $url_download"
+            /opt/ys/rshell -c "config image upgrade $url_download"
+            echo "retrying..."
+        fi
     else
     echo "Unknown status: $status"
     fi

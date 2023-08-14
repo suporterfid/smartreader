@@ -53,7 +53,6 @@ using TagDataTranslation;
 using DataReceivedEventArgs = SimpleTcp.DataReceivedEventArgs;
 using ReaderStatus = SmartReaderStandalone.Entities.ReaderStatus;
 using Timer = System.Timers.Timer;
-using McMaster.NETCore.Plugins;
 using SmartReaderStandalone.Plugins;
 using SmartReaderStandalone.Services;
 using System;
@@ -195,6 +194,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         new();
 
     public readonly ConcurrentDictionary<string, JObject> _smartReaderTagEventsListBatch = new();
+
     public readonly ConcurrentDictionary<string, JObject> _smartReaderTagEventsListBatchOnUpdate = new();
 
     public readonly ConcurrentDictionary<string, JObject> _smartReaderTagEventsAbsence = new();
@@ -3518,21 +3518,23 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     try
                     {
                         await ProcessGpoNoNewTagPortAsync(true);
+                        await Task.Delay(1000);
+                        await ProcessGpoNoNewTagPortAsync(false);
                     }
                     catch (Exception)
                     {
                     }
                 }
-                else
-                {
-                    try
-                    {
-                        await ProcessGpoNoNewTagPortAsync(false, 500);
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
+                //else
+                //{
+                //    try
+                //    {
+                //        await ProcessGpoNoNewTagPortAsync(false, 500);
+                //    }
+                //    catch (Exception)
+                //    {
+                //    }
+                //}
 
                 await ProcessTagInventoryEventAsync(tagEvent);
             }
@@ -4126,7 +4128,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                             }
 
-                            if (shouldPublish) EnqueueToExternalPublishers(smartReaderTagReadEventAggregated);
+                            if (shouldPublish) EnqueueToExternalPublishers(smartReaderTagReadEventAggregated, false);
                         }
                         catch (Exception ex)
                         {
@@ -5141,6 +5143,24 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
+    private async Task ProcessMqttJsonJarrayAsync(JArray eventData)
+    {
+        try
+        {
+            var jsonParam = JsonConvert.SerializeObject(eventData);
+            var mqttDataTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}";
+
+            _mqttClient.PublishAsync(mqttDataTopic, jsonParam);
+            _logger.LogInformation($"Data sent: {jsonParam}");
+        }
+        catch (Exception ex)
+        {
+
+            _logger.LogInformation(ex, "Unexpected error on ProcessMqttJsonJarrayAsync " + ex.Message);
+            await ProcessGpoErrorPortAsync();
+        }
+    }
+
     //private async Task ProcessUdpQueueDataAsync(string ip, int port)
     //{
     //    try
@@ -5502,6 +5522,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         _logger.LogError(ex,
                             "Unexpected error on ProcessUdpDataTagEventDataAsync for UDP " + udpClient.Key + " " +
                             ex.Message);
+                        ProcessGpoErrorPortAsync();
                         //_messageQueueTagSmartReaderTagEventSocketServerRetry.Enqueue(smartReaderTagEventData);
                     }
                 //_udpSocketServer.Send(line);
@@ -5509,6 +5530,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error on ProcessUdpDataTagEventDataAsync for UDP " + ex.Message);
+                ProcessGpoErrorPortAsync();
             }
             //foreach (KeyValuePair<string, int> udpClient in _udpClients)
             //{
@@ -5547,6 +5569,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             //    _logger.LogError(exception, "Unexpected error on ProcessSocketJsonTagEventDataAsync");
             //}
             _logger.LogError(ex, "Unexpected error on ProcessUdpDataTagEventDataAsync");
+            ProcessGpoErrorPortAsync();
             //_logger.LogInformation("Unexpected error on ProcessUdpDataTagEventDataAsync " + ex.Message, SeverityType.Error);
         }
     }
@@ -5613,10 +5636,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 .Result;
             if (!postResult.StartsWith("20"))
             {
-                if (checkResult)
-                {
-                    ProcessGpoErrorPortAsync();
-                }
+                _ = ProcessGpoErrorPortAsync();
+                //if (checkResult)
+                //{
+                //    ProcessGpoErrorPortAsync();
+                //}
 
                 if (!string.IsNullOrEmpty(_standaloneConfigDTO.httpAuthenticationType)
                     && string.Equals("BEARER", _standaloneConfigDTO.httpAuthenticationType,
@@ -5649,6 +5673,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
 
             _logger.LogError(ex, "Unexpected error on ProcessTagEventData " + ex.Message);
+            ProcessGpoErrorPortAsync();
         }
 
         try
@@ -5659,6 +5684,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             Console.WriteLine("Unexpected error on ProcessTagEventData restarting _timerStopwatch" + ex.Message);
             _logger.LogError(ex, "Unexpected error on ProcessTagEventData restarting _timerStopwatch" + ex.Message);
+            ProcessGpoErrorPortAsync();
         }
     }
 
@@ -5684,6 +5710,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         {
                             _logger.LogError(ex,
                                 "Unexpected error on ProcessSocketJsonTagEventDataAsync " + ex.Message);
+                            ProcessGpoErrorPortAsync();
                             //_messageQueueTagSmartReaderTagEventSocketServerRetry.Enqueue(smartReaderTagEventData);
                         }
             }
@@ -5699,6 +5726,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             //    _logger.LogError(exception, "Unexpected error on ProcessSocketJsonTagEventDataAsync");
             //}
             _logger.LogError(ex, "Unexpected error on ProcessSocketJsonTagEventDataAsync " + ex.Message);
+            ProcessGpoErrorPortAsync();
         }
     }
 
@@ -5728,11 +5756,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 else
                 {
                     _logger.LogWarning("### Publisher USB Drive >>> path " + R700UsbDrivePath + " not found.");
+                    ProcessGpoErrorPortAsync();
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error on ProcessSocketJsonTagEventDataAsync " + ex.Message);
+                ProcessGpoErrorPortAsync();
 
                 //_messageQueueTagSmartReaderTagEventSocketServerRetry.Enqueue(smartReaderTagEventData);
             }
@@ -5749,6 +5779,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             //}
             _logger.LogError(ex, "Unexpected error on ProcessSocketJsonTagEventDataAsync " + ex.Message,
                 SeverityType.Error);
+            ProcessGpoErrorPortAsync();
         }
     }
 
@@ -10348,7 +10379,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             break;
                         }
                         var resultImageUpgrade = rshell.SendCommand("config image upgrade " + imageRemoteUrl);
-                        File.WriteAllText("/customer/upgrading", "1");
+                        File.WriteAllText("/tmp/upgrading", "1");
+                        File.WriteAllText("/customer/upgrade_config.sh", $"url_download=\"{imageRemoteUrl}\"");
                         _logger.LogInformation(resultImageUpgrade);
 
                         // exit the app
@@ -11457,7 +11489,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     StringComparison.OrdinalIgnoreCase))
                     _messageQueueTagSmartReaderTagEventGroupToValidate.Enqueue(dataToPublish);
                 else
-                    EnqueueToExternalPublishers(dataToPublish);
+                    EnqueueToExternalPublishers(dataToPublish, true);
             }
 
 
@@ -11515,14 +11547,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
-    public void EnqueueToExternalPublishers(JObject dataToPublish)
+    public void EnqueueToExternalPublishers(JObject dataToPublish, bool shouldValidate)
     {
         try
         {
 
 
 
-            if (string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase)
+                && shouldValidate)
                 try
                 {
                     if (_messageQueueTagSmartReaderTagEventGroupToValidate.Count < 1000)
@@ -11577,7 +11610,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                 }
 
-            if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals("127.0.0.1", _standaloneConfigDTO.mqttBrokerAddress, StringComparison.OrdinalIgnoreCase))
                 try
                 {
                     if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttTagEventsTopic))
@@ -12235,10 +12269,19 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             _logger.LogInformation("SaveJsonSkuSummaryToDb... ");
             await readLock.WaitAsync();
-            using var scope = Services.CreateScope();
-            var summaryQueueBackgroundService = scope.ServiceProvider.GetRequiredService<ISummaryQueueBackgroundService>();
-            var JsonSkuSummary = JsonConvert.SerializeObject(dto);
-            summaryQueueBackgroundService.AddData(JsonSkuSummary);
+            if (_standaloneConfigDTO != null
+                && !"127.0.0.1".Equals(_standaloneConfigDTO.mqttBrokerAddress))
+            {
+                
+                using var scope = Services.CreateScope();
+                var summaryQueueBackgroundService = scope.ServiceProvider.GetRequiredService<ISummaryQueueBackgroundService>();
+                var JsonSkuSummary = JsonConvert.SerializeObject(dto);
+                summaryQueueBackgroundService.AddData(JsonSkuSummary);
+            }
+            else
+            {
+                _ = ProcessMqttJsonJarrayAsync(dto);
+            }
         }
         catch (Exception ex)
         {

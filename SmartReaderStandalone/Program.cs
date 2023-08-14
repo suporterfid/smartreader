@@ -23,6 +23,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http;
+using MQTTnet.Server;
+using MQTTnet;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Serilog;
@@ -136,6 +138,29 @@ builder.WebHost.ConfigureKestrel(opt =>
 builder.Services.AddHostedService<IotInterfaceService>();
 builder.Services.AddScoped<ISummaryQueueBackgroundService, SummaryQueueBackgroundService>();
 
+// Create and start the MQTT servers
+var mqttFactory = new MqttFactory();
+var tcpMqttServer = mqttFactory.CreateMqttServer();
+try
+{
+    var configDto = ConfigFileHelper.ReadFile();
+    if (configDto != null 
+        && "127.0.0.1".Equals(configDto.mqttBrokerAddress))
+    {
+        // Configure the MQTT server options for TCP
+        var tcpMqttServerOptions = new MqttServerOptionsBuilder()
+            .WithDefaultEndpoint()
+            .WithDefaultEndpointPort(1883) // Set the MQTT port for TCP
+            .Build();
+
+        tcpMqttServer.StartAsync(tcpMqttServerOptions);
+    }
+}
+catch (Exception)
+{
+
+    
+}
 
 var app = builder.Build();
 
@@ -441,6 +466,22 @@ app.MapPost("/api/settings", [AuthorizeBasicAuth] async ([FromBody] StandaloneCo
 
         try
         {
+            if(config != null)
+            {
+                if ("1".Equals(config.advancedGpoEnabled))
+                {
+                    if("9".Equals(config.advancedGpoMode1)
+                    || "9".Equals(config.advancedGpoMode2)
+                    || "9".Equals(config.advancedGpoMode3))
+                    {
+                        config.softwareFilterEnabled = "1";
+                        if("0".Equals(config.softwareFilterField))
+                        {
+                            config.softwareFilterField = "1";
+                        }
+                    }
+                } 
+            }
             var configModel = db.ReaderConfigs.FindAsync("READER_CONFIG").Result;
             if (configModel == null)
             {

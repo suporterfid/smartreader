@@ -14,6 +14,7 @@ using System.Collections.ObjectModel;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
@@ -21,6 +22,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Impinj.Atlas;
 using Newtonsoft.Json;
+using NetworkInterface = Impinj.Atlas.NetworkInterface;
 
 namespace SmartReader.IotDeviceInterface;
 
@@ -71,6 +73,8 @@ internal class R700IotReader : IR700IotReader
 
     public bool IsAntennaHubEnabled { get; private set; }
 
+    public bool IsNetworkConnected { get; private set; }
+
     public List<string> IpAddresses { get; private set; }
      
 
@@ -80,17 +84,19 @@ internal class R700IotReader : IR700IotReader
         UniqueId = statusAsync.SerialNumber;
         try
         {
+            
             var iFaces = await _r700IotEventProcessor.GetReaderSystemNetworkInterfacesAsync();
             if (iFaces != null && iFaces.Any())
             {
-                var selectedIfaces = iFaces.Where(i =>
-                    i.InterfaceType == NetworkInterfaceInterfaceType.Eth && i.InterfaceName.Equals("eth0")).ToList();
+                // where  i.InterfaceType == NetworkInterfaceInterfaceType.Eth && i.InterfaceName.Equals("eth0")
+                var selectedIfaces = iFaces.Where(i => i.Enabled == true).ToList();
                 if (selectedIfaces != null && selectedIfaces.Any())
                 {
                     var selectedIface = selectedIfaces.FirstOrDefault();
-                    MacAddress = selectedIface.HardwareAddress;
+                    MacAddress = selectedIface.HardwareAddress;                   
                 }
             }
+
             if(IpAddresses == null)
             {
                 IpAddresses = new List<string>();
@@ -99,12 +105,41 @@ internal class R700IotReader : IR700IotReader
             {
                 IpAddresses.Clear();
             }
+
+            IsNetworkConnected = false;
             foreach (var netInterface in iFaces)
             {
                 if(netInterface != null 
                     && netInterface.NetworkAddress != null 
                     && netInterface.NetworkAddress.Count > 0)
                 {
+                    if(netInterface.Status == NetworkInterfaceStatus.Connected)
+                    {
+                        try
+                        {
+                            using (Ping ping = new())
+                            {
+                                foreach (var networkAddress in netInterface.NetworkAddress)
+                                {
+                                    string hostName = networkAddress.Gateway;
+                                    if(!string.IsNullOrEmpty(hostName))
+                                    {
+                                        PingReply reply = await ping.SendPingAsync(hostName, 1000);
+                                        //Console.WriteLine($"Ping status for ({hostName}): {reply.Status}");
+                                        if (reply is { Status: IPStatus.Success })
+                                        {
+                                            IsNetworkConnected = true;
+                                        }
+                                    }                                   
+                                }
+                                
+                            }   
+                        }
+                        catch (Exception)
+                        {
+                        }
+                        
+                    }
                     foreach (var networkAddress in netInterface.NetworkAddress)
                     {
                         IpAddresses.Add(networkAddress.Address);
@@ -115,6 +150,7 @@ internal class R700IotReader : IR700IotReader
         }
         catch (Exception)
         {
+            IsNetworkConnected = true;
         }
 
         return statusAsync;

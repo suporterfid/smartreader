@@ -470,9 +470,9 @@ app.MapPost("/api/settings", [AuthorizeBasicAuth] async ([FromBody] StandaloneCo
             {
                 if ("1".Equals(config.advancedGpoEnabled))
                 {
-                    if("9".Equals(config.advancedGpoMode1)
-                    || "9".Equals(config.advancedGpoMode2)
-                    || "9".Equals(config.advancedGpoMode3))
+                    if("6".Equals(config.advancedGpoMode1)
+                    || "6".Equals(config.advancedGpoMode2)
+                    || "6".Equals(config.advancedGpoMode3))
                     {
                         config.softwareFilterEnabled = "1";
                         if("0".Equals(config.softwareFilterField))

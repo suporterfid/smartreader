@@ -57,6 +57,7 @@ using SmartReaderStandalone.Plugins;
 using SmartReaderStandalone.Services;
 using System;
 using Renci.SshNet;
+using System.Net.NetworkInformation;
 
 namespace SmartReader.IotDeviceInterface;
 
@@ -1416,6 +1417,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
 
         var readerStatus = await _iotDeviceInterfaceClient.GetStatusAsync();
+        if(!_iotDeviceInterfaceClient.IsNetworkConnected)
+        {
+            Task.Run(() => ProcessGpoErrorPortAsync());
+            Task.Run(() => ProcessGpoErrorNetworkPortAsync(true));
+        }
+        else
+        {
+            Task.Run(() => ProcessGpoErrorPortRecoveryAsync());
+            Task.Run(() => ProcessGpoErrorNetworkPortAsync(false));
+        }
         var readerStatusData = new SmartreaderRunningStatusDto();
 
 
@@ -1520,7 +1531,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
         catch (Exception)
         {
-            await ProcessGpoErrorPortAsync();
+            //await ProcessGpoErrorPortAsync();
         }
 
         try
@@ -1801,8 +1812,38 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _logger.LogError(ex, "Unexpected error applying settings (ApplySettingsAsync).");
         }
     }
+    public async Task ProcessGpoBlinkAnyTagGpoPortAsync()
+    {
+        try
+        {
+            if (string.Equals("1", _standaloneConfigDTO.advancedGpoEnabled,
+                                           StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.Equals("9", _standaloneConfigDTO.advancedGpoMode1,
+                                        StringComparison.OrdinalIgnoreCase)
+                    || string.Equals("9", _standaloneConfigDTO.advancedGpoMode2,
+                                        StringComparison.OrdinalIgnoreCase)
+                    || string.Equals("9", _standaloneConfigDTO.advancedGpoMode3,
+                                        StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        await ProcessGpoAnyTagPortAsync(true);
+                        await Task.Delay(1000);
+                        await ProcessGpoAnyTagPortAsync(false);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
 
-    public async Task ProcessGpoBlinkTagStatusGpoPortAsync(int timeInSec)
+        }
+    }
+    public async Task ProcessGpoBlinkNewTagStatusGpoPortAsync(int timeInSec)
     {
         try
         {
@@ -1978,7 +2019,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                             StringComparison.OrdinalIgnoreCase)
                         || string.Equals("9", _standaloneConfigDTO.advancedGpoMode2,
                                             StringComparison.OrdinalIgnoreCase)
-                        || string.Equals("9", _standaloneConfigDTO.advancedGpoMode2,
+                        || string.Equals("9", _standaloneConfigDTO.advancedGpoMode3,
                                             StringComparison.OrdinalIgnoreCase))
                     {
 
@@ -2063,6 +2104,40 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing GPO error status. " + ex.Message);
+        }
+    }
+
+    public async Task ProcessGpoErrorNetworkPortAsync(bool status)
+    {
+        try
+        {
+            if (_standaloneConfigDTO != null)
+            {
+                if (string.Equals("1", _standaloneConfigDTO.advancedGpoEnabled,
+                                            StringComparison.OrdinalIgnoreCase))
+                {
+                    if (string.Equals("11", _standaloneConfigDTO.advancedGpoMode1,
+                                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        _ = SetGpoPortAsync(1, status);
+
+                    }
+                    if (string.Equals("11", _standaloneConfigDTO.advancedGpoMode2,
+                                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        _ = SetGpoPortAsync(2, status);
+                    }
+                    if (string.Equals("11", _standaloneConfigDTO.advancedGpoMode3,
+                                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        _ = SetGpoPortAsync(3, status);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing GPO error status for network connectivity. " + ex.Message);
         }
     }
 
@@ -2448,7 +2523,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             catch (Exception)
             {
-                ProcessGpoErrorPortAsync();
+                _ = ProcessGpoErrorPortAsync();
             }
         }
 
@@ -3302,6 +3377,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _logger.LogInformation("EPC Hex: {0} Antenna : {1} LastSeenTime {2}", tagEvent.EpcHex, tagEvent.AntennaPort,
                 tagEvent.LastSeenTime);
 
+            Task.Run(() => ProcessGpoBlinkAnyTagGpoPortAsync());
+            
 
             if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
                             StringComparison.OrdinalIgnoreCase))
@@ -3497,31 +3574,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 && !shouldProcess)
                 shouldProcess = true;
 
-            if (string.Equals("1", _standaloneConfigDTO.advancedGpoEnabled,
-                                           StringComparison.OrdinalIgnoreCase))
-            {
-                if (string.Equals("9", _standaloneConfigDTO.advancedGpoMode1,
-                                        StringComparison.OrdinalIgnoreCase)
-                    || string.Equals("9", _standaloneConfigDTO.advancedGpoMode2,
-                                        StringComparison.OrdinalIgnoreCase)
-                    || string.Equals("9", _standaloneConfigDTO.advancedGpoMode2,
-                                        StringComparison.OrdinalIgnoreCase))
-                {
-                    try
-                    {
-                        await ProcessGpoAnyTagPortAsync(true);
-                        await Task.Delay(1000);
-                        await ProcessGpoAnyTagPortAsync(false);
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-            }
+            
 
             //_messageQueueTagInventoryEvent.Enqueue(tagEvent);
             if (shouldProcess)
             {
+                
                 //if (string.Equals("1", _standaloneConfigDTO.softwareFilterEnabled, StringComparison.OrdinalIgnoreCase))
                 //{
                 //    try
@@ -3565,7 +3623,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     try
                     {
                         //await Task.Run(async () => { await BlinkTagStatusGpoPortAsync(1); });
-                        await ProcessGpoBlinkTagStatusGpoPortAsync(1);
+                        Task.Run(() => ProcessGpoBlinkNewTagStatusGpoPortAsync(1));
 
                     }
                     catch (Exception)

@@ -37,6 +37,8 @@ public interface IR700IotReader : IDisposable
 
     bool IsAntennaHubEnabled { get; }
 
+    bool IsNetworkConnected { get; }
+
     List<string> IpAddresses { get; }
 
     Task StartAsync(string presetId);

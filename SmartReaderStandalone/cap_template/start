@@ -1,6 +1,8 @@
 #!/bin/sh
 
 #chown -R root:root *
+chmod 775 /customer/*.sh
+chmod 775 /customer/cust_app_upgrade
 chmod 777 /customer/config/
 chmod 777 /cust/config/
 touch /customer/config/error.txt
@@ -20,6 +22,7 @@ chmod 775 /customer/wwwroot/logs
 chmod 775 /customer/wwwroot/logs/log-app.txt
 rm -rf /customer/wwwroot/logs/*.*
 cd /customer
+sh /customer/monitor-upgrade.sh &
 (( count = 1 ))
 while true ; do
         # Count the log lines and clean if needed. 

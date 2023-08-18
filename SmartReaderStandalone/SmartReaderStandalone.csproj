@@ -68,6 +68,9 @@
 		<None Update="cap_template\config.sh">
 		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
+		<None Update="cap_template\cust_app_upgrade">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
 		<None Update="cap_template\localhost.pfx">
 		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>

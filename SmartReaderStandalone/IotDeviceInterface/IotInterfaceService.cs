@@ -3087,6 +3087,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 try
                 {
+                    _isStarted = true;
+
                     if (_standaloneConfigDTO != null
                         && string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
                     {
@@ -3187,6 +3189,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
 
                 var shouldAcceptEventStatus = false;
+                _isStarted = false;
                 if (!_stopwatchLastIddleEvent.IsRunning)
                 {
                     _stopwatchLastIddleEvent.Start();
@@ -4372,7 +4375,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         "Unexpected error on remove _softwareFilterReadCountTimeoutDictionary" + ex.Message);
                 }
 
-            if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled, StringComparison.OrdinalIgnoreCase)
+                && _isStarted)
             {
                 try
                 {

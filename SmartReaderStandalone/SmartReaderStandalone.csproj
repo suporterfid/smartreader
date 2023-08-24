@@ -99,7 +99,7 @@
 	  <Content Update="appsettings.json">
 	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 	  </Content>
-	  <Content Update="cap_template\config\smartreader.json">
+	  <Content Update="cap_template\config\smartreader-default.json">
 	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 	  </Content>
 	  <Content Update="wwwroot\js\ag-grid-community.min.noStyle.js">

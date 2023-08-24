@@ -551,6 +551,8 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
     public string enableBarcodeSerial { get; set; } = "0";
 
+    public string enableBarcodeHid { get; set; } = "0";
+
     public string groupEventsOnInventoryStatus { get; set; } = "0";
 
     public string barcodeTcpAddress { get; set; } = "192.168.68.116";
@@ -1365,6 +1367,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
         if (!enableBarcodeSerial.Equals(otherStandaloneConfigDTO.enableBarcodeSerial)) return false;
 
+        if (!enableBarcodeHid.Equals(otherStandaloneConfigDTO.enableBarcodeHid)) return false;
 
         if (!groupEventsOnInventoryStatus.Equals(otherStandaloneConfigDTO.groupEventsOnInventoryStatus)) return false;
 
@@ -2029,6 +2032,8 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
             config.enableBarcodeTcp = HttpUtility.UrlDecode(config.enableBarcodeTcp);
 
             config.enableBarcodeSerial = HttpUtility.UrlDecode(config.enableBarcodeSerial);
+
+            config.enableBarcodeHid = HttpUtility.UrlDecode(config.enableBarcodeHid);           
 
             config.groupEventsOnInventoryStatus = HttpUtility.UrlDecode(config.groupEventsOnInventoryStatus);
 

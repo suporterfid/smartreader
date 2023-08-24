@@ -43,6 +43,7 @@ using SmartReaderStandalone.ViewModel.Status;
 using Endpoint = SmartReaderJobs.ViewModel.Mqtt.Endpoint.Endpoint;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
 using JsonSerializer = System.Text.Json.JsonSerializer;
+using System.IO;
 
 if(File.Exists("/customer/upgrading"))
 {
@@ -135,7 +136,10 @@ builder.WebHost.ConfigureKestrel(opt =>
 });
 //builder.Services.AddRouting();
 //builder.Services.AddHostedService<SummaryQueueBackgroundService>();
-builder.Services.AddHostedService<IotInterfaceService>();
+//builder.Services.AddHostedService<IotInterfaceService>();
+builder.Services.AddSingleton<IotInterfaceService>();
+builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvider => serviceProvider.GetService<IotInterfaceService>());
+//builder.Services.AddScoped<IIotInterfaceService, IotInterfaceService>();
 builder.Services.AddScoped<ISummaryQueueBackgroundService, SummaryQueueBackgroundService>();
 
 // Create and start the MQTT servers
@@ -1896,6 +1900,121 @@ app.MapGet("/mqtt", [AuthorizeBasicAuth] async (HttpRequest readerRequest, Runti
     {
         operationResult.Add("status", "ERROR");
         return Results.NotFound(operationResult);
+    }
+});
+
+app.MapPost("/mqtt/command/control", [AuthorizeBasicAuth]
+async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db, IotInterfaceService backgroundService) =>
+{
+    var requestResult = "";
+
+    try
+    {
+        string json = "";
+        using (var stream = new MemoryStream())
+        {
+            Utf8JsonWriter writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            jsonDocument.WriteTo(writer);
+            writer.Flush();
+            json = Encoding.UTF8.GetString(stream.ToArray());
+        }
+        //using var scope = context.RequestServices.CreateScope();
+        //var backgroundService = scope.ServiceProvider.GetRequiredService<IIotInterfaceService>();
+        requestResult = backgroundService.ProcessMqttControlCommandJson(json, false);
+        var result = JsonDocument.Parse(requestResult);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "error processing control command");
+        File.WriteAllText(Path.Combine("/tmp", "error-mqtt-command.txt"), ex.Message);
+        return Results.BadRequest(requestResult);
+    }
+});
+
+app.MapPost("/mqtt/command/management", [AuthorizeBasicAuth]
+async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db, IotInterfaceService backgroundService) =>
+{
+    var requestResult = "";
+
+    try
+    {
+        string json = "";
+        using (var stream = new MemoryStream())
+        {
+            Utf8JsonWriter writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            jsonDocument.WriteTo(writer);
+            writer.Flush();
+            json = Encoding.UTF8.GetString(stream.ToArray());
+        }
+        //using var scope = context.RequestServices.CreateScope();
+        //var backgroundService = scope.ServiceProvider.GetRequiredService<IIotInterfaceService>();
+
+        requestResult = backgroundService.ProcessMqttManagementCommandJson(json, false);
+        var result = JsonDocument.Parse(requestResult);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "error processing control command");
+        File.WriteAllText(Path.Combine("/tmp", "error-mqtt-command.txt"), ex.Message);
+        return Results.BadRequest(requestResult);
+    }
+});
+
+app.MapPost("/mqtt/command/mode", [AuthorizeBasicAuth]
+async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db, IotInterfaceService backgroundService) =>
+{
+    var commandStatus = "success";
+
+    try
+    {
+        string json = "";
+        using (var stream = new MemoryStream())
+        {
+            Utf8JsonWriter writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            jsonDocument.WriteTo(writer);
+            writer.Flush();
+            json = Encoding.UTF8.GetString(stream.ToArray());
+        }
+        //using var scope = context.RequestServices.CreateScope();
+        //var backgroundService = scope.ServiceProvider.GetRequiredService<IIotInterfaceService>();
+        var modeCmdResult = "success";
+        modeCmdResult = backgroundService.ProcessMqttModeJsonCommand(json);
+
+        if (!"success".Equals(modeCmdResult)) commandStatus = "error";
+
+        var deserializedCmdData = JsonConvert.DeserializeObject<JObject>(json);
+        if (deserializedCmdData.ContainsKey("response"))
+        {
+            deserializedCmdData["response"] = commandStatus;
+        }
+        else
+        {
+            var commandResponse = new JProperty("response", commandStatus);
+            deserializedCmdData.Add(commandResponse);
+        }
+
+        if (deserializedCmdData.ContainsKey("message"))
+        {
+            deserializedCmdData["message"] = modeCmdResult;
+        }
+        else
+        {
+            var commandResponse = new JProperty("message", modeCmdResult);
+            deserializedCmdData.Add(commandResponse);
+        }
+
+        var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
+
+        var result = JsonDocument.Parse(serializedData);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "error processing control command");
+        File.WriteAllText(Path.Combine("/tmp", "error-mqtt-command.txt"), ex.Message);
+        return Results.BadRequest(commandStatus);
     }
 });
 

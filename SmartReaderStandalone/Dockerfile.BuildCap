@@ -29,7 +29,7 @@ RUN mv /etk/cap/*.html /etk/cap/wwwroot/
 RUN mv /etk/cap/*.ico /etk/cap/wwwroot/
 
 RUN rm -rf /etk/cap/config/*
-COPY cap_template/config/smartreader.json /etk/cap/config/
+COPY cap_template/config/smartreader-default.json /etk/cap/config/
 RUN chmod 755 /etk/cap/start
 RUN chmod 755 /etk/cap/SmartReaderStandalone*
 RUN chmod 755 /etk/cap/*.so
@@ -40,6 +40,7 @@ RUN chmod 755 /etk/cap/*.dll
 RUN chmod 755 /etk/cap/*.json
 RUN dos2unix /etk/cap/*.json
 RUN dos2unix /etk/*.in
+RUN dos2unix /etk/cap/cust_app_upgrade
 RUN dos2unix /etk/cap/config/*.json
 RUN chmod -R 775 /etk/cap/*
 RUN ls -lh /etk/cap

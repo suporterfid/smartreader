@@ -7,8 +7,8 @@ chmod 777 /customer/config/
 chmod 777 /cust/config/
 touch /customer/config/error.txt
 chmod 777 /customer/config/error.txt
-chmod 777 /customer/config/smartreader.json
-chown root:cap /customer/config/smartreader.json
+chmod 777 /customer/config/smartreader-default.json
+chown root:cap /customer/config/smartreader-default.json
 chown root:cap /customer/config/error.txt
 #chmod -R 777 /customer/config/*.ini
 #chmod -R 777 /customer/config/*.json
@@ -22,6 +22,17 @@ chmod 775 /customer/wwwroot/logs
 chmod 775 /customer/wwwroot/logs/log-app.txt
 rm -rf /customer/wwwroot/logs/*.*
 cd /customer
+
+
+if [ ! -e /customer/config/smartreader.json ]; then                       
+    cp /customer/config/smartreader-default.json /customer/config/smartreader.json
+    chmod 777 /customer/config/smartreader.json
+else
+    chmod 777 /customer/config/smartreader.json
+    chown root:cap /customer/config/smartreader.json
+fi
+
+
 sh /customer/monitor-upgrade.sh &
 (( count = 1 ))
 while true ; do

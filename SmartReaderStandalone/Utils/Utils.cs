@@ -231,17 +231,25 @@ public class Utils
 
         return list;
     }
-    //
+
+    // write a deep clone method for a class
+
+
 
     public static T DeepClone<T>(T obj)
     {
         using (var ms = new MemoryStream())
         {
+
             var formatter = new BinaryFormatter();
+#pragma warning disable SYSLIB0011 // Type or member is obsolete
             formatter.Serialize(ms, obj);
+#pragma warning restore SYSLIB0011 // Type or member is obsolete
             ms.Position = 0;
 
+#pragma warning disable SYSLIB0011 // Type or member is obsolete
             return (T) formatter.Deserialize(ms);
+#pragma warning restore SYSLIB0011 // Type or member is obsolete
         }
     }
 

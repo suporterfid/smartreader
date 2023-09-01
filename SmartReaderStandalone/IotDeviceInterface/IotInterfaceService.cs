@@ -2285,7 +2285,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 //_messageQueueTagSmartReaderTagEventMqtt.Enqueue(dataToPublish);
                 var mqttCommandResponseTopic = $"{mqttManagementEventsTopic}";
                 var serializedData = JsonConvert.SerializeObject(dataToPublish);
-                _ = _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
+                if(gpiStatusEvent.Count > 0)
+                {
+                    _logger.LogInformation($"Publishing gpi status event: {serializedData}");
+                    _ = _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
+                }
+                
             }
             catch (Exception)
             {
@@ -2521,8 +2526,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 //_messageQueueTagSmartReaderTagEventMqtt.Enqueue(dataToPublish);
                 var mqttCommandResponseTopic = $"{mqttManagementEventsTopic}";
                 var serializedData = JsonConvert.SerializeObject(dataToPublish);
-                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
-                _ = ProcessGpoErrorPortRecoveryAsync();
+                if(statusEvent.Count > 0)
+                {
+                    _logger.LogInformation($"Publishing app status event: {serializedData}");
+                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
+                    _ = ProcessGpoErrorPortRecoveryAsync();
+                }
+                
             }
             catch (Exception)
             {
@@ -2874,8 +2884,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 //_messageQueueTagSmartReaderTagEventMqtt.Enqueue(dataToPublish);
                 var mqttCommandResponseTopic = $"{mqttManagementEventsTopic}";
                 var serializedData = JsonConvert.SerializeObject(dataToPublish);
-                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
-                _ = ProcessGpoErrorPortRecoveryAsync();
+                if(statusEvent.Count > 0)
+                {
+                    _logger.LogInformation($"Publishing status event (1): {serializedData}");
+                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
+                    _ = ProcessGpoErrorPortRecoveryAsync();
+                }
+                
             }
             catch (Exception)
             {
@@ -2990,7 +3005,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
 
 
-        if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
+        if (dataToPublish != null && string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
             try
             {
                 var mqttManagementEventsTopic = _standaloneConfigDTO.mqttManagementEventsTopic;
@@ -3021,8 +3036,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 //_messageQueueTagSmartReaderTagEventMqtt.Enqueue(dataToPublish);
                 var mqttCommandResponseTopic = $"{mqttManagementEventsTopic}";
                 var serializedData = JsonConvert.SerializeObject(dataToPublish);
-                _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
-                _ = ProcessGpoErrorPortRecoveryAsync();
+                if(smartReaderTagReadEvent !=null && smartReaderTagReadEvent.TagReads.Any())
+                {
+                    _logger.LogInformation($"Publishing tag event: {serializedData}");
+                    _mqttClient.PublishAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
+                    _ = ProcessGpoErrorPortRecoveryAsync();
+                }
+                
             }
             catch (Exception)
             {
@@ -3036,10 +3056,19 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             var mqttManagementEvents = new Dictionary<string, object>();
             if (eventStatus.Status == null || eventStatus.Status == InventoryStatusEventStatus.Idle)
+            {
                 mqttManagementEvents.Add("smartreader-status", "inventory-idle");
-            else
+            }
+            else if(eventStatus.Status == InventoryStatusEventStatus.Running)
+            {
                 mqttManagementEvents.Add("smartreader-status", "inventory-running");
-            PublishMqttManagementEvent(mqttManagementEvents);
+            }
+                
+            if(mqttManagementEvents.Count > 0)
+            {
+                PublishMqttManagementEvent(mqttManagementEvents);
+            }
+            
         }
         catch (Exception)
         {
@@ -11185,11 +11214,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         catch (Exception)
                         {
                         }
-
-                        var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                        _ = _mqttClient.PublishAsync(mqttManagementEventsTopic, jsonParam,
-                            mqttQualityOfServiceLevel, retain);
-                        _ = ProcessGpoErrorPortRecoveryAsync();
+                        if(mqttManagementEvents.Count > 0)
+                        {
+                            _logger.LogInformation($"Publishing management event: {jsonParam}");
+                            var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
+                            _ = _mqttClient.PublishAsync(mqttManagementEventsTopic, jsonParam,
+                                mqttQualityOfServiceLevel, retain);
+                            _ = ProcessGpoErrorPortRecoveryAsync();
+                        }
+                        
                     }
                     catch (Exception)
                     {

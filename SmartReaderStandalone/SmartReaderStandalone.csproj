@@ -25,7 +25,7 @@
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		  <TreatAsUsed>true</TreatAsUsed>
 	  </PackageReference>
-    <PackageReference Include="MQTTnet.Extensions.ManagedClient" Version="3.1.2" />
+    <PackageReference Include="MQTTnet.Extensions.ManagedClient" Version="4.3.0.858" />
     <PackageReference Include="Newtonsoft.Json.Bson" Version="1.0.2">
       <TreatAsUsed>true</TreatAsUsed>
     </PackageReference>
@@ -120,6 +120,54 @@
 	  <Content Update="wwwroot\js\vue.min.js">
 	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 	  </Content>
+	  <Content Update="wwwroot\licenses\McMaster.NETCore.Plugins.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	  <Content Update="wwwroot\licenses\Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	  <Content Update="wwwroot\licenses\Microsoft.EntityFrameworkCore.Design.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	  <Content Update="wwwroot\licenses\Microsoft.EntityFrameworkCore.InMemory.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	  <Content Update="wwwroot\licenses\Microsoft.EntityFrameworkCore.Tools.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	  <Content Update="wwwroot\licenses\MQTTnet.Extensions.ManagedClient.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	  <Content Update="wwwroot\licenses\Newtonsoft.Json.Bson.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	  <Content Update="wwwroot\licenses\Newtonsoft.Json.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	  <Content Update="wwwroot\licenses\RestSharp.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	  <Content Update="wwwroot\licenses\Serilog.AspNetCore.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	  <Content Update="wwwroot\licenses\Serilog.Expressions.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	  <Content Update="wwwroot\licenses\SimpleUdp.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	  <Content Update="wwwroot\licenses\SSH.NET.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	  <Content Update="wwwroot\licenses\SuperSimpleTcp.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	  <Content Update="wwwroot\licenses\Swashbuckle.AspNetCore.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
+	  <Content Update="wwwroot\licenses\System.IO.Ports.html">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </Content>
 	  <Content Update="wwwroot\ytemmulti.js">
 	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 	  </Content>
@@ -135,6 +183,7 @@
 	  <Folder Include="cap_deploy\" />
 	  <Folder Include="cap_template\plugins\" />
 	  <Folder Include="plugins\" />
+	  <Folder Include="wwwroot\licenses\" />
 	</ItemGroup>
 
 	<ItemGroup>

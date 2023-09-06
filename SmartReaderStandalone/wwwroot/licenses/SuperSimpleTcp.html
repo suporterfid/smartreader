@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<html class="hasSidebar hasPageActions hasBreadcrumb conceptual has-default-focus theme-light" lang="en-us" dir="ltr" data-css-variable-support="true" data-authenticated="false" data-auth-status-determined="false" data-target="docs" x-ms-format-detection="none">
+
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<meta property="og:title" content="Find and evaluate NuGet packages" />
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content="https://learn.microsoft.com/en-us/nuget/consume-packages/finding-and-choosing-packages" />
+			<meta property="og:description" content="Find and evaluate publicly available NuGet packages for your project by using advanced nuget.org search filters and syntax." />
+
+	<meta property="og:image" content="https://learn.microsoft.com/en-us/media/open-graph-image.png" />
+
+	<meta property="og:image:alt" content="Microsoft Learn" />
+
+	<meta name="twitter:card" content="summary_large_image" />
+
+	<meta name="twitter:site" content="@MicrosoftLearn" />
+
+	<meta name="color-scheme" content="light dark">
+
+
+	<meta name="author" content="JonDouglas" />
+<meta name="breadcrumb_path" content="../_breadcrumb/toc.json" />
+<meta name="depot_name" content="MSDN.Nuget_concept" />
+<meta name="description" content="Find and evaluate publicly available NuGet packages for your project by using advanced nuget.org search filters and syntax." />
+<meta name="document_id" content="e3ad41c6-6549-e33b-407e-52357146f49a" />
+<meta name="document_version_independent_id" content="741c3f86-a7c6-f48f-bc29-e49a439f7c61" />
+<meta name="git_commit_id" content="cb4dcc15132ba8f42f4ac282218f861c1a0ecf4c" />
+<meta name="gitcommit" content="https://github.com/NuGet/docs.microsoft.com-nuget/blob/cb4dcc15132ba8f42f4ac282218f861c1a0ecf4c/docs/consume-packages/Finding-and-Choosing-Packages.md" />
+<meta name="locale" content="en-us" />
+<meta name="ms.author" content="jodou" />
+<meta name="ms.date" content="08/29/2022" />
+<meta name="ms.reviewer" content="anangaur" />
+<meta name="ms.reviewer" content="jodou" />
+<meta name="ms.reviewer" content="chgill" />
+<meta name="ms.reviewer" content="jiacjian" />
+<meta name="ms.service" content="nuget" />
+<meta name="ms.topic" content="conceptual" />
+<meta name="ms.workload" content="dotnet" />
+<meta name="ms.workload" content="dotnetcore" />
+<meta name="ms.workload" content="aspnet" />
+<meta name="original_content_git_url" content="https://github.com/NuGet/docs.microsoft.com-nuget/blob/live/docs/consume-packages/Finding-and-Choosing-Packages.md" />
+<meta name="page_type" content="conceptual" />
+<meta name="pdf_url_template" content="https://learn.microsoft.com/pdfstore/en-us/MSDN.Nuget_concept/{branchName}{pdfName}" />
+<meta name="ROBOTS" content="INDEX,FOLLOW" />
+<meta name="schema" content="Conceptual" />
+<meta name="site_name" content="Docs" />
+<meta name="toc_rel" content="../toc.json" />
+<meta name="uhfHeaderId" content="MSDocsHeader-DotNet" />
+<meta name="updated_at" content="2023-06-14 12:16 AM" />
+<meta name="word_count" content="1925" />
+
+
+	<meta name="recommendation_types" content="Training" />
+	<meta name="recommendation_types" content="Certification" />
+	
+
+	<meta name="persistent_id" content="307fdb11-b3d4-98df-5d54-c5b6064ccde4" />
+	
+
+
+	<meta name="cmProducts" content="https://microsoft-devrel.poolparty.biz/DevRelOfferingOntology/12ed19f9-ebdf-4c8a-8bcd-7a681836774d" data-source="generated" />
+
+	<meta name="cmProducts" content="https://authoring-docs-microsoft.poolparty.biz/devrel/7696cda6-0510-47f6-8302-71bb5d2e28cf" data-source="generated" />
+
+	
+
+	<meta name="scope" content="NuGet" />
+	<meta name="github_feedback_content_git_url" content="https://github.com/NuGet/docs.microsoft.com-nuget/blob/main/docs/consume-packages/Finding-and-Choosing-Packages.md" />
+<link href="https://learn.microsoft.com/en-us/nuget/consume-packages/finding-and-choosing-packages" rel="canonical">
+	<title>Find and evaluate NuGet packages | Microsoft Learn</title>
+
+		<link rel="stylesheet" href="/_themes/docs.theme/master/en-us/_themes/styles/a771ae71.site-ltr.css ">
+
+	
+
+	<script id="msdocs-script">
+	var msDocs = {
+		data: {
+			timeOrigin: Date.now(),
+			contentLocale: 'en-us',
+			contentDir: 'ltr',
+			userLocale: 'en-us',
+			userDir: 'ltr',
+			pageTemplate: 'Conceptual',
+			brand: '',
+			context: {
+			},
+			hasBinaryRating: true,
+			hasGithubIssues: true,
+			feedbackHelpLinkType:'',
+			feedbackHelpLinkUrl:'',
+			standardFeedback: false,
+			showFeedbackReport: false,
+			enableTutorialFeedback: false,
+			contentWellNotification: '',
+			feedbackSystem: 'GitHub',
+			feedbackGitHubRepo: 'NuGet/docs.microsoft.com-nuget',
+			feedbackProductUrl: 'https://github.com/NuGet/Home/issues/',
+			extendBreadcrumb: false,
+			isEditDisplayable: true,
+			hideViewSource: false,
+			hasPageActions: true,
+			hasPrintButton: true,
+			hasBookmark: true,
+			hasShare: true,
+			isPermissioned: false,
+			isPrivateUnauthorized: false,
+			hasRecommendations: true,
+			contributors: [
+						{ name: "JonDouglas", url: "https://github.com/JonDouglas" },
+						{ name: "advay26", url: "https://github.com/advay26" },
+						{ name: "v-thepet", url: "https://github.com/v-thepet" },
+						{ name: "Mikejo5000", url: "https://github.com/Mikejo5000" },
+						{ name: "zivkan", url: "https://github.com/zivkan" },
+						{ name: "chrisraygill", url: "https://github.com/chrisraygill" },
+						{ name: "t-mog-msft", url: "https://github.com/t-mog-msft" },
+						{ name: "joelverhagen", url: "https://github.com/joelverhagen" },
+						{ name: "gewarren", url: "https://github.com/gewarren" },
+						{ name: "loic-sharma", url: "https://github.com/loic-sharma" },
+						{ name: "Youssef1313", url: "https://github.com/Youssef1313" },
+						{ name: "karann-msft", url: "https://github.com/karann-msft" },
+						{ name: "mairaw", url: "https://github.com/mairaw" },
+						{ name: "kraigb", url: "https://github.com/kraigb" }
+],
+		},
+		functions:{}
+	};
+	</script>
+	<script src="https://wcpstatic.microsoft.com/mscc/lib/v2/wcp-consent.js"></script>
+	<script src="https://js.monitor.azure.com/scripts/c/ms.jsll-3.min.js"></script>
+
+	<script src="/_themes/docs.theme/master/en-us/_themes/global/67a45209.deprecation.js"></script>
+		<link rel="preconnect" href="//mscom.demdex.net" crossorigin>
+		<link rel="dns-prefetch" href="//target.microsoft.com">
+		<link rel="dns-prefetch" href="//microsoftmscompoc.tt.omtrdc.net">
+		<link
+			rel="preload"
+			as="script"
+			href="/static/third-party/adobe-target/at-js/2.9.0/at.js"
+			integrity="sha384-1/viVM50hgc33O2gOgkWz3EjiD/Fy/ld1dKYXJRUyjNYVEjSUGcSN+iPiQF7e4cu"
+			crossorigin="anonymous"
+			id="adobe-target-script"
+			type="application/javascript"
+		/>
+		<script src="/_themes/docs.theme/master/en-us/_themes/scripts/b1025f26.index-docs.js"></script>
+</head>
+
+<body lang="en-us" dir="ltr">
+	<div class="header-holder has-default-focus">
+		<a href="#main" class="skip-to-main-link has-outline-color-text visually-hidden-until-focused position-fixed has-inner-focus focus-visible top-0 left-0 right-0 padding-xs has-text-centered has-body-background" tabindex="1">Skip to main content</a>
+
+		<div hidden id="cookie-consent-holder" data-test-id="cookie-consent-container"></div>
+
+		<div id="unsupported-browser" style="
+			background-color: white;
+			color: black;
+			padding: 16px;
+			border-bottom: 1px solid grey;"
+			hidden
+		>
+			<div style="max-width: 800px; margin: 0 auto;">
+				<p style="font-size: 24px">This browser is no longer supported.</p>
+				<p style="font-size: 16px; margin-top: 16px;">Upgrade to Microsoft Edge to take advantage of the latest features, security updates, and technical support.</p>
+				<div style="margin-top: 12px;">
+					<a href="https://go.microsoft.com/fwlink/p/?LinkID=2092881 "
+						style="
+						background-color: #0078d4;
+						border: 1px solid #0078d4;
+						color: white;
+						padding: 6px 12px;
+						border-radius: 2px;
+						display: inline-block;
+						">
+Download Microsoft Edge					</a>
+					<a href="https://learn.microsoft.com/en-us/lifecycle/faq/internet-explorer-microsoft-edge"
+						style="
+							background-color: white;
+							padding: 6px 12px;
+							border: 1px solid #505050;
+							color: #171717;
+							border-radius: 2px;
+							display: inline-block;
+							">
+More info about Internet Explorer and Microsoft Edge					</a>
+				</div>
+			</div>
+
+		</div>
+		<!-- liquid-tag banners global -->
+		<div id="headerAreaHolder" data-bi-name="header">
+<header role="banner" itemscope="itemscope" itemtype="http://schema.org/Organization">
+	<div class="nav-bar">
+		<div class="nav-bar-brand">
+			<a itemprop="url" href="https://www.microsoft.com" aria-label="Microsoft" class="nav-bar-button">
+				<div class="nav-bar-logo has-background-image theme-display is-light" role="presentation" aria-hidden="true" itemprop="logo" itemscope="itemscope"></div>
+				<div class="nav-bar-logo has-background-image theme-display is-dark is-high-contrast" role="presentation" aria-hidden="true" itemprop="logo" itemscope="itemscope"></div>
+			</a>
+		</div>
+	</div>
+	<div class="nav-bar border-top is-hidden-mobile"></div>
+</header>		</div>
+
+
+			<div id="content-header" class="content-header uhf-container has-padding has-default-focus border-bottom-none" data-bi-name="content-header">
+				<div class="content-header-controls margin-xxs margin-inline-sm-tablet">
+					<button type="button" class="contents-button button button-sm margin-right-xxs" data-bi-name="contents-expand" aria-haspopup="true" data-contents-button>
+						<span class="icon"><span class="docon docon-menu" aria-hidden="true"></span></span>
+						<span class="contents-expand-title">
+Table of contents						</span>
+					</button>
+					<button type="button" class="ap-collapse-behavior ap-expanded button button-sm" data-bi-name="ap-collapse" aria-controls="action-panel">
+						<span class="icon"><span class="docon docon-exit-mode" aria-hidden="true"></span></span>
+						<span>Exit focus mode</span>
+					</button>
+				</div>
+			</div>
+
+		<div id="disclaimer-holder" class="has-overflow-hidden has-default-focus">
+			<!-- liquid-tag banners sectional -->
+		</div>
+	</div>
+
+	<div class="mainContainer  uhf-container has-default-focus" data-bi-name="body">
+
+		<div class="columns has-large-gaps is-gapless-mobile ">
+
+			<div id="left-container" class="left-container is-hidden-mobile column is-one-third-tablet is-one-quarter-desktop">
+				<nav id="affixed-left-container" class="margin-top-sm-tablet position-sticky display-flex flex-direction-column" role="navigation" aria-label="Primary"></nav>
+			</div>
+
+			<!-- .primary-holder -->
+			<section class="primary-holder column is-two-thirds-tablet is-three-quarters-desktop">
+				<!--div.columns -->
+				<div class="columns is-gapless-mobile has-large-gaps ">
+
+
+					<div id="main-column" class="column  is-full is-8-desktop">
+
+						<main id="main" class="" role="main" data-bi-name="content" lang="en-us" dir="ltr">
+							<!-- article-header -->
+							<div id="article-header" class="background-color-body margin-top-sm-tablet margin-bottom-xs display-none-print">
+								<div class="display-flex align-items-center ">
+									<details id="article-header-breadcrumbs-overflow-popover" class="popover" data-for="article-header-breadcrumbs">
+										<summary class="button button-clear button-primary button-sm inner-focus" aria-label="All breadcrumbs">
+											<span class="icon">
+												<span class="docon docon-more"></span>
+											</span>
+										</summary>
+										<div id="article-header-breadcrumbs-overflow" class="popover-content padding-none">
+
+										</div>
+									</details>
+
+									<bread-crumbs id="article-header-breadcrumbs" data-test-id="article-header-breadcrumbs" class="overflow-hidden flex-grow-1 margin-right-sm margin-right-md-tablet margin-right-lg-desktop margin-left-negative-xxs padding-left-xxs"></bread-crumbs>
+
+									<div id="article-header-page-actions"  class="opacity-none margin-left-auto display-flex flex-wrap-no-wrap align-items-stretch">
+
+										<a
+											id="lang-link-tablet"
+											class="button button-primary button-clear button-sm display-none display-inline-flex-tablet"
+											title="Read in English" data-bi-name="language-toggle"
+											data-read-in-link
+											hidden>
+											<span class="icon margin-none" aria-hidden="true" data-read-in-link-icon>
+												<span class="docon docon-locale-globe"></span>
+											</span>
+											<span class="is-visually-hidden" data-read-in-link-text>Read in English</span>
+										</a>
+
+											<button
+												type="button"
+												class="collection button button-clear button-sm button-primary display-none display-inline-flex-tablet"
+												data-list-type="collection"
+												data-bi-name="collection"
+												title="Add to collection">
+												<span class="icon margin-none" aria-hidden="true">
+													<span class="docon docon-circle-addition"></span>
+												</span>
+												<span class="collection-status is-visually-hidden">Save</span>
+											</button>
+										
+
+											<a	data-contenteditbtn
+												class="button button-clear button-sm text-decoration-none button-primary display-none display-inline-flex-tablet"
+												aria-label="Edit"
+												title="Edit This Document"
+												data-bi-name="edit"
+
+														href="https://github.com/NuGet/docs.microsoft.com-nuget/blob/main/docs/consume-packages/Finding-and-Choosing-Packages.md"
+														data-original_content_git_url="https://github.com/NuGet/docs.microsoft.com-nuget/blob/live/docs/consume-packages/Finding-and-Choosing-Packages.md"
+														data-original_content_git_url_template="{repo}/blob/{branch}/docs/consume-packages/Finding-and-Choosing-Packages.md"
+														data-pr_repo=""
+														data-pr_branch=""
+											>
+												<span class="icon margin-none" aria-hidden="true">
+													<span class="docon docon-edit-outline"></span>
+												</span>
+											</a>
+										
+
+
+										
+										<details class="popover popover-right" id="article-header-page-actions-overflow">
+											<summary class="justify-content-flex-start button button-clear button-sm button-primary" aria-label="More actions">
+												<span class="icon" aria-hidden="true">
+													<span class="docon docon-more-vertical"></span>
+												</span>
+											</summary>
+											<div class="popover-content padding-none">
+													<button
+														data-page-action-item="overflow-mobile"
+														type="button"
+														class="justify-content-flex-start button-block button-sm has-inner-focus button button-clear display-none-tablet"
+														data-bi-name="contents-expand"
+														data-contents-button
+														data-popover-close>
+														<span class="icon">
+															<span class="docon docon-editor-list-bullet" aria-hidden="true"></span>
+														</span>
+															<span class="contents-expand-title">Table of contents</span>
+													</button>
+
+												<a
+													id="lang-link-overflow"
+													class="justify-content-flex-start button-sm has-inner-focus button button-clear button-block display-none-tablet"
+													title="Read in English" data-bi-name="language-toggle"
+													data-page-action-item="overflow-mobile"
+													data-check-hidden="true"
+													data-read-in-link
+													hidden
+													>
+													<span class="icon" aria-hidden="true" data-read-in-link-icon>
+														<span class="docon docon-locale-globe"></span>
+													</span>
+													<span data-read-in-link-text>Read in English</span>
+												</a>
+
+													<button
+														type="button"
+														class="collection justify-content-flex-start button button-clear button-sm has-inner-focus button-block display-none-tablet"
+														data-list-type="collection"
+														data-bi-name="collection"
+														title="Add to collection"
+														data-page-action-item="overflow-mobile"
+														data-check-hidden="true"
+														data-popover-close>
+														<span class="icon" aria-hidden="true">
+															<span class="docon docon-circle-addition"></span>
+														</span>
+														<span class="collection-status">Save</span>
+													</button>
+
+													<a	data-contenteditbtn
+														class="button button-clear button-block button-sm has-inner-focus justify-content-flex-start text-decoration-none display-none-tablet"
+														aria-label="Edit"
+														title="Edit This Document"
+														data-bi-name="edit"
+
+																href="https://github.com/NuGet/docs.microsoft.com-nuget/blob/main/docs/consume-packages/Finding-and-Choosing-Packages.md"
+																data-original_content_git_url="https://github.com/NuGet/docs.microsoft.com-nuget/blob/live/docs/consume-packages/Finding-and-Choosing-Packages.md"
+																data-original_content_git_url_template="{repo}/blob/{branch}/docs/consume-packages/Finding-and-Choosing-Packages.md"
+																data-pr_repo=""
+																data-pr_branch=""
+													>
+														<span class="icon" aria-hidden="true">
+															<span class="docon docon-edit-outline"></span>
+														</span>
+														<span>Edit</span>
+													</a>
+
+													<button
+														class="button button-block button-clear button-sm justify-content-flex-start has-inner-focus"
+														title="Print"
+														type="button"
+														aria-label="Print"
+														data-bi-name="print"
+														data-page-action-item="overflow-all"
+														data-popover-close
+														data-print-page
+														data-check-hidden="true">
+														<span class="icon" aria-hidden="true">
+															<span class="docon docon-print"></span>
+														</span>
+														<span>Print</span>
+													</button>
+
+													<div aria-hidden="true" class="margin-none
+														border-top" data-page-action-item="overflow-all"></div>
+
+													
+														<a class="button button-clear button-sm has-inner-focus button-block text-decoration-none justify-content-flex-start share-twitter" data-bi-name="twitter" data-page-action-item="overflow-all">
+															<span class="icon" aria-hidden="true">
+																<span class="docon docon-brand-twitter"></span>
+															</span>
+															<span>Twitter</span>
+														</a>
+														<a class="button button-clear button-sm has-inner-focus button-block text-decoration-none justify-content-flex-start share-linkedin" data-bi-name="linkedin" data-page-action-item="overflow-all">
+															<span class="icon" aria-hidden="true">
+																<span class="docon docon-brand-linkedin"></span>
+															</span>
+															<span>LinkedIn</span>
+														</a>
+														<a class="button button-clear button-sm button-block has-inner-focus text-decoration-none justify-content-flex-start share-facebook" data-bi-name="facebook" data-page-action-item="overflow-all">
+															<span class="icon" aria-hidden="true">
+																<span class="docon docon-brand-facebook"></span>
+															</span>
+															<span>Facebook</span>
+														</a>
+														<a class="button button-clear button-sm button-block has-inner-focus text-decoration-none justify-content-flex-start share-email" data-bi-name="email" data-page-action-item="overflow-all">
+															<span class="icon" aria-hidden="true">
+																<span class="docon docon-mail-message-fill"></span>
+															</span>
+															<span>Email</span>
+														</a>
+												
+											</div>
+										</details>
+										
+									</div>
+								</div>
+							</div>
+							<!-- end article-header -->
+
+
+							<div>
+								<button type="button" class="border contents-button button button-clear button-sm is-hidden-tablet has-inner-focus" data-bi-name="contents-expand" data-contents-button hidden>
+									<span class="icon">
+										<span class="docon docon-editor-list-bullet" aria-hidden="true"></span>
+									</span>
+										<span class="contents-expand-title">Table of contents</span>
+								</button>
+							</div>
+
+							<!-- end mobile-contents button  -->
+
+							<div class="content ">
+
+
+								<h1 id="find-and-evaluate-nuget-packages-for-your-project">Find and evaluate NuGet packages for your project</h1>
+
+
+									<div class="display-flex justify-content-space-between align-items-center flex-wrap-wrap page-metadata-container">
+										<div class="margin-right-xxs">
+											<ul class="metadata page-metadata" data-bi-name="page info" lang="en-us" dir="ltr">
+													<li>
+Article													</li>
+
+													<li class="visibility-hidden-visual-diff">
+														<time class="is-invisible" data-article-date aria-label="Article review date" datetime="2023-06-14T00:16:00Z" data-article-date-source="calculated">06/14/2023</time>
+													</li>
+														<li class="contributors-holder display-none-print">
+															<button aria-label="View all contributors" class="contributors-button link-button" data-bi-name="contributors" title="View all contributors">
+																	14 contributors
+															</button>
+														</li>
+											</ul>
+										</div>
+
+<div id="user-feedback" class="margin-block-xxs display-none-print" data-hide-on-archived>
+	<button
+		id="user-feedback-button"
+		data-test-id="conceptual-feedback-button"
+		class="button button-sm button-clear button-primary"
+		type="button"
+		data-bi-name="user-feedback-button"
+		data-user-feedback-button
+	>
+		<span class="icon" aria-hidden="true">
+			<span class="docon docon-like"></span>
+		</span>
+		<span>Feedback</span>
+	</button>
+</div>
+									</div>
+
+									<div id="ms--content-well-notifications" data-bi-name="content-well-notification"></div>
+
+										<nav id="center-doc-outline" class="doc-outline is-hidden-desktop display-none-print margin-bottom-sm" data-bi-name="intopic toc" role="navigation" aria-label="In this article">
+											<h2 id="ms--in-this-article" class="title is-6 margin-block-xs">In this article</h2>
+										</nav>
+
+								<!-- <content> -->
+									<p>When you start a .NET project, or identify a functional need in your app or service, you can often install existing NuGet packages to save the time and trouble of <a href="../create-packages/overview-and-workflow" data-linktype="relative-path">creating your own packages</a>. Existing packages can come from the <a href="https://www.nuget.org/packages" data-linktype="external">nuget.org</a> public collection, or from private sources that your organization or another party provide.</p>
+<h2 id="find-packages">Find packages</h2>
+<p>You can find packages directly at <a href="https://www.nuget.org/packages" data-linktype="external">https://nuget.org/packages</a>, or from the <a href="install-use-packages-visual-studio" data-linktype="relative-path">Visual Studio Package Manager UI</a> or <a href="install-use-packages-powershell" data-linktype="relative-path">Package Manager Console</a> with nuget.org as a source. All packages from nuget.org are routinely scanned for viruses.</p>
+<p>At <a href="https://www.nuget.org/packages" data-linktype="external">nuget.org/packages</a>, you see a list of NuGet packages with the most popular packages across all .NET projects listed first. Some of these packages might be useful for your projects.</p>
+<p><img src="media/finding-07-popularity.png" alt="Screenshot that shows the default view of nuget.org/packages with the most popular packages at the top." data-linktype="relative-path"/></p>
+<p>To search for a package, enter the package name or search terms in the Search box at the top of the page. You can use <a href="#search-syntax" data-linktype="self-bookmark">advanced search syntax</a> to filter your search.</p>
+<h3 id="advanced-filtering-and-sorting">Advanced filtering and sorting</h3>
+<p>At nuget.org/packages, you can refine your search results by making use of the advanced filtering and sorting options.</p>
+<p><img src="media/finding-08-searchresults.png" alt="Screenshot that shows the filtering and sorting options on nuget.org." data-linktype="relative-path"/></p>
+<p>Use the <strong>Frameworks</strong> filters to show packages targeting specific .NET frameworks (To learn more, see <a href="/en-us/dotnet/standard/frameworks" data-linktype="absolute-path">Target Frameworks</a>):</p>
+<ul>
+<li><p>Selecting one of the .NET framework generation checkboxes would filter the search results to packages targeting any of the Target Frameworks within that generation. For example, selecting <code>.NET</code> will return packages targeting any of the modern .NET frameworks, including <code>net5.0</code> through <code>net7.0</code>.</p>
+<p><img src="media/finding-09-frameworkfilters.png" alt="Screenshot that shows the Framework filters on nuget.org." data-linktype="relative-path"/></p>
+</li>
+<li><p>Expanding one of these framework generations with the arrows on the right will show you individual Target Framework Monikers (TFMs) that you can filter your results by. For example, selecting <code>net5.0</code> will only return packages that explicitly target the '.NET 5.0' framework.</p>
+</li>
+<li><p>Combining multiple framework filters will show you search results that fall in the intersection of your selections. For example, selecting <code>netcoreapp3.1</code> and <code>net45</code> together will show packages that target <em>both</em> '.NET Core 3.1' and '.NET Framework 4.5'. Selecting the <code>.NET Core</code> framework generation checkbox and the <code>net45</code> checkbox together will return packages that target '.NET Framework 4.5', and at least one of the '.NET Core' TFMs (<code>netcoreapp1.0</code> through <code>netcoreapp3.1</code>).</p>
+</li>
+<li><p>You can learn more on how to evaluate a package's supported frameworks and its compatibility with your project <a href="#determine-supported-frameworks" data-linktype="self-bookmark">here</a>.</p>
+</li>
+</ul>
+<p>Use the <strong>Package type</strong> filter to show packages of a specific type:</p>
+<ul>
+<li><strong>All types</strong> is the default and shows all packages regardless of type.</li>
+<li><strong>Dependency</strong> filters to regular NuGet packages that you can install into your project.</li>
+<li><strong>.NET tool</strong> filters to <a href="/en-us/dotnet/core/tools/global-tools" data-linktype="absolute-path">.NET tools</a> packages that contain console applications.</li>
+<li><strong>Template</strong> filters to <a href="/en-us/dotnet/core/install/templates" data-linktype="absolute-path">.NET templates</a> that you can use to create new projects with the <a href="/en-us/dotnet/core/tools/dotnet-new" data-linktype="absolute-path">dotnet new</a> command.</li>
+</ul>
+<p>By default, NuGet lists all versions of packages, including prerelease and beta versions. In the <strong>Options</strong> section, deselect the <strong>Include prerelease</strong> checkbox to list only stable, released package versions.</p>
+<p>To apply changes, select <strong>Apply</strong>. To get back to the defaults, select <strong>Reset</strong>.</p>
+<p>Use the <strong>Sort by</strong> dropdown on the top-right of the page to sort the list by several criteria:</p>
+<ul>
+<li><strong>Relevance</strong> is the default, and sorts results according to an internal scoring algorithm.</li>
+<li><strong>Downloads</strong> sorts the search results by the total number of downloads, in descending order.</li>
+<li><strong>Recently updated</strong> sorts the search results by the latest package version creation date, in descending chronological order.</li>
+</ul>
+<h3 id="search-syntax">Search syntax</h3>
+<p>Package search queries at nuget.org, from the NuGet CLI, and from within Visual Studio all use the same syntax. Other package sources, like Azure Artifacts or GitHub Package Repository, might use different syntax or might not support advanced filtering.</p>
+<ul>
+<li><p>You can search the package <code>id</code>, <code>packageid</code>, <code>version</code>, <code>title</code>, <code>tags</code>, <code>author</code>, <code>description</code>, <code>summary</code>, or <code>owner</code> properties by using the syntax <code>&lt;property&gt;:&lt;term&gt;</code>.</p>
+</li>
+<li><p>Search applies to keywords and descriptions, and is case-insensitive. For example, the following strings all search the <code>id</code> property for the string <code>nuget.core</code>:</p>
+<p><code>id:NuGet.Core</code><br/>  <code>ID:nuget.core</code><br/>  <code>Id:NUGET.CORE</code></p>
+</li>
+<li><p>Searches on the <code>id</code> property match substrings, while <code>packageid</code> and <code>owner</code> use exact, case-insensitive matches. For example:</p>
+<p><code>PackageId:jquery</code> searches for the exact package ID <code>jquery</code>.<br/>  <code>Id:jquery</code> searches for all package IDs that contain the string <code>jquery</code>.</p>
+</li>
+<li><p>You can search for multiple values or properties at the same time. For example:</p>
+<p><code>id:jquery id:ui</code> searches for multiple terms in the <code>id</code> property.<br/>  <code>id:jquery tags:validation</code> searches for multiple properties.</p>
+</li>
+<li><p>Search ignores unsupported properties, so <code>invalid:jquery ui</code> is the same as searching for <code>ui</code>, and <code>invalid:jquery</code> returns all packages.</p>
+</li>
+</ul>
+<h3 id="determine-supported-frameworks">Determine supported frameworks</h3>
+<p>NuGet installs a package into a project only if the package's supported .NET frameworks include the project's target frameworks. If the package isn't compatible, NuGet issues an error.</p>
+<p>There are several ways to determine the frameworks that a package supports:</p>
+<ul>
+<li><p>On the package's page at nuget.org, supported frameworks appear below the package ID and on the <strong>Frameworks</strong> tab, but not all packages show supported frameworks.</p>
+<p><img src="media/supported-frameworks.png" alt="Screenshot of the Frameworks UI and tab on the package page at nuget.org." data-linktype="relative-path"/></p>
+</li>
+<li><p>Download the package manually by selecting <strong>Download package</strong> under <strong>About</strong>. Change the file extension of the downloaded package from <em>.nupkg</em> to <em>.zip</em>, open the <em>.zip</em> folder, and examine its <em>lib</em> folder. There are subfolders for each supported framework, each named with a target framework moniker (TFM). For more information, see <a href="../reference/target-frameworks" data-linktype="relative-path">Target Frameworks</a>. If there aren't any subfolders under <em>lib</em> and there's only a single DLL, try to install the package to discover its compatibility.</p>
+</li>
+<li><p>Try to install the package into a project by using <a href="../reference/ps-reference/ps-ref-install-package" data-linktype="relative-path">Install-Package</a> in the Visual Studio Package Manager Console. If the package is incompatible, the console output shows the package's supported frameworks.</p>
+</li>
+</ul>
+<h3 id="prerelease-packages">Prerelease packages</h3>
+<p>Many package authors provide preview and beta releases as they continue to improve and seek feedback on latest revisions. By default, nuget.org shows prerelease packages in its package list and search results.</p>
+<p>To list and search only stable releases:</p>
+<ul>
+<li>At nuget.org, deselect the <strong>Include prerelease</strong> checkbox in the advanced search panel.</li>
+<li>In the Visual Studio NuGet Package Manager UI, deselect the <strong>Include prerelease</strong> checkbox next to the Search box.</li>
+</ul>
+<p>The Visual Studio Package Manager Console, NuGet CLI, and dotnet CLI tools don't include prerelease versions by default. To include prerelease versions:</p>
+<ul>
+<li><p>In the Package Manager Console, use the <code>-IncludePrerelease</code> switch with the <code>Find-Package</code>, <code>Get-Package</code>, <code>Install-Package</code>, <code>Sync-Package</code>, and <code>Update-Package</code> commands. For more information, see the <a href="../reference/powershell-reference" data-linktype="relative-path">PowerShell Reference</a>.</p>
+</li>
+<li><p>For the NuGet CLI, use the <code>-prerelease</code> switch with the <code>install</code>, <code>update</code>, <code>delete</code>, and <code>mirror</code> commands. For more information, see the <a href="../reference/nuget-exe-cli-reference" data-linktype="relative-path">NuGet CLI reference</a>.</p>
+</li>
+<li><p>For the dotnet CLI, specify a prerelease version with the <code>-v</code> argument. For more information, see the <a href="/en-us/dotnet/core/tools/dotnet-add-package" data-linktype="absolute-path">dotnet add package reference</a>.</p>
+</li>
+</ul>
+<p><a name="native-cpp-packages"></a></p>
+<h3 id="native-c-packages">Native C++ packages</h3>
+<p>Visual Studio C++ projects can use native C++ NuGet packages. Installing these packages enable the <strong>Manage NuGet Packages</strong> context-menu command, exposes a <code>native</code> target framework, and provides MSBuild integration.</p>
+<p>To find native packages on nuget.org/packages, search by using <code>tag:native</code>. Such packages typically provide <em>.targets</em> and <em>.props</em> files, which NuGet imports automatically when adding the packages.</p>
+<h2 id="evaluate-packages">Evaluate packages</h2>
+<p>The best way to evaluate a package's usefulness is to try it out. You take a dependency on a package when you use it, so you must make sure it's robust and reliable. However, installing a package and directly testing it is time-consuming. You can learn a lot about a package's quality by using the information on the package's page at nuget.org/packages.</p>
+<ul>
+<li><p>The <strong>Prefix Reserved</strong> checkmark next to the package ID on the packages list and the package page means the package owners have applied for and been granted a <a href="../nuget-org/id-prefix-reservation" data-linktype="relative-path">reserved package ID prefix</a>. To meet the <a href="../nuget-org/id-prefix-reservation#id-prefix-reservation-criteria" data-linktype="relative-path">ID prefix reservation criteria</a>, package owners must clearly identify themselves and their packages.</p>
+<p><img src="media/prefix-reserved.png" alt="Screenshot that shows Prefix Reserved on a package's page." data-linktype="relative-path"/></p>
+</li>
+<li><p><strong>Downloads</strong> in the package page's right column shows <strong>Total</strong>, <strong>Current version</strong>, and <strong>Per day average</strong> downloads. Large numbers indicate that the package has proven itself among many developers.</p>
+<p><img src="media/finding-03-downloads.png" alt="Screenshot that shows Download statistics on a package's page." data-linktype="relative-path"/></p>
+<p>Select <strong>Full stats</strong> next to <strong>Downloads</strong> to see a page that shows package downloads for the past six weeks by version number. Versions that more developers are using are typically better choices.</p>
+</li>
+<li><p>The <strong>Used By</strong> tab on the package page shows the top five most popular nuget.org packages and GitHub repositories that depend on this package. Packages and repos that depend on this package are called <em>dependents</em>. Dependent packages and repos can be seen as endorsing this package, because they chose to trust and depend on it.</p>
+<p><img src="media/used-by-section-humanizer.png" alt="Screenshot that shows the Used By list." data-linktype="relative-path"/></p>
+<p>The <em>latest stable version</em> of a dependent package must depend on any version of this package. This definition ensures that listed dependent packages are an up-to-date reflection of package authors' decisions to trust and depend on the package. The dependents list doesn't show prerelease dependents, because they're not considered wholehearted endorsements yet. The following examples show which packages show as dependents:</p>
+<table>
+<thead>
+<tr>
+<th>Dependent package version</th>
+<th>Dependent package listed as a dependent?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v1.0.0<br>v1.1.0 (latest stable) depends on this package<br>v1.2.0-preview</td>
+<td>TRUE, latest stable version depends on this package</td>
+</tr>
+<tr>
+<td>v1.0.0 depends on this package<br>v1.1.0 (latest stable)<br>v1.2.0-preview</td>
+<td>FALSE, latest stable version doesn't depend on this package</td>
+</tr>
+<tr>
+<td>v1.0.0 depends on this package<br>v1.1.0 (latest stable)<br>v1.2.0-preview depends on this package</td>
+<td>FALSE, latest stable version doesn't depend on this package</td>
+</tr>
+</tbody>
+</table>
+<p>The number of stars for a GitHub repository indicates its popularity with GitHub users. For more information about the GitHub star and repository ranking system, see <a href="https://help.github.com/github/getting-started-with-github/saving-repositories-with-stars#about-stars" data-linktype="external">About stars</a>.</p>
+<div class="NOTE">
+<p>Note</p>
+<p>The <strong>Used By</strong> section is automatically generated periodically, without human review, and solely for informational purposes.</p>
+</div>
+</li>
+<li><p>The <strong>Versions</strong> tab on the package page shows the <strong>Versions</strong>, <strong>Downloads</strong>, <strong>Last Updated</strong> dates, and serious vulnerabilities of package versions. The version you install shouldn't have any high-severity vulnerabilities. A well-maintained package has recent updates and a long version history. Neglected packages have few and long-ago updates.</p>
+<p><img src="media/finding-04-versionhistory.png" alt="Screenshot that shows the Versions list." data-linktype="relative-path"/></p>
+</li>
+</ul>
+<p>The right column of the package page has other informative links:</p>
+<section class="row">
+<div class="column span">
+<p><img src="media/right-column.png" alt="Screenshot that shows the right column of the package page." data-linktype="relative-path"/></p>
+</div>
+<div class="column span2">
+<ul>
+<li><p>Select <strong>Project website</strong>, if available, to see what support options the author provides. A project with a dedicated site is generally well supported.</p>
+</li>
+<li><p>Select <strong>Source repository</strong> to go to the Git source code repository for the package. Many authors maintain their packages in open-source repositories, so users can directly contribute bug fixes and feature improvements. The package's contribution history is a good indicator of how many developers are actively involved.</p>
+</li>
+<li><p>Select <strong>&lt;license type&gt; license</strong> to see the package's MIT or other license. If a package doesn't specify license terms, contact the package owner.</p>
+</li>
+<li><p>Select any of the package owners under <strong>Owners</strong> to see other packages they've published. Owners with multiple packages are more likely to continue supporting their work. Select <strong>Contact owners</strong> next to <strong>Owners</strong> to reach out directly to the package developers.</p>
+</li>
+</ul>
+</div>
+</section>
+<h2 id="retrieve-license-information">Retrieve license information</h2>
+<p>Some NuGet clients and NuGet feeds might not be able to surface licensing information. To maintain backward compatibility in such cases, the license URL points to this document about how to retrieve the license information.</p>
+<p>If selecting the license URL for a package brings you to this page, it implies the package contains a license file and:</p>
+<ul>
+<li>You're connected to a feed that doesn't know how to interpret and surface the license information to the client, or</li>
+<li>You're using a client that doesn't know how to interpret and read the license information the feed provides, or</li>
+<li>A combination of both of these scenarios.</li>
+</ul>
+<p>To read the information in the license file inside the package:</p>
+<ol>
+<li>Manually download the package, and unzip its contents to a folder.</li>
+<li>Open the <em>.nuspec</em> file at the root of the folder.</li>
+<li>Examine the <code>&lt;license&gt;</code> tag, such as <code>&lt;license type=&quot;file&quot;&gt;license\license.txt&lt;/license&gt;</code>. The example tag states that the license file is named <em>license.txt</em> and is inside a subfolder called <em>license</em>.</li>
+<li>Navigate to the specified location and open the specified file.</li>
+</ol>
+<p>For information about the MSBuild equivalent to setting the license in the <em>.nuspec</em>, see <a href="../reference/msbuild-targets#packing-a-license-expression-or-a-license-file" data-linktype="relative-path">Packing a license expression or a license file</a>.</p>
+<h2 id="next-steps">Next steps</h2>
+<ul>
+<li><a href="overview-and-workflow#ways-to-install-a-nuget-package" data-linktype="relative-path">Ways to install a NuGet package</a></li>
+<li><a href="install-use-packages-visual-studio" data-linktype="relative-path">Install and manage packages in Visual Studio using the NuGet Package Manager</a></li>
+<li><a href="install-use-packages-powershell" data-linktype="relative-path">Install and manage packages with the Package Manager Console in Visual Studio</a></li>
+<li><a href="install-use-packages-dotnet-cli" data-linktype="relative-path">Install and manage packages with the dotnet CLI</a></li>
+</ul>
+
+							</div>
+
+							<div id="assertive-live-region" role="alert" aria-live="assertive" class="visually-hidden" aria-relevant="additions" aria-atomic="true"></div>
+							<div id="polite-live-region" role="status" aria-live="polite" class="visually-hidden" aria-relevant="additions" aria-atomic="true"></div>
+							<!-- </content> -->
+
+						</main>
+
+
+
+
+
+						<!-- recommendations section -->
+						<!-- end recommendations section -->
+
+						<!-- feedback section -->
+<section class="feedback-section position-relative" data-bi-name="feedback-section">
+    <h2 id="feedback" class="title is-3 margin-top-sm">Feedback</h2>
+
+    <div class="alert choose-feedback-type padding-bottom-sm">
+        <p id="send-feedback-about">Submit and view feedback for</p>
+
+        <div class="choose-feedback-buttons buttons margin-top-xs">
+                <a class="button has-external-link-indicator feedback-type-product" aria-label="Send feedback about this product" href="https://github.com/NuGet/Home/issues/" data-bi-name="product-feedback">
+                    <span>This product</span>
+                </a>
+			<a class="button feedback-type-product github-link" aria-label="Send feedback about this page" data-bi-name="create-issue-on-github">
+				<span class="icon" aria-hidden="true">
+					<span class="docon docon-brand-github"></span>
+				</span>
+				<span>This page</span>
+			</a>
+        </div>
+    </div>
+
+    <div class="action-container display-flex justify-content-flex-end margin-block-xxs">
+        <a class="view-on-github has-external-link-indicator" data-bi-name="view-on-github" href="https://github.com/NuGet/docs.microsoft.com-nuget/issues">
+            <span aria-hidden="true" class="docon docon-brand-github"></span>
+            <span>View all page feedback</span>
+        </a>
+    </div>
+</section>
+						<!-- end feedback section -->
+
+						<!-- feedback report section -->
+						<!-- end feedback report section -->
+
+							<div
+								id="ms--additional-resources-mobile"
+								role="complementary"
+								aria-label="Additional resources"
+								class="display-none-desktop display-none-print"
+							>
+								<hr class="hr" hidden />
+								<h2 id="ms--additional-resources-mobile-heading" class="title is-3" hidden>Additional resources</h2>
+								<section id="right-rail-recommendations-mobile" data-bi-name="recommendations" hidden></section>
+								<section id="right-rail-training-mobile" data-bi-name="learning-resources-card" hidden></section>
+								<section id="right-rail-events-mobile" data-bi-name="events-card" hidden></section>
+								<section id="right-rail-qna-mobile" data-bi-name="qna-link-card" hidden></section>
+							</div>
+
+						<div class="border-top is-visible-interactive has-default-focus margin-top-sm ">
+
+
+
+	<footer id="footer-interactive" data-bi-name="footer" class="footer-layout">
+	<div class="display-flex gap-xs flex-wrap-wrap is-full-height padding-right-lg-desktop">
+			<a
+				data-mscc-ic="false"
+				class="locale-selector-link button button-sm button-clear flex-shrink-0"
+				href="#"
+				data-bi-name="select-locale">
+					<span class="icon" aria-hidden="true">
+						<span class="docon docon-world"></span>
+					</span>
+					<span class="local-selector-link-text"></span></a>
+		<div class="flex-shrink-0">
+<div class="dropdown has-caret-up">
+	<button class="dropdown-trigger button button-clear button-sm has-inner-focus theme-dropdown-trigger"
+		aria-controls="theme-menu-interactive" aria-expanded="false" title="Theme" data-bi-name="theme">
+		<span class="icon">
+			<span class="docon docon-sun" aria-hidden="true"></span>
+		</span>
+		<span>Theme</span>
+		<span class="icon expanded-indicator" aria-hidden="true">
+			<span class="docon docon-chevron-down-light"></span>
+		</span>
+	</button>
+	<div class="dropdown-menu" id="theme-menu-interactive" role="menu">
+		<ul class="theme-selector padding-xxs" role="none">
+			<li class="theme display-block" role="menuitem">
+				<button class="button button-clear button-sm theme-control button-block justify-content-flex-start"
+					data-theme-to="light">
+					<span class="theme-light margin-right-xxs">
+						<span
+							class="theme-selector-icon css-variable-support border display-inline-block has-body-background"
+							aria-hidden="true">
+							<svg class="svg" xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 22 14">
+								<rect width="22" height="14" class="has-fill-body-background" />
+								<rect x="5" y="5" width="12" height="4" class="has-fill-secondary" />
+								<rect x="5" y="2" width="2" height="1" class="has-fill-secondary" />
+								<rect x="8" y="2" width="2" height="1" class="has-fill-secondary" />
+								<rect x="11" y="2" width="3" height="1" class="has-fill-secondary" />
+								<rect x="1" y="1" width="2" height="2" class="has-fill-secondary" />
+								<rect x="5" y="10" width="7" height="2" rx="0.3" class="has-fill-primary" />
+								<rect x="19" y="1" width="2" height="2" rx="1" class="has-fill-secondary" />
+							</svg>
+						</span>
+					</span>
+					<span>
+Light					</span>
+				</button>
+			</li>
+			<li class="theme display-block" role="menuitem">
+				<button class="button button-clear button-sm theme-control button-block justify-content-flex-start"
+					data-theme-to="dark">
+					<span class="theme-dark margin-right-xxs">
+						<span
+							class="border theme-selector-icon css-variable-support display-inline-block has-body-background"
+							aria-hidden="true">
+							<svg class="svg" xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 22 14">
+								<rect width="22" height="14" class="has-fill-body-background" />
+								<rect x="5" y="5" width="12" height="4" class="has-fill-secondary" />
+								<rect x="5" y="2" width="2" height="1" class="has-fill-secondary" />
+								<rect x="8" y="2" width="2" height="1" class="has-fill-secondary" />
+								<rect x="11" y="2" width="3" height="1" class="has-fill-secondary" />
+								<rect x="1" y="1" width="2" height="2" class="has-fill-secondary" />
+								<rect x="5" y="10" width="7" height="2" rx="0.3" class="has-fill-primary" />
+								<rect x="19" y="1" width="2" height="2" rx="1" class="has-fill-secondary" />
+							</svg>
+						</span>
+					</span>
+					<span>
+Dark					</span>
+				</button>
+			</li>
+			<li class="theme display-block" role="menuitem">
+				<button class="button button-clear button-sm theme-control button-block justify-content-flex-start"
+					data-theme-to="high-contrast">
+					<span class="theme-high-contrast margin-right-xxs">
+						<span
+							class="border theme-selector-icon css-variable-support display-inline-block has-body-background"
+							aria-hidden="true">
+							<svg class="svg" xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 22 14">
+								<rect width="22" height="14" class="has-fill-body-background" />
+								<rect x="5" y="5" width="12" height="4" class="has-fill-secondary" />
+								<rect x="5" y="2" width="2" height="1" class="has-fill-secondary" />
+								<rect x="8" y="2" width="2" height="1" class="has-fill-secondary" />
+								<rect x="11" y="2" width="3" height="1" class="has-fill-secondary" />
+								<rect x="1" y="1" width="2" height="2" class="has-fill-secondary" />
+								<rect x="5" y="10" width="7" height="2" rx="0.3" class="has-fill-primary" />
+								<rect x="19" y="1" width="2" height="2" rx="1" class="has-fill-secondary" />
+							</svg>
+						</span>
+					</span>
+					<span>
+High contrast					</span>
+				</button>
+			</li>
+		</ul>
+	</div>
+</div>
+		</div>
+	</div>
+	<ul class="links" data-bi-name="footerlinks">
+		<li class="manage-cookies-holder" hidden></li>
+				<li><a class="external-link-indicator" data-mscc-ic="false" href="/en-us/previous-versions/" data-bi-name="archivelink">Previous Versions</a></li>
+				<li><a class="external-link-indicator" data-mscc-ic="false" href="https://techcommunity.microsoft.com/t5/microsoft-learn-blog/bg-p/MicrosoftLearnBlog" data-bi-name="bloglink">Blog</a></li>
+				<li><a class="external-link-indicator" data-mscc-ic="false" href="/en-us/contribute/" data-bi-name="contributorGuide">Contribute</a></li>
+					<li><a class="external-link-indicator" data-mscc-ic="false" href="https://go.microsoft.com/fwlink/?LinkId=521839" data-bi-name="privacy">Privacy</a></li>
+				<li><a class="external-link-indicator" data-mscc-ic="false" href="/en-us/legal/termsofuse" data-bi-name="termsofuse">Terms of Use</a></li>
+				<li><a class="external-link-indicator" data-mscc-ic="false" href="https://www.microsoft.com/legal/intellectualproperty/Trademarks/" data-bi-name="trademarks">Trademarks</a></li>
+		<li>&copy; Microsoft 2023</li>
+	</ul>
+</footer>
+						</div>
+
+					</div>
+
+						<div
+							id="ms--additional-resources"
+							class="right-container column is-4-desktop display-none display-block-desktop"
+							data-bi-name="pageactions"
+							role="complementary"
+							aria-label="Additional resources"
+						>
+							<div id="affixed-right-container" class="margin-top-sm-tablet" data-bi-name="right-column">
+								<h2 id="ms--additional-resources-heading" class="title is-6 margin-top-md" hidden>Additional resources</h2>
+								<section id="right-rail-events" data-bi-name="events-card" hidden></section>
+								<section id="right-rail-training" data-bi-name="learning-resources-card" hidden></section>
+								<section id="right-rail-recommendations" data-bi-name="recommendations" hidden></section>
+								<nav id="side-doc-outline" class="doc-outline" data-bi-name="intopic toc" role="navigation" aria-label="In this article">
+									<h3>In this article</h3>
+								</nav>
+								<section id="right-rail-qna" class="margin-top-xxs" data-bi-name="qna-link-card" hidden></section>
+							</div>
+						</div>
+
+				</div>
+				<!--end of div.columns -->
+
+			</section>
+			<!--end of .primary-holder -->
+
+			<!-- interactive container -->
+			<aside id="interactive-container" class="interactive-container is-visible-interactive column has-body-background-dark ">
+			</aside>
+			<!-- end of interactive container -->
+		</div>
+
+	</div>
+	<!--end of .mainContainer -->
+
+	<section class="border-top has-default-focus is-hidden-interactive margin-top-sm ">
+
+
+
+	<footer id="footer" data-bi-name="footer" class="footer-layout uhf-container has-padding" role="contentinfo">
+	<div class="display-flex gap-xs flex-wrap-wrap is-full-height padding-right-lg-desktop">
+			<a
+				data-mscc-ic="false"
+				class="locale-selector-link button button-sm button-clear flex-shrink-0"
+				href="#"
+				data-bi-name="select-locale">
+					<span class="icon" aria-hidden="true">
+						<span class="docon docon-world"></span>
+					</span>
+					<span class="local-selector-link-text"></span></a>
+		<div class="flex-shrink-0">
+<div class="dropdown has-caret-up">
+	<button class="dropdown-trigger button button-clear button-sm has-inner-focus theme-dropdown-trigger"
+		aria-controls="theme-menu" aria-expanded="false" title="Theme" data-bi-name="theme">
+		<span class="icon">
+			<span class="docon docon-sun" aria-hidden="true"></span>
+		</span>
+		<span>Theme</span>
+		<span class="icon expanded-indicator" aria-hidden="true">
+			<span class="docon docon-chevron-down-light"></span>
+		</span>
+	</button>
+	<div class="dropdown-menu" id="theme-menu" role="menu">
+		<ul class="theme-selector padding-xxs" role="none">
+			<li class="theme display-block" role="menuitem">
+				<button class="button button-clear button-sm theme-control button-block justify-content-flex-start"
+					data-theme-to="light">
+					<span class="theme-light margin-right-xxs">
+						<span
+							class="theme-selector-icon css-variable-support border display-inline-block has-body-background"
+							aria-hidden="true">
+							<svg class="svg" xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 22 14">
+								<rect width="22" height="14" class="has-fill-body-background" />
+								<rect x="5" y="5" width="12" height="4" class="has-fill-secondary" />
+								<rect x="5" y="2" width="2" height="1" class="has-fill-secondary" />
+								<rect x="8" y="2" width="2" height="1" class="has-fill-secondary" />
+								<rect x="11" y="2" width="3" height="1" class="has-fill-secondary" />
+								<rect x="1" y="1" width="2" height="2" class="has-fill-secondary" />
+								<rect x="5" y="10" width="7" height="2" rx="0.3" class="has-fill-primary" />
+								<rect x="19" y="1" width="2" height="2" rx="1" class="has-fill-secondary" />
+							</svg>
+						</span>
+					</span>
+					<span>
+Light					</span>
+				</button>
+			</li>
+			<li class="theme display-block" role="menuitem">
+				<button class="button button-clear button-sm theme-control button-block justify-content-flex-start"
+					data-theme-to="dark">
+					<span class="theme-dark margin-right-xxs">
+						<span
+							class="border theme-selector-icon css-variable-support display-inline-block has-body-background"
+							aria-hidden="true">
+							<svg class="svg" xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 22 14">
+								<rect width="22" height="14" class="has-fill-body-background" />
+								<rect x="5" y="5" width="12" height="4" class="has-fill-secondary" />
+								<rect x="5" y="2" width="2" height="1" class="has-fill-secondary" />
+								<rect x="8" y="2" width="2" height="1" class="has-fill-secondary" />
+								<rect x="11" y="2" width="3" height="1" class="has-fill-secondary" />
+								<rect x="1" y="1" width="2" height="2" class="has-fill-secondary" />
+								<rect x="5" y="10" width="7" height="2" rx="0.3" class="has-fill-primary" />
+								<rect x="19" y="1" width="2" height="2" rx="1" class="has-fill-secondary" />
+							</svg>
+						</span>
+					</span>
+					<span>
+Dark					</span>
+				</button>
+			</li>
+			<li class="theme display-block" role="menuitem">
+				<button class="button button-clear button-sm theme-control button-block justify-content-flex-start"
+					data-theme-to="high-contrast">
+					<span class="theme-high-contrast margin-right-xxs">
+						<span
+							class="border theme-selector-icon css-variable-support display-inline-block has-body-background"
+							aria-hidden="true">
+							<svg class="svg" xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 22 14">
+								<rect width="22" height="14" class="has-fill-body-background" />
+								<rect x="5" y="5" width="12" height="4" class="has-fill-secondary" />
+								<rect x="5" y="2" width="2" height="1" class="has-fill-secondary" />
+								<rect x="8" y="2" width="2" height="1" class="has-fill-secondary" />
+								<rect x="11" y="2" width="3" height="1" class="has-fill-secondary" />
+								<rect x="1" y="1" width="2" height="2" class="has-fill-secondary" />
+								<rect x="5" y="10" width="7" height="2" rx="0.3" class="has-fill-primary" />
+								<rect x="19" y="1" width="2" height="2" rx="1" class="has-fill-secondary" />
+							</svg>
+						</span>
+					</span>
+					<span>
+High contrast					</span>
+				</button>
+			</li>
+		</ul>
+	</div>
+</div>
+		</div>
+	</div>
+	<ul class="links" data-bi-name="footerlinks">
+		<li class="manage-cookies-holder" hidden></li>
+				<li><a class="external-link-indicator" data-mscc-ic="false" href="/en-us/previous-versions/" data-bi-name="archivelink">Previous Versions</a></li>
+				<li><a class="external-link-indicator" data-mscc-ic="false" href="https://techcommunity.microsoft.com/t5/microsoft-learn-blog/bg-p/MicrosoftLearnBlog" data-bi-name="bloglink">Blog</a></li>
+				<li><a class="external-link-indicator" data-mscc-ic="false" href="/en-us/contribute/" data-bi-name="contributorGuide">Contribute</a></li>
+					<li><a class="external-link-indicator" data-mscc-ic="false" href="https://go.microsoft.com/fwlink/?LinkId=521839" data-bi-name="privacy">Privacy</a></li>
+				<li><a class="external-link-indicator" data-mscc-ic="false" href="/en-us/legal/termsofuse" data-bi-name="termsofuse">Terms of Use</a></li>
+				<li><a class="external-link-indicator" data-mscc-ic="false" href="https://www.microsoft.com/legal/intellectualproperty/Trademarks/" data-bi-name="trademarks">Trademarks</a></li>
+		<li>&copy; Microsoft 2023</li>
+	</ul>
+</footer>
+	</section>
+
+	<div id="action-panel" role="region" aria-label="Action Panel" class="action-panel has-default-focus" tabindex="-1"></div>
+</body>
+</html>

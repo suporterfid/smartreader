@@ -23,6 +23,7 @@ RUN mv /etk/cap/capcommand.sh /etk/capcommand.sh
 RUN [ -d /etk/cap/wwwroot ] || mkdir /etk/cap/wwwroot 
 RUN mv /etk/cap/css /etk/cap/wwwroot/css
 RUN mv /etk/cap/fonts /etk/cap/wwwroot/fonts
+RUN mv /etk/cap/licenses /etk/cap/wwwroot/licenses
 RUN mv /etk/cap/js /etk/cap/wwwroot/js
 RUN mv /etk/cap/*.js /etk/cap/wwwroot/
 RUN mv /etk/cap/*.html /etk/cap/wwwroot/

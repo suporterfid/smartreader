@@ -44,6 +44,7 @@ using Endpoint = SmartReaderJobs.ViewModel.Mqtt.Endpoint.Endpoint;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 using System.IO;
+using System.Runtime.Loader;
 
 if(File.Exists("/customer/upgrading"))
 {
@@ -144,7 +145,7 @@ builder.Services.AddScoped<ISummaryQueueBackgroundService, SummaryQueueBackgroun
 
 // Create and start the MQTT servers
 var mqttFactory = new MqttFactory();
-var tcpMqttServer = mqttFactory.CreateMqttServer();
+MqttServer tcpMqttServer = null;
 try
 {
     var configDto = ConfigFileHelper.ReadFile();
@@ -157,7 +158,9 @@ try
             .WithDefaultEndpointPort(1883) // Set the MQTT port for TCP
             .Build();
 
-        tcpMqttServer.StartAsync(tcpMqttServerOptions);
+        tcpMqttServer = mqttFactory.CreateMqttServer(tcpMqttServerOptions);
+
+        await tcpMqttServer.StartAsync();
     }
 }
 catch (Exception)
@@ -470,22 +473,28 @@ app.MapPost("/api/settings", [AuthorizeBasicAuth] async ([FromBody] StandaloneCo
 
         try
         {
-            if(config != null)
+            if (config != null)
             {
                 if ("1".Equals(config.advancedGpoEnabled))
                 {
-                    if("6".Equals(config.advancedGpoMode1)
+                    if ("6".Equals(config.advancedGpoMode1)
                     || "6".Equals(config.advancedGpoMode2)
                     || "6".Equals(config.advancedGpoMode3))
                     {
                         config.softwareFilterEnabled = "1";
-                        if("0".Equals(config.softwareFilterField))
+                        if ("0".Equals(config.softwareFilterField))
                         {
                             config.softwareFilterField = "1";
                         }
                     }
-                } 
+                }
+
+                if ("1".Equals(config.tagPresenceTimeoutEnabled))
+                {
+                    config.softwareFilterField = config.tagPresenceTimeoutInSec;
+                }
             }
+
             var configModel = db.ReaderConfigs.FindAsync("READER_CONFIG").Result;
             if (configModel == null)
             {
@@ -1920,7 +1929,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
         }
         //using var scope = context.RequestServices.CreateScope();
         //var backgroundService = scope.ServiceProvider.GetRequiredService<IIotInterfaceService>();
-        requestResult = backgroundService.ProcessMqttControlCommandJson(json, false);
+        requestResult = await backgroundService.ProcessMqttControlCommandJsonAsync(json, false);
         var result = JsonDocument.Parse(requestResult);
         return Results.Ok(result);
     }
@@ -1950,7 +1959,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
         //using var scope = context.RequestServices.CreateScope();
         //var backgroundService = scope.ServiceProvider.GetRequiredService<IIotInterfaceService>();
 
-        requestResult = backgroundService.ProcessMqttManagementCommandJson(json, false);
+        requestResult = await backgroundService.ProcessMqttManagementCommandJsonAsync(json, false);
         var result = JsonDocument.Parse(requestResult);
         return Results.Ok(result);
     }
@@ -2107,9 +2116,41 @@ async (HttpRequest request, RuntimeDb db) =>
 app.UseSwagger();
 app.UseSwaggerUI();
 
+// Subscribe to SIGTERM
+var shutdownSignal = new ManualResetEventSlim(false);
 
+AssemblyLoadContext.Default.Unloading += ctx =>
+{
+    Console.WriteLine("Received SIGTERM signal. Stopping gracefully...");
 
-app.Run();
+    // Trigger graceful shutdown
+    shutdownSignal.Set();
+};
+
+// Run the app
+var hostTask = Task.Run(() =>
+{
+    app.Run();
+});
+
+// Wait for SIGTERM or application completion
+if (shutdownSignal.Wait(TimeSpan.FromSeconds(2)))
+{
+    Console.WriteLine("Graceful shutdown completed.");
+}
+else
+{
+    Console.WriteLine("Shutdown timeout. Exiting forcefully.");
+}
+
+await hostTask;
+
+// Cleanup resources if needed
+
+// Dispose the app and services
+await app.DisposeAsync();
+
+// app.Run();
 
 static IResult ProcessMqttEndpointRequest(JsonDocument jsonDocument, RuntimeDb db)
 {

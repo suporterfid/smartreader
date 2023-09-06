@@ -15,7 +15,7 @@ var vueApplication = new Vue({
 			username: "",
 			password: ""
 		},
-		applicationLabel: 'version 4.0.0.26',
+		applicationLabel: 'version 4.0.0.27',
 		applicationBy: 'Smartreader R700',
 		//applicationBy: 'SoLink R700',
 

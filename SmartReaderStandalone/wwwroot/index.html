@@ -1242,23 +1242,27 @@
                         <template v-if="readerConfigs[0].isCloudInterface == '1'">
                             <br />
 
-                            <h3>Summary Stream</h3>
+                            <template v-if="readerConfigs[0].enableTagEventsListBatch == 0">
+                                <h3>Summary Stream</h3>
 
-                            <input id="outputEnableSummaryStream" type="checkbox"
-                                   v-model="readerConfigs[0].enableSummaryStream"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
-                            <label for="outputEnableSummaryStream">Enable Summary Stream</label>
-                            <br />
+                                <input id="outputEnableSummaryStream" type="checkbox"
+                                       v-model="readerConfigs[0].enableSummaryStream"
+                                       v-bind:true-value="1"
+                                       v-bind:false-value="0">
+                                <label for="outputEnableSummaryStream">Enable Summary Stream</label>
+                                <br />
+                            </template>
 
-                            <h3>Tag Events Stream</h3>
+                            <template v-if="readerConfigs[0].enableTagEventsListBatch == 0">
+                                <h3>Tag Events Stream</h3>
 
-                            <input id="outputEnableTagEventStream" type="checkbox"
-                                   v-model="readerConfigs[0].enableTagEventStream"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
-                            <label for="outputEnableTagEventStream">Enable Tag Event Stream</label>
-                            <br />
+                                <input id="outputEnableTagEventStream" type="checkbox"
+                                       v-model="readerConfigs[0].enableTagEventStream"
+                                       v-bind:true-value="1"
+                                       v-bind:false-value="0">
+                                <label for="outputEnableTagEventStream">Enable Tag Event Stream</label>
+                                <br />
+                            </template>
 
                             <h3>MQTT</h3>
 
@@ -1324,7 +1328,7 @@
                                 <label for="outputMqttPassword">Broker Password:</label>
                                 <input type="password" id="outputMqttPassword" class="form-control" v-model="readerConfigs[0].mqttPassword">
                                 <br />
-                                <template v-if="readerConfigs[0].enableTagEventsListBatch == '0'">
+                                <template v-if="readerConfigs[0].enableTagEventsListBatch == 0">
                                     <label for="outputMqttPuslishInterval">Publish Interval (in seconds):</label>
                                     <input id="outputMqttPuslishInterval" class="form-control" v-model="readerConfigs[0].mqttPuslishIntervalSec">
                                     <br>
@@ -1412,12 +1416,12 @@
                                 <label for="outputMqttCommandQoS">Management Command QoS Level:</label>
                                 <input id="outputMqttCommandQoS" class="form-control" v-model="readerConfigs[0].mqttManagementCommandQoS">
                                 <!--
-                                <input id="mqttManagementCommandRetainMessages" type="checkbox"
-                                       v-model="readerConfigs[0].mqttManagementCommandRetainMessages"
-                                       v-bind:true-value="true"
-                                       v-bind:false-value="false">
-                                <label for="mqttManagementCommandRetainMessages">Retain Messages</label>
-                                -->
+            <input id="mqttManagementCommandRetainMessages" type="checkbox"
+                   v-model="readerConfigs[0].mqttManagementCommandRetainMessages"
+                   v-bind:true-value="true"
+                   v-bind:false-value="false">
+            <label for="mqttManagementCommandRetainMessages">Retain Messages</label>
+            -->
                                 <br />
 
                                 <br />
@@ -1439,12 +1443,12 @@
                                 <label for="mqttControlCommandQoS">Control Command QoS Level:</label>
                                 <input id="mqttControlCommandQoS" class="form-control" v-model="readerConfigs[0].mqttControlCommandQoS">
                                 <!--
-                                <input id="mqttControlCommandRetainMessages" type="checkbox"
-                                       v-model="readerConfigs[0].mqttControlCommandRetainMessages"
-                                       v-bind:true-value="true"
-                                       v-bind:false-value="false">
-                                <label for="mqttControlCommandRetainMessages">Retain Messages</label>
-                                -->
+            <input id="mqttControlCommandRetainMessages" type="checkbox"
+                   v-model="readerConfigs[0].mqttControlCommandRetainMessages"
+                   v-bind:true-value="true"
+                   v-bind:false-value="false">
+            <label for="mqttControlCommandRetainMessages">Retain Messages</label>
+            -->
                                 <br />
                                 <br />
 
@@ -1473,357 +1477,371 @@
 
                             </template>
                         </template>
-
-                        <h3>Local UDP server</h3>
-
-                        <input id="outputUdpEnabled" type="checkbox"
-                               v-model="readerConfigs[0].udpServer"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
-                        <label for="outputUdpEnabled">Enable</label>
-                        <template v-if="readerConfigs[0].udpServer == '1'">
-                            <br>
-                            <label for="outputUdpAddress">UDP Reader IP Address:</label>
-                            <input id="outputUdpAddress" class="form-control" v-model="readerConfigs[0].udpIpAddress">
-                            <br>
-                            <label for="outputUdpPort">UDP Reader Port:</label>
-                            <input id="outputUdpPort" class="form-control" v-model="readerConfigs[0].udpReaderPort">
-                            <br>
-                            <label for="outputUdpRemoteIpAddress">UDP Remote IP Address:</label>
-                            <input id="outputUdpRemoteIpAddress" class="form-control" v-model="readerConfigs[0].udpRemoteIpAddress">
-                            <br>
-                            <label for="outputUdpRemotePort">UDP Remote Port:</label>
-                            <input id="outputUdpRemotePort" class="form-control" v-model="readerConfigs[0].udpRemotePort">
-                        </template>
-                        <h3>Local socket server</h3>
-                        <input id="outputSocketEnabled" type="checkbox"
-                               v-model="readerConfigs[0].socketServer"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
-                        <label for="outputSocketEnabled">Enable</label>
                         <br>
-                        <template v-if="readerConfigs[0].socketServer == '1'">
-                            <label for="outputSocketPort">Socket Port:</label>
-                            <input id="outputSocketPort" class="form-control" v-model="readerConfigs[0].socketPort">
-                            <br>
-                            <input id="socketCommandServer" type="checkbox"
-                                   v-model="readerConfigs[0].socketCommandServer"
+                        <br>
+                        <template v-if="readerConfigs[0].enableTagEventsListBatch == 0">
+                            <h3>Local UDP server</h3>
+
+                            <input id="outputUdpEnabled" type="checkbox"
+                                   v-model="readerConfigs[0].udpServer"
                                    v-bind:true-value="1"
                                    v-bind:false-value="0">
-                            <label for="socketCommandServer">Enable Socket Command Server</label>
-                            <br>
-                            <label for="socketCommandServerPort">Socket Command Server Port:</label>
-                            <input id="socketCommandServerPort" class="form-control" v-model="readerConfigs[0].socketCommandServerPort">
-                        </template>
-
-                        <h3>HTTP POST</h3>
-                        <input id="outputHttpEnabled" type="checkbox"
-                               v-model="readerConfigs[0].httpPostEnabled"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
-                        <label for="outputHttpEnabled">Enable</label>
-                        <br>
-                        <template v-if="readerConfigs[0].httpPostEnabled == '1'">
-
-                            <input id="enableTagEventsListBatch" type="checkbox"
-                                   v-model="readerConfigs[0].enableTagEventsListBatch"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
-                            <label for="enableTagEventsListBatch">Enable Batch List Reporting</label>
+                            <label for="outputUdpEnabled">Enable</label>
+                            <template v-if="readerConfigs[0].udpServer == '1'">
+                                <br>
+                                <label for="outputUdpAddress">UDP Reader IP Address:</label>
+                                <input id="outputUdpAddress" class="form-control" v-model="readerConfigs[0].udpIpAddress">
+                                <br>
+                                <label for="outputUdpPort">UDP Reader Port:</label>
+                                <input id="outputUdpPort" class="form-control" v-model="readerConfigs[0].udpReaderPort">
+                                <br>
+                                <label for="outputUdpRemoteIpAddress">UDP Remote IP Address:</label>
+                                <input id="outputUdpRemoteIpAddress" class="form-control" v-model="readerConfigs[0].udpRemoteIpAddress">
+                                <br>
+                                <label for="outputUdpRemotePort">UDP Remote Port:</label>
+                                <input id="outputUdpRemotePort" class="form-control" v-model="readerConfigs[0].udpRemotePort">
+                            </template>
                             <br />
-
-                            <template v-if="readerConfigs[0].enableTagEventsListBatch == '1'">
-                                &nbsp;&nbsp;
-                                <input id="cleanupTagEventsListBatchOnReload" type="checkbox"
-                                       v-model="readerConfigs[0].cleanupTagEventsListBatchOnReload"
+                        </template>
+                            <template v-if="readerConfigs[0].enableTagEventsListBatch == 0">
+                                <h3>Local socket server</h3>
+                                <input id="outputSocketEnabled" type="checkbox"
+                                       v-model="readerConfigs[0].socketServer"
                                        v-bind:true-value="1"
                                        v-bind:false-value="0">
-                                <label for="cleanupTagEventsListBatchOnReload">Clear Batch List on Reload Operation</label>
-                                <br />
-                                &nbsp;&nbsp;
-                                <input id="updateTagEventsListBatchOnChange" type="checkbox"
-                                       v-model="readerConfigs[0].updateTagEventsListBatchOnChange"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
-                                <label for="updateTagEventsListBatchOnChange">Publish Batch List On-Change</label>
-                                <br />
-                                <label for="updateTagEventsListBatchOnChangeInterval">Publish Batch List On-Change Interval (in seconds):</label>
-                                &nbsp;&nbsp;
-                                <input id="updateTagEventsListBatchOnChangeInterval" class="form-control" v-model="readerConfigs[0].updateTagEventsListBatchOnChangeInterval">
+                                <label for="outputSocketEnabled">Enable</label>
                                 <br>
+                                <template v-if="readerConfigs[0].socketServer == '1'">
+                                    <label for="outputSocketPort">Socket Port:</label>
+                                    <input id="outputSocketPort" class="form-control" v-model="readerConfigs[0].socketPort">
+                                    <br>
+                                    <input id="socketCommandServer" type="checkbox"
+                                           v-model="readerConfigs[0].socketCommandServer"
+                                           v-bind:true-value="1"
+                                           v-bind:false-value="0">
+                                    <label for="socketCommandServer">Enable Socket Command Server</label>
+                                    <br>
+                                    <label for="socketCommandServerPort">Socket Command Server Port:</label>
+                                    <input id="socketCommandServerPort" class="form-control" v-model="readerConfigs[0].socketCommandServerPort">
+                                </template>
                             </template>
-                            <br />
-                            <label for="jsonFormat">JSON Format:</label>
-                            <select id="jsonFormat" class="form-control" v-model="readerConfigs[0].jsonFormat">
-                                <option value="0">Smartreader</option>
-                                <option value="1">IoT Device Interface</option>
-                            </select>
-                            <br />
-                            <label for="outputHttpUrl">Remote Server URL:</label>
-                            <input id="outputHttpUrl" class="form-control" v-model="readerConfigs[0].httpPostURL">
-                            <label for="outputHttpPostInterval">POST interval in seconds:</label>
-                            <input id="outputHttpPostInterval" class="form-control" v-model="readerConfigs[0].httpPostIntervalSec">
-                            <!--
-                            <h3>HTTP Post Backup on USB Flash Drive</h3>
-                            <input id="outputWriteUsbJsonEnabled" type="checkbox"
-                                   v-model="readerConfigs[0].writeUsbJson"
+
+                            <h3>HTTP POST</h3>
+                            <input id="outputHttpEnabled" type="checkbox"
+                                   v-model="readerConfigs[0].httpPostEnabled"
                                    v-bind:true-value="1"
                                    v-bind:false-value="0">
-                            <label for="outputWriteUsbJsonEnabled">Enable</label>
-                            -->
+                            <label for="outputHttpEnabled">Enable</label>
                             <br>
-                            <br>
+                            <template v-if="readerConfigs[0].httpPostEnabled == '1'">
 
-                            <h3>HTTP Verify Response Code 2XX</h3>
-                            <input id="outputHttpVerifyPostHttpReturnCodeEnabled" type="checkbox"
-                                   v-model="readerConfigs[0].httpVerifyPostHttpReturnCode"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
-                            <label for="outputHttpVerifyPostHttpReturnCodeEnabled">Enable</label>
-                            <br>
-                            <br>
-                            <label for="outputHttpAuthenticationType">HTTP Authentication:</label>
-                            <select id="outputHttpAuthenticationType" class="form-control" v-model="readerConfigs[0].httpAuthenticationType">
-                                <option value="NONE">NONE</option>
-                                <option value="BASIC">BASIC</option>
-                                <option value="BEARER">BEARER</option>
-                                <option value="HEADER">HEADER</option>
-                            </select>
-                            <br>
-                            <template v-if="readerConfigs[0].httpAuthenticationType == 'BASIC'">
-                                <label for="outputHttpAuthenticationBasic">HTTP Authentication:</label>
-                                <label for="outputHttpAuthenticationUsername">HTTP Username:</label>
-                                <input id="outputHttpAuthenticationUsername" class="form-control" v-model="readerConfigs[0].httpAuthenticationUsername">
-                                <label for="outputHttpAuthenticationPassword">HTTP Password:</label>
-                                <input type="password" id="outputHttpAuthenticationPassword" class="form-control" v-model="readerConfigs[0].httpAuthenticationPassword">
-                                <br>
-                            </template>
-
-                            <template v-if="readerConfigs[0].httpAuthenticationType == 'HEADER'">
-                                <label for="outputHttpAuthenticationHeader">HTTP Authentication:</label>
-                                <label for="httpAuthenticationHeader">HTTP HEADER:</label>
-                                <input id="httpAuthenticationHeader" class="form-control" v-model="readerConfigs[0].httpAuthenticationHeader">
-                                <label for="httpAuthenticationHeaderValue">HTTP HEADER VALUE:</label>
-                                <input id="httpAuthenticationHeaderValue" class="form-control" v-model="readerConfigs[0].httpAuthenticationHeaderValue">
-                                <br>
-                            </template>
-
-                            <template v-if="readerConfigs[0].httpAuthenticationType == 'BEARER'">
-                                <label for="outputHttpAuthenticationToken">HTTP Token Authentication:</label>
-                                <br>
-                                <input id="outputHttpAuthenticationTokenApiEnabled" type="checkbox"
-                                       v-model="readerConfigs[0].httpAuthenticationTokenApiEnabled"
+                                <input id="enableTagEventsListBatch" type="checkbox"
+                                       v-model="readerConfigs[0].enableTagEventsListBatch"
                                        v-bind:true-value="1"
                                        v-bind:false-value="0">
-                                <label for="outputHttpAuthenticationTokenApiEnabled">Enable</label>
-                                <br>
-                                <label for="outputHttpAuthenticationTokenApiUrl">Token(BEARER) API URL:</label>
-                                <input id="outputHttpAuthenticationTokenApiUrl" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiUrl">
-                                <!--
-                                <label for="outputHttpAuthenticationTokenApiUsernameField">HTTP Username Field:</label>
-                                <input id="outputHttpAuthenticationTokenApiUsernameField" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiUsernameField">
-                                <label for="outputHttpAuthenticatioTokenApinPasswordValue">HTTP Password Value:</label>
-                                <input type="password" id="outputHttpAuthenticationTokenApiPasswordValue" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiPasswordValue">
-                                -->
-                                <label for="httpAuthenticationTokenApiBody">Username and Password Body Request for API Value:</label>
-                                <input id="httpAuthenticationTokenApiBody" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiBody">
-                                <label for="outputHttpAuthenticationTokenApiValue">Token(BEARER) API Value:</label>
-                                <input id="outputHttpAuthenticationTokenApiValue" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiValue">
-                                <button class="btn btn-info" v-on:click="testBearer">Test Token request</button>
-                            </template>
-
-                        </template>
-                        <br />
-                        <!--
-                        <h3>OPC-UA Client</h3>
-                        <input id="enableOpcUaClient" type="checkbox"
-                               v-model="readerConfigs[0].enableOpcUaClient"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
-                        <label for="enableOpcUaClient">Enable</label>
-                        <br>
-                        <template v-if="readerConfigs[0].enableOpcUaClient == '1'">
-
-                            <br />
-                            <label for="opcUaConnectionName">Connection Name:</label>
-                            <input id="opcUaConnectionName" class="form-control" v-model="readerConfigs[0].opcUaConnectionName">
-
-                            <br />
-                            <label for="opcUaConnectionPublisherId">ConnectionPublisher Id:</label>
-                            <input id="opcUaConnectionPublisherId" class="form-control" v-model="readerConfigs[0].opcUaConnectionPublisherId">
-
-                            <br />
-                            <label for="opcUaConnectionUrl">Connection Url:</label>
-                            <input id="opcUaConnectionUrl" class="form-control" v-model="readerConfigs[0].opcUaConnectionUrl">
-
-                            <br />
-                            <label for="opcUaConnectionDiscoveryAddress">Discovery Address:</label>
-                            <input id="opcUaConnectionDiscoveryAddress" class="form-control" v-model="readerConfigs[0].opcUaConnectionDiscoveryAddress">
-
-                            <br />
-                            <label for="opcUaConnectionDiscoveryAddress">Discovery Address:</label>
-                            <input id="opcUaConnectionDiscoveryAddress" class="form-control" v-model="readerConfigs[0].opcUaConnectionDiscoveryAddress">
-
-                            <br />
-                            <label for="opcUaWriterGroupName">Writer Group Name:</label>
-                            <input id="opcUaWriterGroupName" class="form-control" v-model="readerConfigs[0].opcUaWriterGroupName">
-
-                            <br />
-                            <label for="opcUaWriterGroupId">Writer Group Id:</label>
-                            <input id="opcUaWriterGroupId" class="form-control" v-model="readerConfigs[0].opcUaWriterGroupId">
-
-                            <br />
-                            <label for="opcUaWriterPublishingInterval">Writer Publishing Interval:</label>
-                            <input id="opcUaWriterPublishingInterval" class="form-control" v-model="readerConfigs[0].opcUaWriterPublishingInterval">
-
-                            <br />
-                            <label for="opcUaWriterKeepAliveTime">Writer KeepAlive Time:</label>
-                            <input id="opcUaWriterKeepAliveTime" class="form-control" v-model="readerConfigs[0].opcUaWriterKeepAliveTime">
-
-                            <br />
-                            <label for="opcUaWriterMaxNetworkMessageSize">Writer Max Network Message Size:</label>
-                            <input id="opcUaWriterMaxNetworkMessageSize" class="form-control" v-model="readerConfigs[0].opcUaWriterMaxNetworkMessageSize">
-
-                            <br />
-                            <label for="opcUaWriterHeaderLayoutUri">Writer Header Layout Uri:</label>
-                            <input id="opcUaWriterHeaderLayoutUri" class="form-control" v-model="readerConfigs[0].opcUaWriterHeaderLayoutUri">
-
-                            <br />
-                            <label for="opcUaDataSetWriterName">DataSet Writer Name:</label>
-                            <input id="opcUaDataSetWriterName" class="form-control" v-model="readerConfigs[0].opcUaDataSetWriterName">
-
-                            <br />
-                            <label for="opcUaDataSetWriterId">DataSet Writer Id:</label>
-                            <input id="opcUaDataSetWriterId" class="form-control" v-model="readerConfigs[0].opcUaDataSetWriterId">
-
-                            <br />
-                            <label for="opcUaDataSetName">DataSet Name:</label>
-                            <input id="opcUaDataSetName" class="form-control" v-model="readerConfigs[0].opcUaDataSetName">
-
-                            <br />
-                            <label for="opcUaDataSetKeyFrameCount">DataSet Key Frame Count:</label>
-                            <input id="opcUaDataSetKeyFrameCount" class="form-control" v-model="readerConfigs[0].opcUaDataSetKeyFrameCount">
-
-                        </template>
-                        -->
-                        <template v-if="readerConfigs[0].enablePlugin == '1'">
-                            <template v-if="readerConfigs[0].activePlugin == 'CONNECT'">
-                                <h3>Custom Plugin</h3>
+                                <label for="enableTagEventsListBatch">Enable Batch List Reporting</label>
                                 <br />
-                                <label for="activePlugin">Plugin Name:</label>
-                                <input id="activePlugin" class="form-control" v-model="readerConfigs[0].activePlugin">
+
+                                <template v-if="readerConfigs[0].enableTagEventsListBatch == '1'">
+                                    &nbsp;&nbsp;
+                                    <input id="cleanupTagEventsListBatchOnReload" type="checkbox"
+                                           v-model="readerConfigs[0].cleanupTagEventsListBatchOnReload"
+                                           v-bind:true-value="1"
+                                           v-bind:false-value="0">
+                                    <label for="cleanupTagEventsListBatchOnReload">Clear Batch List on Reload Operation</label>
+                                    <br />
+                                    &nbsp;&nbsp;
+                                    <input id="updateTagEventsListBatchOnChange" type="checkbox"
+                                           v-model="readerConfigs[0].updateTagEventsListBatchOnChange"
+                                           v-bind:true-value="1"
+                                           v-bind:false-value="0">
+                                    <label for="updateTagEventsListBatchOnChange">Publish Batch List On-Change</label>
+                                    <br />
+                                    <label for="updateTagEventsListBatchOnChangeInterval">Publish Batch List On-Change Interval (in seconds):</label>
+                                    &nbsp;&nbsp;
+                                    <input id="updateTagEventsListBatchOnChangeInterval" class="form-control" v-model="readerConfigs[0].updateTagEventsListBatchOnChangeInterval">
+                                    <br>
+                                </template>
                                 <br />
-                                <label for="outputPluginServer">Plugin Server IP Address:</label>
-                                <input id="outputPluginServer" class="form-control" v-model="readerConfigs[0].pluginServer">
+                                <label for="jsonFormat">JSON Format:</label>
+                                <select id="jsonFormat" class="form-control" v-model="readerConfigs[0].jsonFormat">
+                                    <option value="0">Smartreader</option>
+                                    <option value="1">IoT Device Interface</option>
+                                </select>
                                 <br />
+                                <label for="outputHttpUrl">Remote Server URL:</label>
+                                <input id="outputHttpUrl" class="form-control" v-model="readerConfigs[0].httpPostURL">
                                 <label for="outputHttpPostInterval">POST interval in seconds:</label>
                                 <input id="outputHttpPostInterval" class="form-control" v-model="readerConfigs[0].httpPostIntervalSec">
+                                <!--
+            <h3>HTTP Post Backup on USB Flash Drive</h3>
+            <input id="outputWriteUsbJsonEnabled" type="checkbox"
+                   v-model="readerConfigs[0].writeUsbJson"
+                   v-bind:true-value="1"
+                   v-bind:false-value="0">
+            <label for="outputWriteUsbJsonEnabled">Enable</label>
+            -->
                                 <br>
-                                <input id="enableUniqueTagRead" type="checkbox"
-                                       v-model="readerConfigs[0].enableUniqueTagRead"
+                                <br>
+
+                                <h3>HTTP Verify Response Code 2XX</h3>
+                                <input id="outputHttpVerifyPostHttpReturnCodeEnabled" type="checkbox"
+                                       v-model="readerConfigs[0].httpVerifyPostHttpReturnCode"
                                        v-bind:true-value="1"
                                        v-bind:false-value="0">
-                                <label for="enableUniqueTagRead">Enable Unique Tag Read</label>
+                                <label for="outputHttpVerifyPostHttpReturnCodeEnabled">Enable</label>
                                 <br>
-                                <input id="enableAntennaTask" type="checkbox"
-                                       v-model="readerConfigs[0].enableAntennaTask"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
-                                <label for="enableAntennaTask">Enable Antenna Task</label>
                                 <br>
-                                <input id="softwareFilterEnabled" type="checkbox"
-                                       v-model="readerConfigs[0].softwareFilterEnabled"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
-                                <label for="softwareFilterEnabled">Enable Software Filter</label>
-                                <br />
-                                <template v-if="readerConfigs[0].softwareFilterEnabled == '1'">
-                                    <label for="softwareFilterWindowSec">Software Filter Interval in seconds:</label>
-                                    <input id="softwareFilterWindowSec" class="form-control" v-model="readerConfigs[0].softwareFilterWindowSec">
-                                    <br />
+                                <label for="outputHttpAuthenticationType">HTTP Authentication:</label>
+                                <select id="outputHttpAuthenticationType" class="form-control" v-model="readerConfigs[0].httpAuthenticationType">
+                                    <option value="NONE">NONE</option>
+                                    <option value="BASIC">BASIC</option>
+                                    <option value="BEARER">BEARER</option>
+                                    <option value="HEADER">HEADER</option>
+                                </select>
+                                <br>
+                                <template v-if="readerConfigs[0].httpAuthenticationType == 'BASIC'">
+                                    <label for="outputHttpAuthenticationBasic">HTTP Authentication:</label>
+                                    <label for="outputHttpAuthenticationUsername">HTTP Username:</label>
+                                    <input id="outputHttpAuthenticationUsername" class="form-control" v-model="readerConfigs[0].httpAuthenticationUsername">
+                                    <label for="outputHttpAuthenticationPassword">HTTP Password:</label>
+                                    <input type="password" id="outputHttpAuthenticationPassword" class="form-control" v-model="readerConfigs[0].httpAuthenticationPassword">
+                                    <br>
+                                </template>
+
+                                <template v-if="readerConfigs[0].httpAuthenticationType == 'HEADER'">
+                                    <label for="outputHttpAuthenticationHeader">HTTP Authentication:</label>
+                                    <label for="httpAuthenticationHeader">HTTP HEADER:</label>
+                                    <input id="httpAuthenticationHeader" class="form-control" v-model="readerConfigs[0].httpAuthenticationHeader">
+                                    <label for="httpAuthenticationHeaderValue">HTTP HEADER VALUE:</label>
+                                    <input id="httpAuthenticationHeaderValue" class="form-control" v-model="readerConfigs[0].httpAuthenticationHeaderValue">
+                                    <br>
+                                </template>
+
+                                <template v-if="readerConfigs[0].httpAuthenticationType == 'BEARER'">
+                                    <label for="outputHttpAuthenticationToken">HTTP Token Authentication:</label>
+                                    <br>
+                                    <input id="outputHttpAuthenticationTokenApiEnabled" type="checkbox"
+                                           v-model="readerConfigs[0].httpAuthenticationTokenApiEnabled"
+                                           v-bind:true-value="1"
+                                           v-bind:false-value="0">
+                                    <label for="outputHttpAuthenticationTokenApiEnabled">Enable</label>
+                                    <br>
+                                    <label for="outputHttpAuthenticationTokenApiUrl">Token(BEARER) API URL:</label>
+                                    <input id="outputHttpAuthenticationTokenApiUrl" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiUrl">
                                     <!--
-                                    <label for="packageHeaders">Package Headers:</label>
-                                    <input id="packageHeaders" class="form-control" v-model="readerConfigs[0].packageHeaders">
-                                    -->
+                <label for="outputHttpAuthenticationTokenApiUsernameField">HTTP Username Field:</label>
+                <input id="outputHttpAuthenticationTokenApiUsernameField" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiUsernameField">
+                <label for="outputHttpAuthenticatioTokenApinPasswordValue">HTTP Password Value:</label>
+                <input type="password" id="outputHttpAuthenticationTokenApiPasswordValue" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiPasswordValue">
+                -->
+                                    <label for="httpAuthenticationTokenApiBody">Username and Password Body Request for API Value:</label>
+                                    <input id="httpAuthenticationTokenApiBody" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiBody">
+                                    <label for="outputHttpAuthenticationTokenApiValue">Token(BEARER) API Value:</label>
+                                    <input id="outputHttpAuthenticationTokenApiValue" class="form-control" v-model="readerConfigs[0].httpAuthenticationTokenApiValue">
+                                    <button class="btn btn-info" v-on:click="testBearer">Test Token request</button>
                                 </template>
-                                <br>
-                                <input id="enablePluginShipmentVerification" type="checkbox"
-                                       v-model="readerConfigs[0].enablePluginShipmentVerification"
+
+                            </template>
+                            <br />
+                            <!--
+        <h3>OPC-UA Client</h3>
+        <input id="enableOpcUaClient" type="checkbox"
+               v-model="readerConfigs[0].enableOpcUaClient"
+               v-bind:true-value="1"
+               v-bind:false-value="0">
+        <label for="enableOpcUaClient">Enable</label>
+        <br>
+        <template v-if="readerConfigs[0].enableOpcUaClient == '1'">
+
+            <br />
+            <label for="opcUaConnectionName">Connection Name:</label>
+            <input id="opcUaConnectionName" class="form-control" v-model="readerConfigs[0].opcUaConnectionName">
+
+            <br />
+            <label for="opcUaConnectionPublisherId">ConnectionPublisher Id:</label>
+            <input id="opcUaConnectionPublisherId" class="form-control" v-model="readerConfigs[0].opcUaConnectionPublisherId">
+
+            <br />
+            <label for="opcUaConnectionUrl">Connection Url:</label>
+            <input id="opcUaConnectionUrl" class="form-control" v-model="readerConfigs[0].opcUaConnectionUrl">
+
+            <br />
+            <label for="opcUaConnectionDiscoveryAddress">Discovery Address:</label>
+            <input id="opcUaConnectionDiscoveryAddress" class="form-control" v-model="readerConfigs[0].opcUaConnectionDiscoveryAddress">
+
+            <br />
+            <label for="opcUaConnectionDiscoveryAddress">Discovery Address:</label>
+            <input id="opcUaConnectionDiscoveryAddress" class="form-control" v-model="readerConfigs[0].opcUaConnectionDiscoveryAddress">
+
+            <br />
+            <label for="opcUaWriterGroupName">Writer Group Name:</label>
+            <input id="opcUaWriterGroupName" class="form-control" v-model="readerConfigs[0].opcUaWriterGroupName">
+
+            <br />
+            <label for="opcUaWriterGroupId">Writer Group Id:</label>
+            <input id="opcUaWriterGroupId" class="form-control" v-model="readerConfigs[0].opcUaWriterGroupId">
+
+            <br />
+            <label for="opcUaWriterPublishingInterval">Writer Publishing Interval:</label>
+            <input id="opcUaWriterPublishingInterval" class="form-control" v-model="readerConfigs[0].opcUaWriterPublishingInterval">
+
+            <br />
+            <label for="opcUaWriterKeepAliveTime">Writer KeepAlive Time:</label>
+            <input id="opcUaWriterKeepAliveTime" class="form-control" v-model="readerConfigs[0].opcUaWriterKeepAliveTime">
+
+            <br />
+            <label for="opcUaWriterMaxNetworkMessageSize">Writer Max Network Message Size:</label>
+            <input id="opcUaWriterMaxNetworkMessageSize" class="form-control" v-model="readerConfigs[0].opcUaWriterMaxNetworkMessageSize">
+
+            <br />
+            <label for="opcUaWriterHeaderLayoutUri">Writer Header Layout Uri:</label>
+            <input id="opcUaWriterHeaderLayoutUri" class="form-control" v-model="readerConfigs[0].opcUaWriterHeaderLayoutUri">
+
+            <br />
+            <label for="opcUaDataSetWriterName">DataSet Writer Name:</label>
+            <input id="opcUaDataSetWriterName" class="form-control" v-model="readerConfigs[0].opcUaDataSetWriterName">
+
+            <br />
+            <label for="opcUaDataSetWriterId">DataSet Writer Id:</label>
+            <input id="opcUaDataSetWriterId" class="form-control" v-model="readerConfigs[0].opcUaDataSetWriterId">
+
+            <br />
+            <label for="opcUaDataSetName">DataSet Name:</label>
+            <input id="opcUaDataSetName" class="form-control" v-model="readerConfigs[0].opcUaDataSetName">
+
+            <br />
+            <label for="opcUaDataSetKeyFrameCount">DataSet Key Frame Count:</label>
+            <input id="opcUaDataSetKeyFrameCount" class="form-control" v-model="readerConfigs[0].opcUaDataSetKeyFrameCount">
+
+        </template>
+        -->
+                            <template v-if="readerConfigs[0].enablePlugin == '1'">
+                                <template v-if="readerConfigs[0].activePlugin == 'CONNECT'">
+                                    <h3>Custom Plugin</h3>
+                                    <br />
+                                    <label for="activePlugin">Plugin Name:</label>
+                                    <input id="activePlugin" class="form-control" v-model="readerConfigs[0].activePlugin">
+                                    <br />
+                                    <label for="outputPluginServer">Plugin Server IP Address:</label>
+                                    <input id="outputPluginServer" class="form-control" v-model="readerConfigs[0].pluginServer">
+                                    <br />
+                                    <label for="outputHttpPostInterval">POST interval in seconds:</label>
+                                    <input id="outputHttpPostInterval" class="form-control" v-model="readerConfigs[0].httpPostIntervalSec">
+                                    <br>
+                                    <input id="enableUniqueTagRead" type="checkbox"
+                                           v-model="readerConfigs[0].enableUniqueTagRead"
+                                           v-bind:true-value="1"
+                                           v-bind:false-value="0">
+                                    <label for="enableUniqueTagRead">Enable Unique Tag Read</label>
+                                    <br>
+                                    <input id="enableAntennaTask" type="checkbox"
+                                           v-model="readerConfigs[0].enableAntennaTask"
+                                           v-bind:true-value="1"
+                                           v-bind:false-value="0">
+                                    <label for="enableAntennaTask">Enable Antenna Task</label>
+                                    <br>
+                                    <input id="softwareFilterEnabled" type="checkbox"
+                                           v-model="readerConfigs[0].softwareFilterEnabled"
+                                           v-bind:true-value="1"
+                                           v-bind:false-value="0">
+                                    <label for="softwareFilterEnabled">Enable Software Filter</label>
+                                    <br />
+                                    <template v-if="readerConfigs[0].softwareFilterEnabled == '1'">
+                                        <label for="softwareFilterWindowSec">Software Filter Interval in seconds:</label>
+                                        <input id="softwareFilterWindowSec" class="form-control" v-model="readerConfigs[0].softwareFilterWindowSec">
+                                        <br />
+                                        <!--
+                    <label for="packageHeaders">Package Headers:</label>
+                    <input id="packageHeaders" class="form-control" v-model="readerConfigs[0].packageHeaders">
+                    -->
+                                    </template>
+                                    <br>
+                                    <input id="enablePluginShipmentVerification" type="checkbox"
+                                           v-model="readerConfigs[0].enablePluginShipmentVerification"
+                                           v-bind:true-value="1"
+                                           v-bind:false-value="0">
+                                    <label for="enablePluginShipmentVerification">Enable Shipment Verification</label>
+                                    <br>
+                                    <template v-if="readerConfigs[0].enablePluginShipmentVerification == '1'">
+                                        <input id="enablePartialValidation" type="checkbox"
+                                               v-model="readerConfigs[0].enablePartialValidation"
+                                               v-bind:true-value="1"
+                                               v-bind:false-value="0">
+                                        <label for="softwareFilterEnabled">Enable Partial Validation</label>
+                                        <br />
+                                        <label for="validationAcceptanceThreshold">Validation Acceptance Threshold (integer percentage):</label>
+                                        <input id="validationAcceptanceThreshold" class="form-control" v-model="readerConfigs[0].validationAcceptanceThreshold">
+                                        <br />
+                                        <label for="validationAcceptanceThresholdTimeout">Validation Acceptance Threshold Timeout (in seconds):</label>
+                                        <input id="validationAcceptanceThresholdTimeout" class="form-control" v-model="readerConfigs[0].validationAcceptanceThresholdTimeout">
+                                        <br />
+                                        <input id="publishFullShipmentValidationListOnAcceptanceThreshold" type="checkbox"
+                                               v-model="readerConfigs[0].publishFullShipmentValidationListOnAcceptanceThreshold"
+                                               v-bind:true-value="1"
+                                               v-bind:false-value="0">
+                                        <label for="publishFullShipmentValidationListOnAcceptanceThreshold">Publish Full Shipment Validation List on Acceptance Threshold Reached</label>
+                                    </template>
+                                </template>
+
+                            </template>
+                            <!--
+        <template v-if="readerMaxAntennas <= 4">
+        -->
+                            <template v-if="readerConfigs[0].enableTagEventsListBatch == 0">
+                                <h3>Serial Port (USB)</h3>
+                                <input id="outputSerialPortEnabled" type="checkbox"
+                                       v-model="readerConfigs[0].serialPort"
                                        v-bind:true-value="1"
                                        v-bind:false-value="0">
-                                <label for="enablePluginShipmentVerification">Enable Shipment Verification</label>
+                                <label for="outputSerialPortEnabled">Enable</label>
                                 <br>
-                                <template v-if="readerConfigs[0].enablePluginShipmentVerification == '1'">
-                                    <input id="enablePartialValidation" type="checkbox"
-                                           v-model="readerConfigs[0].enablePartialValidation"
-                                           v-bind:true-value="1"
-                                           v-bind:false-value="0">
-                                    <label for="softwareFilterEnabled">Enable Partial Validation</label>
-                                    <br />
-                                    <label for="validationAcceptanceThreshold">Validation Acceptance Threshold (integer percentage):</label>
-                                    <input id="validationAcceptanceThreshold" class="form-control" v-model="readerConfigs[0].validationAcceptanceThreshold">
-                                    <br />
-                                    <label for="validationAcceptanceThresholdTimeout">Validation Acceptance Threshold Timeout (in seconds):</label>
-                                    <input id="validationAcceptanceThresholdTimeout" class="form-control" v-model="readerConfigs[0].validationAcceptanceThresholdTimeout">
-                                    <br />
-                                    <input id="publishFullShipmentValidationListOnAcceptanceThreshold" type="checkbox"
-                                           v-model="readerConfigs[0].publishFullShipmentValidationListOnAcceptanceThreshold"
-                                           v-bind:true-value="1"
-                                           v-bind:false-value="0">
-                                    <label for="publishFullShipmentValidationListOnAcceptanceThreshold">Publish Full Shipment Validation List on Acceptance Threshold Reached</label>
+
+
+
+                                <template v-if="readerConfigs[0].serialPort == '1'">
+                                    <select id="outputSerialPortBaudRate" class="form-control" v-model="readerConfigs[0].baudRate">
+                                        <option value="1200">1200</option>
+                                        <option value="2400">2400</option>
+                                        <option value="4800">4800</option>
+                                        <option value="9600">9600</option>
+                                        <option value="19200">19200</option>
+                                        <option value="38400">38400</option>
+                                        <option value="57600">57600</option>
+                                        <option value="115200">115200</option>
+                                    </select>
                                 </template>
+                                <!--
+            </template>
+            -->
+                                <!--
+            <h3>Keyboard emulation</h3>
+            <input id="outputKeyboardEmulationEnabled" type="checkbox"
+                   v-model="readerConfigs[0].usbHid"
+                   v-bind:true-value="1"
+                   v-bind:false-value="0">
+            <label for="outputKeyboardEmulationEnabled">Enable</label>
+            -->
+                                <br>
                             </template>
+                            <br />
 
-                        </template>
-                        <!--
-                        <template v-if="readerMaxAntennas <= 4">
-                        -->
-                        <h3>Serial Port (USB)</h3>
-                        <input id="outputSerialPortEnabled" type="checkbox"
-                               v-model="readerConfigs[0].serialPort"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
-                        <label for="outputSerialPortEnabled">Enable</label>
-                        <br>
+                            <template v-if="readerConfigs[0].enableTagEventsListBatch == 0">
+                                <h3>USB Flash Drive</h3>
+                                <input id="outputUsbFlashDriveEnabled" type="checkbox"
+                                       v-model="readerConfigs[0].usbFlashDrive"
+                                       v-bind:true-value="1"
+                                       v-bind:false-value="0">
+                                <label for="outputUsbFlashDriveEnabled">Enable</label>
+                                <br>
+                            </template>
+                            <br />
 
-                        <template v-if="readerConfigs[0].serialPort == '1'">
-                            <select id="outputSerialPortBaudRate" class="form-control" v-model="readerConfigs[0].baudRate">
-                                <option value="1200">1200</option>
-                                <option value="2400">2400</option>
-                                <option value="4800">4800</option>
-                                <option value="9600">9600</option>
-                                <option value="19200">19200</option>
-                                <option value="38400">38400</option>
-                                <option value="57600">57600</option>
-                                <option value="115200">115200</option>
-                            </select>
-                        </template>
-                        <!--
-                        </template>
-                        -->
-                        <!--
-                        <h3>Keyboard emulation</h3>
-                        <input id="outputKeyboardEmulationEnabled" type="checkbox"
-                               v-model="readerConfigs[0].usbHid"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
-                        <label for="outputKeyboardEmulationEnabled">Enable</label>
-                        -->
-                        <br>
-
-
-                        <h3>USB Flash Drive</h3>
-                        <input id="outputUsbFlashDriveEnabled" type="checkbox"
-                               v-model="readerConfigs[0].usbFlashDrive"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
-                        <label for="outputUsbFlashDriveEnabled">Enable</label>
-                        <br>
-
-
-                        <br>
-                        <br>
-                        <button class="btn btn-primary pull-right" v-on:click="applySettings">Apply Settings</button>
+                            <br>
+                            <br>
+                            <button class="btn btn-primary pull-right" v-on:click="applySettings">Apply Settings</button>
+                            <br>
+                            <br>
 
                     </div>
 

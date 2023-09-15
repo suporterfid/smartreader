@@ -1478,7 +1478,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
         }
 
-        _isStarted = true;
+        //_isStarted = true;
 
         try
         {
@@ -1505,7 +1505,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
         catch (Exception)
         {
-            if (_standaloneConfigDTO.isEnabled == "1" && _isStarted) SaveStartCommandToDb();
+            if (_standaloneConfigDTO.isEnabled == "1" ) SaveStartCommandToDb();
         }
 
         try
@@ -1630,7 +1630,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _logger.LogError(ex, "Error saving state to config file. " + ex.Message);
         }
 
-        _isStarted = true;
+        //_isStarted = true;
 
         try
         {
@@ -1652,7 +1652,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error starting SmartReader preset, scheduling start command to background worker. " + ex.Message);
-            if (_standaloneConfigDTO.isEnabled == "1" && _isStarted) SaveStartCommandToDb();
+            //if (_standaloneConfigDTO.isEnabled == "1" && _isStarted) SaveStartCommandToDb();
+            if (_standaloneConfigDTO.isEnabled == "1" ) SaveStartCommandToDb();
         }
 
         try
@@ -2828,7 +2829,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var lineData = line.Split("=");
                     if (lineData.Length > 1)
                     {
-                        statusEvent.Add(lineData[0], lineData[1]);
+                        var lineValueContent = "";
+                        if(lineData[1].Contains("'"))
+                        {
+                            lineValueContent = lineData[1].Replace("'", "");
+                        }
+                        statusEvent.Add(lineData[0], lineValueContent);
                     }
 
                 }
@@ -3609,6 +3615,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 if (!_readEpcs.ContainsKey(tagEvent.EpcHex))
                 {
                     _readEpcs.TryAdd(tagEvent.EpcHex, currentEventTimestamp);
+                    Task.Run(() => ProcessGpoBlinkNewTagStatusGpoPortAsync(1));
                     shouldProcess = true;
                 }
                 else
@@ -3621,13 +3628,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                     var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
                     if (timeDiff.TotalSeconds > expiration)
-                    {
-                        shouldProcess = true;
+                    {                       
                         _readEpcs[tagEvent.EpcHex] = currentEventTimestamp;
+                        Task.Run(() => ProcessGpoBlinkNewTagStatusGpoPortAsync(1));
+                        shouldProcess = true;
                     }
                     else
                     {
                         shouldProcess = false;
+                        _readEpcs[tagEvent.EpcHex] = currentEventTimestamp;
                         _logger.LogInformation(
                             "Ignoring tag event due to softwareFilterWindowSec on OnTagInventoryEvent ",
                             SeverityType.Debug);
@@ -3718,20 +3727,20 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 //        MqttLog("ERROR", "Error processing software filter. " + exSoftwareFilter.Message);
                 //    }
                 //}
-                if (!_oldReadEpcList.Contains(tagEvent.EpcHex))
-                {
-                    _oldReadEpcList.Add(tagEvent.EpcHex);
-                    try
-                    {
-                        //await Task.Run(async () => { await BlinkTagStatusGpoPortAsync(1); });
-                        Task.Run(() => ProcessGpoBlinkNewTagStatusGpoPortAsync(1));
+                //if (!_oldReadEpcList.Contains(tagEvent.EpcHex))
+                //{
+                //    _oldReadEpcList.Add(tagEvent.EpcHex);
+                //    try
+                //    {
+                //        //await Task.Run(async () => { await BlinkTagStatusGpoPortAsync(1); });
+                //        Task.Run(() => ProcessGpoBlinkNewTagStatusGpoPortAsync(1));
 
-                    }
-                    catch (Exception)
-                    {
-                    }
+                //    }
+                //    catch (Exception)
+                //    {
+                //    }
 
-                }
+                //}
 
 
 
@@ -4391,6 +4400,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterEnabled)
                 && !"0".Equals(_standaloneConfigDTO.softwareFilterEnabled))
+            {
                 try
                 {
                     if (_readEpcs.Count > 1000)
@@ -4417,6 +4427,38 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     _logger.LogError(ex, "Unexpected error on remove _readEpcs" + ex.Message);
                 }
+
+                try
+                {
+
+                    var expiration = long.Parse(_standaloneConfigDTO.softwareFilterWindowSec);
+
+                    var oldTimestamp = DateTime.Now.AddHours(-1);
+                    var oldTimestampToCheck = Utils.CSharpMillisToJavaLong(oldTimestamp);
+                    foreach (var kvp in _readEpcs.ToList())
+                    {
+                        var val = kvp.Value;
+                        var currentEventTimestamp = DateTime.Now;
+                        var currentTimestampToCheck = Utils.CSharpMillisToJavaLong(currentEventTimestamp);
+                        var dateTimeOffsetCurrentEventTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(currentTimestampToCheck);
+                        var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(val);
+                        var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
+                        if (timeDiff.TotalSeconds > expiration)
+                        {
+                            _readEpcs.TryRemove(kvp.Key, out val);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Unexpected error on remove _readEpcs" + ex.Message);
+                }
+            }
+               
+
+
+
+           
 
             //if (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterEnabled)
             //    && !"0".Equals(_standaloneConfigDTO.softwareFilterEnabled))
@@ -4476,115 +4518,131 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         "Unexpected error on remove _softwareFilterReadCountTimeoutDictionary" + ex.Message);
                 }
 
-            if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled, StringComparison.OrdinalIgnoreCase)
-                && _isStarted)
+            if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled, StringComparison.OrdinalIgnoreCase))
             {
-                try
+                if(_isStarted)
                 {
-                    var currentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
-
-                    double expirationInSec = 2;
-                    double expirationInMillis = 2000;
-                    double.TryParse(_standaloneConfigDTO.tagPresenceTimeoutInSec, NumberStyles.Float, CultureInfo.InvariantCulture, out expirationInSec);
-                    expirationInMillis = expirationInSec * 1000;
-
-                    var dateTimeOffsetCurrentEventTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(currentEventTimestamp);
-                    //var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(_readEpcs[tagEvent.EpcHex]);
-
-                    var secondsToAdd = expirationInSec * -1;
-                    var expiredEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now.AddSeconds(secondsToAdd));
-
-                    //var expiredEvents = _smartReaderTagEventsListBatch.Values.Where(t => t["tag_reads"]["firstSeenTimestamp"].Where(q => (long)q["firstSeenTimestamp"] <= expiredEventTimestamp));
-                    var currentEvents = _smartReaderTagEventsListBatch.Values;
-                    //var expiredEvents = _smartReaderTagEventsListBatch.Values.Where(t => (long)t["tag_reads"]["firstSeenTimestamp"] <= expiredEventTimestamp);
-                    //var existingEventOnCurrentAntenna = (JObject)(retrievedValue["tag_reads"].FirstOrDefault(q => (long)q["antennaPort"] == tagRead.AntennaPort));
-
-                    foreach (JObject currentEvent in currentEvents)
+                    try
                     {
-                        foreach (JObject currentEventItem in currentEvent["tag_reads"])
+                        var currentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
+
+                        double expirationInSec = 2;
+                        double expirationInMillis = 2000;
+                        double.TryParse(_standaloneConfigDTO.tagPresenceTimeoutInSec, NumberStyles.Float, CultureInfo.InvariantCulture, out expirationInSec);
+                        expirationInMillis = expirationInSec * 1000;
+
+                        var dateTimeOffsetCurrentEventTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(currentEventTimestamp);
+                        //var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(_readEpcs[tagEvent.EpcHex]);
+
+                        var secondsToAdd = expirationInSec * -1;
+                        var expiredEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now.AddSeconds(secondsToAdd));
+
+                        //var expiredEvents = _smartReaderTagEventsListBatch.Values.Where(t => t["tag_reads"]["firstSeenTimestamp"].Where(q => (long)q["firstSeenTimestamp"] <= expiredEventTimestamp));
+                        var currentEvents = _smartReaderTagEventsListBatch.Values;
+                        //var expiredEvents = _smartReaderTagEventsListBatch.Values.Where(t => (long)t["tag_reads"]["firstSeenTimestamp"] <= expiredEventTimestamp);
+                        //var existingEventOnCurrentAntenna = (JObject)(retrievedValue["tag_reads"].FirstOrDefault(q => (long)q["antennaPort"] == tagRead.AntennaPort));
+
+                        foreach (JObject currentEvent in currentEvents)
                         {
-                            long firstSeenTimestamp = currentEventItem["firstSeenTimestamp"].Value<long>() / 1000;
-                            string expiredEpc = currentEventItem["epc"].Value<string>();
-                            var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(firstSeenTimestamp);
-
-                            var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
-                            if (timeDiff.TotalSeconds > expirationInSec)
+                            foreach (JObject currentEventItem in currentEvent["tag_reads"])
                             {
+                                long firstSeenTimestamp = currentEventItem["firstSeenTimestamp"].Value<long>() / 1000;
+                                string expiredEpc = currentEventItem["epc"].Value<string>();
+                                var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(firstSeenTimestamp);
 
-                                JObject eventToRemove = null;
-                                if (_smartReaderTagEventsListBatch.TryGetValue(expiredEpc, out eventToRemove))
+                                var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
+                                if (timeDiff.TotalSeconds > expirationInSec)
                                 {
-                                    if (eventToRemove != null)
+
+                                    JObject eventToRemove = null;
+                                    if (_smartReaderTagEventsListBatch.TryGetValue(expiredEpc, out eventToRemove))
                                     {
-                                        if (_smartReaderTagEventsListBatch.ContainsKey(expiredEpc))
+                                        if (eventToRemove != null)
                                         {
-
-                                            if (_smartReaderTagEventsListBatch.TryRemove(expiredEpc, out eventToRemove))
+                                            if (_smartReaderTagEventsListBatch.ContainsKey(expiredEpc))
                                             {
-                                                _logger.LogInformation($"Expired EPC detected {timeDiff.TotalSeconds}: {expiredEpc} - firstSeenTimestamp: {dateTimeOffsetLastSeenTimestamp.ToString("o")}, current timestamp: {dateTimeOffsetCurrentEventTimestamp.ToString("o")} current timeout set {expirationInSec}");
+
+                                                if (_smartReaderTagEventsListBatch.TryRemove(expiredEpc, out eventToRemove))
+                                                {
+                                                    _logger.LogInformation($"Expired EPC detected {timeDiff.TotalSeconds}: {expiredEpc} - firstSeenTimestamp: {dateTimeOffsetLastSeenTimestamp.ToString("o")}, current timestamp: {dateTimeOffsetCurrentEventTimestamp.ToString("o")} current timeout set {expirationInSec}");
+                                                }
                                             }
+
+                                            if (!_smartReaderTagEventsAbsence.ContainsKey(expiredEpc))
+                                            {
+                                                _logger.LogInformation($"On-Change event requested for expired EPC: {expiredEpc}");
+                                                _smartReaderTagEventsAbsence.TryAdd(expiredEpc, eventToRemove);
+
+                                            }
+
                                         }
-
-                                        if (!_smartReaderTagEventsAbsence.ContainsKey(expiredEpc))
-                                        {
-                                            _logger.LogInformation($"On-Change event requested for expired EPC: {expiredEpc}");
-                                            _smartReaderTagEventsAbsence.TryAdd(expiredEpc, eventToRemove);
-
-                                        }
-
                                     }
                                 }
                             }
                         }
-                    }
 
-                    if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
-                            StringComparison.OrdinalIgnoreCase) && _smartReaderTagEventsAbsence.Any())
-                    {
-                        JObject smartReaderTagReadEvent;
-                        JObject smartReaderTagReadEventAggregated = null;
-                        var smartReaderTagReadEventsArray = new JArray();
-
-                        foreach (var tagEpcToRemove in _smartReaderTagEventsAbsence.Keys)
+                        if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
+                                StringComparison.OrdinalIgnoreCase) && _smartReaderTagEventsAbsence.Any())
                         {
-                            JObject expiredTagEvent = null;
+                            JObject smartReaderTagReadEvent;
+                            JObject smartReaderTagReadEventAggregated = null;
+                            var smartReaderTagReadEventsArray = new JArray();
 
-                            if (_smartReaderTagEventsListBatch.ContainsKey(tagEpcToRemove))
+                            foreach (var tagEpcToRemove in _smartReaderTagEventsAbsence.Keys)
                             {
-                                _smartReaderTagEventsListBatch.TryRemove(tagEpcToRemove, out expiredTagEvent);
+                                JObject expiredTagEvent = null;
+
+                                if (_smartReaderTagEventsListBatch.ContainsKey(tagEpcToRemove))
+                                {
+                                    _smartReaderTagEventsListBatch.TryRemove(tagEpcToRemove, out expiredTagEvent);
+                                }
+
                             }
 
-                        }
+                            _smartReaderTagEventsAbsence.Clear();
 
-                        _smartReaderTagEventsAbsence.Clear();
-
-                        if (_smartReaderTagEventsListBatch.Count > 0)
-                        {
-                            foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
+                            if (_smartReaderTagEventsListBatch.Count > 0)
                             {
-                                smartReaderTagReadEvent = smartReaderTagReadEventBatch;
-                                try
+                                foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
                                 {
-                                    if (smartReaderTagReadEvent == null)
-                                        continue;
-                                    if (smartReaderTagReadEventAggregated == null)
+                                    smartReaderTagReadEvent = smartReaderTagReadEventBatch;
+                                    try
                                     {
-                                        smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
-                                        smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                            .FirstOrDefault().FirstOrDefault());
-                                    }
-                                    else
-                                    {
-                                        try
+                                        if (smartReaderTagReadEvent == null)
+                                            continue;
+                                        if (smartReaderTagReadEventAggregated == null)
                                         {
+                                            smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
                                             smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
                                                 .FirstOrDefault().FirstOrDefault());
                                         }
-                                        catch (Exception ex)
+                                        else
                                         {
-                                            _logger.LogInformation(ex,
-                                                "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                            try
+                                            {
+                                                smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                                    .FirstOrDefault().FirstOrDefault());
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                _logger.LogInformation(ex,
+                                                    "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                            }
                                         }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                    }
+                                }
+                                try
+                                {
+                                    if (smartReaderTagReadEventAggregated != null && smartReaderTagReadEventsArray != null &&
+                                        smartReaderTagReadEventsArray.Count > 0)
+                                    {
+                                        smartReaderTagReadEventAggregated["tag_reads"] = smartReaderTagReadEventsArray;
+
+                                        await ProcessMqttJsonTagEventDataAsync(smartReaderTagReadEventAggregated);
                                     }
                                 }
                                 catch (Exception ex)
@@ -4592,54 +4650,47 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
                                 }
                             }
-                            try
+                            else
                             {
-                                if (smartReaderTagReadEventAggregated != null && smartReaderTagReadEventsArray != null &&
-                                    smartReaderTagReadEventsArray.Count > 0)
-                                {
-                                    smartReaderTagReadEventAggregated["tag_reads"] = smartReaderTagReadEventsArray;
+                                // generate empty event...
 
-                                    await ProcessMqttJsonTagEventDataAsync(smartReaderTagReadEventAggregated);
+
+                                var emptyTagData = new SmartReaderTagReadEvent();
+                                emptyTagData.ReaderName = _standaloneConfigDTO.readerName;
+                                emptyTagData.Mac = _iotDeviceInterfaceClient.MacAddress;
+                                emptyTagData.TagReads = new List<TagRead>();
+                                JObject emptyTagDataObject = JObject.FromObject(emptyTagData);
+                                smartReaderTagReadEventsArray.Add(emptyTagDataObject);
+
+                                try
+                                {
+
+                                    await ProcessMqttJsonTagEventDataAsync(emptyTagDataObject);
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
                                 }
                             }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                            }
-                        }
-                        else
-                        {
-                            // generate empty event...
 
 
-                            var emptyTagData = new SmartReaderTagReadEvent();
-                            emptyTagData.ReaderName = _standaloneConfigDTO.readerName;
-                            emptyTagData.Mac = _iotDeviceInterfaceClient.MacAddress;
-                            emptyTagData.TagReads = new List<TagRead>();
-                            JObject emptyTagDataObject = JObject.FromObject(emptyTagData);
-                            smartReaderTagReadEventsArray.Add(emptyTagDataObject);
-
-                            try
-                            {
-
-                                await ProcessMqttJsonTagEventDataAsync(emptyTagDataObject);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                            }
                         }
 
 
                     }
+                    catch (Exception)
+                    {
 
 
+                    }
                 }
-                catch (Exception)
+                else
                 {
-
-
+                    _smartReaderTagEventsAbsence.Clear();
+                    _smartReaderTagEventsListBatch.Clear();
+                    _smartReaderTagEventsAbsence.Clear();
                 }
+                
             }
         }
         catch (Exception)
@@ -10900,7 +10951,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             break;
                         }
                         var resultImageUpgrade = rshell.SendCommand("config image upgrade " + imageRemoteUrl);
-                        File.WriteAllText("/tmp/upgrading", "1");
+                        File.WriteAllText("/customer/upgrading", "1");
                         File.WriteAllText("/customer/upgrade_config.sh", $"url_download=\"{imageRemoteUrl}\"");
                         _logger.LogInformation(resultImageUpgrade);
 

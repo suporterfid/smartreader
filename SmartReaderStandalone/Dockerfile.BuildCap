@@ -13,7 +13,7 @@ WORKDIR /etk
 RUN chmod 777 /etk
 COPY etk_tools/8.1.0_Octane_Embedded_Development_Tools.tar.gz /etk/
 RUN tar -xvzf /etk/8.1.0_Octane_Embedded_Development_Tools.tar.gz
-COPY bin/Release/net6.0/publish/* /etk/cap/
+COPY bin/Release/net7.0/publish/* /etk/cap/
 COPY cap_template/* /etk/cap/ 
 RUN mv /etk/cap/cap_gen.sh /etk/cap_gen.sh
 RUN mv /etk/cap/cap_description.in /etk/cap_description.in

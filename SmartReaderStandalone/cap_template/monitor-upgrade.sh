@@ -26,7 +26,7 @@ while true; do
     # Reload the configuration at the end of each loop iteration
     load_config
 
-    if [ -f /tmp/upgrading ] ; then
+    if [ -f /customer/upgrading ] ; then
         # Make the HTTP GET request using curl with SSL certificate validation and basic authentication
         response=$(curl -s -k -u "$username:$password" "$url_upgrade")
 
@@ -36,28 +36,45 @@ while true; do
         # Check the value of the "status" property and print the result
         if [ "$status" = "successful" ]; then
             echo "upgrade succeeded."
+            /usr/bin/logger -p user.notice "upgrade succeeded."
         #response=$(curl -s -k -u "$username:$password" "$url_reboot")
-        curl -X POST -H "Content-Type: application/json" -d '{}' -k -u "$username:$password" "$url_reboot"
+            curl -X POST -H "Content-Type: application/json" -d '{}' -k -u "$username:$password" "$url_reboot"
         elif [ "$status" = "verifying" ]; then
             echo "verifying upgrade."    
+            /usr/bin/logger -p user.notice "verifying upgrade."
+        elif [ "$status" = "ready" ]; then
+            echo "ready state detected, rebooting."    
+            /usr/bin/logger -p user.notice "ready state detected, rebooting."
+            curl -X POST -H "Content-Type: application/json" -d '{}' -k -u "$username:$password" "$url_reboot"
         elif [ "$status" = "installing" ]; then
             echo "installing upgrade."
+            /usr/bin/logger -p user.notice "installing upgrade."
+                            (( count = count + 1 ))
         elif [ "$status" = "failed" ]; then
-            try_counter=$((try_counter + 1))
+            try_counter=$((try_counter+1))
             echo "upgrade failed."
+            /usr/bin/logger -p user.notice "upgrade failed."
             echo "$try_counter"
-            if [ "$try_counter" -gt 5 ]; then
+            /usr/bin/logger -p user.notice "tried $try_counter times"
+            if [ "$try_counter" -gt 4 ]; then
               echo "The script has tried more than $try_counter times, rebooting."
+              /usr/bin/logger -p user.notice "The script has tried more than $try_counter times, rebooting."
+              curl -X POST -H "Content-Type: application/json" -d '{}' -k -u "$username:$password" "$url_reboot"
             else
                 echo "config image upgrade $url_download"
+                /usr/bin/logger -p user.notice "config image upgrade $url_download"                
                 /opt/ys/rshell -c "config image upgrade $url_download"
                 echo "retrying..."
+                /usr/bin/logger -p user.notice "retrying..."
             fi
         else
-        echo "Unknown status: $status"
+            echo "Unknown status: $status, rebooting."
+            /usr/bin/logger -p user.notice "Unknown status: $status, rebooting."
+            curl -X POST -H "Content-Type: application/json" -d '{}' -k -u "$username:$password" "$url_reboot"
         fi
     fi
+   
 
     # Sleep for a while before the next iteration
-    sleep 5
+    sleep 2
 done

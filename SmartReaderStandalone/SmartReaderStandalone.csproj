@@ -77,6 +77,9 @@
 		<None Update="cap_template\monitor-upgrade.sh">
 		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
+		<None Update="cap_template\plugins\LibConnect.dll">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
 		<None Update="cap_template\start">
 		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
@@ -88,6 +91,9 @@
 		</None>
 		<None Update="Impinj.Atlas.dll">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+		<None Update="plugins\LibConnect.dll">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
 
@@ -181,8 +187,6 @@
 
 	<ItemGroup>
 	  <Folder Include="cap_deploy\" />
-	  <Folder Include="cap_template\plugins\" />
-	  <Folder Include="plugins\" />
 	  <Folder Include="wwwroot\licenses\" />
 	</ItemGroup>
 

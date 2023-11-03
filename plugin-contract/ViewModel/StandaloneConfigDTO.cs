@@ -307,6 +307,10 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
     public string mqttControlResponseRetainMessages { get; set; } = "false";
 
+    public string mqttLwtTopic { get; set; } = "/connection/{deviceId}";
+
+    public string mqttLwtQoS { get; set; } = "1";
+
     public string mqttUsername { get; set; } = "";
 
     public string mqttPassword { get; set; } = "";
@@ -619,7 +623,9 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
     public string systemDisableImageFallbackStatus { get; set; } = "0";
 
-    
+    public string smartreaderEnabledForManagementOnly { get; set; } = "0";
+
+
 
 
 
@@ -980,6 +986,12 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
         if (!mqttControlResponseQoS.Equals(otherStandaloneConfigDTO.mqttControlResponseQoS)) return false;
 
         if (!mqttControlResponseRetainMessages.Equals(otherStandaloneConfigDTO.mqttControlResponseRetainMessages))
+            return false;
+
+        if (!mqttLwtTopic.Equals(otherStandaloneConfigDTO.mqttLwtTopic))
+            return false;
+
+        if (!mqttLwtQoS.Equals(otherStandaloneConfigDTO.mqttLwtQoS))
             return false;
 
         if (!mqttUsername.Equals(otherStandaloneConfigDTO.mqttUsername)) return false;
@@ -1457,7 +1469,10 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
         if (!systemDisableImageFallbackStatus.Equals(otherStandaloneConfigDTO.systemDisableImageFallbackStatus)) return false;
 
+        if (!smartreaderEnabledForManagementOnly.Equals(otherStandaloneConfigDTO.smartreaderEnabledForManagementOnly)) return false;
         
+
+
 
 
 
@@ -1758,6 +1773,10 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
             config.mqttControlResponseQoS = HttpUtility.UrlDecode(config.mqttControlResponseQoS);
 
             config.mqttControlResponseRetainMessages = HttpUtility.UrlDecode(config.mqttControlResponseRetainMessages);
+
+            config.mqttLwtTopic = HttpUtility.UrlDecode(config.mqttLwtTopic);
+
+            config.mqttLwtQoS = HttpUtility.UrlDecode(config.mqttLwtQoS);
 
             config.mqttUsername = HttpUtility.UrlDecode(config.mqttUsername);
 
@@ -2110,7 +2129,9 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
             config.systemDisableImageFallbackStatus = HttpUtility.UrlDecode(config.systemDisableImageFallbackStatus);
 
-            
+            config.smartreaderEnabledForManagementOnly = HttpUtility.UrlDecode(config.smartreaderEnabledForManagementOnly);
+
+
 
 
 

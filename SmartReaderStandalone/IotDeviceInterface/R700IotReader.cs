@@ -586,7 +586,34 @@ internal class R700IotReader : IR700IotReader
 
         public Task<ReaderStatus> GetStatusAsync()
         {
-            return _iotDeviceInterfaceClient.StatusAsync();
+            var readerStatus = new ReaderStatus();
+            var systemInfo = _iotDeviceInterfaceClient.SystemAsync().Result;
+
+            var currentInterface =  _iotDeviceInterfaceClient.SystemRfidInterfaceGetAsync().Result;
+            if(currentInterface.RfidInterface1 == RfidInterface1.Rest)
+            {
+                readerStatus = _iotDeviceInterfaceClient.StatusAsync().Result;
+            }
+            else
+            {
+                var llrpStatus = _iotDeviceInterfaceClient.SystemRfidLlrpAsync().Result;
+                readerStatus.Status = new ReaderStatusStatus();
+                if(llrpStatus.LlrpRfidStatus == LlrpStatusLlrpRfidStatus.Active)
+                {
+                    readerStatus.Status = ReaderStatusStatus.Running;
+                }
+                else
+                {
+                    readerStatus.Status = ReaderStatusStatus.Idle;
+                }
+
+                readerStatus.SerialNumber = systemInfo.SerialNumber;
+                readerStatus.Time = DateTime.Now;
+                
+            }
+            //_iotDeviceInterfaceClient.SystemRfidLlrpAsync();
+
+            return Task.FromResult(readerStatus);
         }
 
         public Task<SystemInfo> GetSystemInfoAsync()

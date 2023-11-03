@@ -76,7 +76,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private static int _positioningExpirationInSec = 3;
 
-    private static IR700IotReader _iotDeviceInterfaceClient;
+    private static IR700IotReader? _iotDeviceInterfaceClient;
 
     private static string _readerUsername = "root";
     private static string _readerPassword = "impinj";
@@ -1011,7 +1011,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     _expectedItems.Clear();
                                     string[] epcArray = Array.Empty<string>();
-                                    Dictionary<string, SkuSummary> skuSummaryList = new Dictionary<string, SkuSummary>();
+                                    Dictionary<string, SkuSummary> skuSummaryList = new();
                                     var itemsFromExternalApi = _plugins[_standaloneConfigDTO.activePlugin].ExternalApiSearch(LastValidBarcode, skuSummaryList, epcArray);
                                     if (itemsFromExternalApi.Any())
                                     {
@@ -1420,7 +1420,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         if (_iotDeviceInterfaceClient == null)
             _iotDeviceInterfaceClient =
                 new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
-
+        
         var readerStatus = await _iotDeviceInterfaceClient.GetStatusAsync();
         if (!_iotDeviceInterfaceClient.IsNetworkConnected)
         {
@@ -1451,78 +1451,74 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _iotDeviceInterfaceClient =
                 new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
 
-        try
+        if (_standaloneConfigDTO != null
+                            && !string.IsNullOrEmpty(_standaloneConfigDTO.smartreaderEnabledForManagementOnly)
+                            && !"1".Equals(_standaloneConfigDTO.smartreaderEnabledForManagementOnly))
         {
-            _oldReadEpcList.Clear();
-        }
-        catch (Exception)
-        {
-        }
-
-        try
-        {
-            _iotDeviceInterfaceClient.TagInventoryEvent -= OnTagInventoryEvent;
-            _iotDeviceInterfaceClient.GpiTransitionEvent -= OnGpiTransitionEvent;
-            await _iotDeviceInterfaceClient.StopAsync();
-        }
-        catch (Exception)
-        {
-        }
-
-        try
-        {
-            _iotDeviceInterfaceClient.TagInventoryEvent += OnTagInventoryEvent;
-            _iotDeviceInterfaceClient.GpiTransitionEvent += OnGpiTransitionEvent;
-        }
-        catch (Exception)
-        {
-        }
-
-        //_isStarted = true;
-
-        try
-        {
-            await ApplySettingsAsync();
-            _ = ProcessGpoErrorPortRecoveryAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogInformation("Error applying settings. " + ex.Message);
-            await ProcessGpoErrorPortAsync();
-        }
-
-        //try
-        //{
-        //    await _iotDeviceInterfaceClient.StartPresetAsync("SmartReader");
-        //}
-        //catch (Exception)
-        //{
-        //}
-
-        try
-        {
-            await _iotDeviceInterfaceClient.StartAsync("SmartReader");
-        }
-        catch (Exception)
-        {
-            if (_standaloneConfigDTO.isEnabled == "1" ) SaveStartCommandToDb();
-        }
-
-        try
-        {
-            if (_standaloneConfigDTO != null
-                && string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
+            try
             {
-                using var scope = Services.CreateScope();
-                var summaryQueueBackgroundService = scope.ServiceProvider.GetRequiredService<ISummaryQueueBackgroundService>();
-                summaryQueueBackgroundService.StartQueue();
+                _oldReadEpcList.Clear();
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                _iotDeviceInterfaceClient.TagInventoryEvent -= OnTagInventoryEvent;
+                _iotDeviceInterfaceClient.GpiTransitionEvent -= OnGpiTransitionEvent;
+                await _iotDeviceInterfaceClient.StopAsync();
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                _iotDeviceInterfaceClient.TagInventoryEvent += OnTagInventoryEvent;
+                _iotDeviceInterfaceClient.GpiTransitionEvent += OnGpiTransitionEvent;
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                await ApplySettingsAsync();
                 _ = ProcessGpoErrorPortRecoveryAsync();
             }
+            catch (Exception ex)
+            {
+                _logger.LogInformation("Error applying settings. " + ex.Message);
+                await ProcessGpoErrorPortAsync();
+            }
+
+            try
+            {
+                await _iotDeviceInterfaceClient.StartAsync("SmartReader");
+            }
+            catch (Exception)
+            {
+                if (_standaloneConfigDTO.isEnabled == "1") SaveStartCommandToDb();
+            }
+
+            try
+            {
+                if (_standaloneConfigDTO != null
+                    && string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
+                {
+                    using var scope = Services.CreateScope();
+                    var summaryQueueBackgroundService = scope.ServiceProvider.GetRequiredService<ISummaryQueueBackgroundService>();
+                    summaryQueueBackgroundService.StartQueue();
+                    _ = ProcessGpoErrorPortRecoveryAsync();
+                }
+            }
+            catch (Exception)
+            {
+                await ProcessGpoErrorPortAsync();
+            }
         }
-        catch (Exception)
-        {
-            await ProcessGpoErrorPortAsync();
-        }
+            
     }
 
     public async Task StopPresetAsync()
@@ -1530,37 +1526,44 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         if (_iotDeviceInterfaceClient == null)
             _iotDeviceInterfaceClient =
                 new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
-        try
-        {
-            await _iotDeviceInterfaceClient.StopPresetAsync();
-        }
-        catch (Exception)
-        {
-            //await ProcessGpoErrorPortAsync();
-        }
 
-        try
+        if(_standaloneConfigDTO != null
+                            && !string.IsNullOrEmpty(_standaloneConfigDTO.smartreaderEnabledForManagementOnly)
+                            && !"1".Equals(_standaloneConfigDTO.smartreaderEnabledForManagementOnly))
         {
-            await _iotDeviceInterfaceClient.StopAsync();
-        }
-        catch (Exception)
-        {
-        }
-
-
-        try
-        {
-            if (_standaloneConfigDTO != null
-                && string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
+            try
             {
-                using var scope = Services.CreateScope();
-                var summaryQueueBackgroundService = scope.ServiceProvider.GetRequiredService<ISummaryQueueBackgroundService>();
-                summaryQueueBackgroundService.StopQueue();
+                await _iotDeviceInterfaceClient.StopPresetAsync();
+            }
+            catch (Exception)
+            {
+                //await ProcessGpoErrorPortAsync();
+            }
+
+            try
+            {
+                await _iotDeviceInterfaceClient.StopAsync();
+            }
+            catch (Exception)
+            {
+            }
+
+
+            try
+            {
+                if (_standaloneConfigDTO != null
+                    && string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
+                {
+                    using var scope = Services.CreateScope();
+                    var summaryQueueBackgroundService = scope.ServiceProvider.GetRequiredService<ISummaryQueueBackgroundService>();
+                    summaryQueueBackgroundService.StopQueue();
+                }
+            }
+            catch (Exception)
+            {
             }
         }
-        catch (Exception)
-        {
-        }
+        
     }
 
     public async Task StartTasksAsync()
@@ -1580,34 +1583,20 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         if (_isStarted)
             try
             {
-                _iotDeviceInterfaceClient.TagInventoryEvent -= OnTagInventoryEvent;
-                _iotDeviceInterfaceClient.GpiTransitionEvent -= OnGpiTransitionEvent;
-                await _iotDeviceInterfaceClient.StopAsync();
+                if (_standaloneConfigDTO != null
+                            && !string.IsNullOrEmpty(_standaloneConfigDTO.smartreaderEnabledForManagementOnly)
+                            && !"1".Equals(_standaloneConfigDTO.smartreaderEnabledForManagementOnly))
+                {
+                    _iotDeviceInterfaceClient.TagInventoryEvent -= OnTagInventoryEvent;
+                    _iotDeviceInterfaceClient.GpiTransitionEvent -= OnGpiTransitionEvent;
+                    await _iotDeviceInterfaceClient.StopAsync();
+                }
+                    
             }
             catch (Exception)
             {
             }
 
-
-        //try
-        //{
-        //    for (int i = 0; i < _gpiPortStates.Keys.Count; i++)
-        //    {
-        //        try
-        //        {
-        //            _gpiPortStates[i] = false;
-        //        }
-        //        catch (Exception)
-        //        {
-
-        //        }
-        //    }
-        //}
-        //catch (Exception)
-        //{
-
-
-        //}
 
 
         try
@@ -1631,30 +1620,35 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
 
         //_isStarted = true;
+        if (_standaloneConfigDTO != null
+                            && !string.IsNullOrEmpty(_standaloneConfigDTO.smartreaderEnabledForManagementOnly)
+                            && !"1".Equals(_standaloneConfigDTO.smartreaderEnabledForManagementOnly))
+        {
+            try
+            {
+                await ApplySettingsAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogInformation(ex, "Error applying settings. " + ex.Message);
+            }
 
-        try
-        {
-            await ApplySettingsAsync();
+            _iotDeviceInterfaceClient.TagInventoryEvent += OnTagInventoryEvent;
+            _iotDeviceInterfaceClient.InventoryStatusEvent += OnInventoryStatusEvent;
+            _iotDeviceInterfaceClient.GpiTransitionEvent += OnGpiTransitionEvent;
+            try
+            {
+                await _iotDeviceInterfaceClient.StartAsync("SmartReader");
+                //await _iotDeviceInterfaceClient.StartPresetAsync("SmartReader");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error starting SmartReader preset, scheduling start command to background worker. " + ex.Message);
+                //if (_standaloneConfigDTO.isEnabled == "1" && _isStarted) SaveStartCommandToDb();
+                if (_standaloneConfigDTO.isEnabled == "1") SaveStartCommandToDb();
+            }
         }
-        catch (Exception ex)
-        {
-            _logger.LogInformation(ex, "Error applying settings. " + ex.Message);
-        }
-
-        _iotDeviceInterfaceClient.TagInventoryEvent += OnTagInventoryEvent;
-        _iotDeviceInterfaceClient.InventoryStatusEvent += OnInventoryStatusEvent;
-        _iotDeviceInterfaceClient.GpiTransitionEvent += OnGpiTransitionEvent;
-        try
-        {
-            await _iotDeviceInterfaceClient.StartAsync("SmartReader");
-            //await _iotDeviceInterfaceClient.StartPresetAsync("SmartReader");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error starting SmartReader preset, scheduling start command to background worker. " + ex.Message);
-            //if (_standaloneConfigDTO.isEnabled == "1" && _isStarted) SaveStartCommandToDb();
-            if (_standaloneConfigDTO.isEnabled == "1" ) SaveStartCommandToDb();
-        }
+            
 
         try
         {
@@ -1720,54 +1714,44 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _iotDeviceInterfaceClient =
                 new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
 
-        try
+        if (_standaloneConfigDTO != null
+                            && !string.IsNullOrEmpty(_standaloneConfigDTO.smartreaderEnabledForManagementOnly)
+                            && !"1".Equals(_standaloneConfigDTO.smartreaderEnabledForManagementOnly))
         {
-            await _iotDeviceInterfaceClient.StopAsync();
-        }
-        catch (Exception)
-        {
-        }
-
-
-        try
-        {
-            await _iotDeviceInterfaceClient.DeleteInventoryPresetAsync("SmartReader");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error cleaning-up previous preset. " + ex.Message);
-        }
-
-        //try
-        //{
-        //    if (_standaloneConfigDTO != null && !string.IsNullOrEmpty(_standaloneConfigDTO.isEnabled))
-        //    {
-        //        _standaloneConfigDTO.isEnabled = "0";
-        //        SaveConfigDtoToDb(_standaloneConfigDTO);
-        //        //var configHelper = new IniConfigHelper();
-        //        //configHelper.SaveDtoToFile(_standaloneConfigDTO);
-
-        //    }
-        //}
-        //catch (Exception ex)
-        //{
-        //    _logger.LogInformation("Error saving state to config file. " + ex.Message, SeverityType.Error);
-
-        //}
-
-        try
-        {
-            if (_standaloneConfigDTO != null
-                && string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
+            try
             {
-                using var scope = Services.CreateScope();
-                var summaryQueueBackgroundService = scope.ServiceProvider.GetRequiredService<ISummaryQueueBackgroundService>();
-                summaryQueueBackgroundService.StartQueue();
+                await _iotDeviceInterfaceClient.StopAsync();
+            }
+            catch (Exception)
+            {
+            }
+
+
+            try
+            {
+                await _iotDeviceInterfaceClient.DeleteInventoryPresetAsync("SmartReader");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error cleaning-up previous preset. " + ex.Message);
+            }
+
+            try
+            {
+                if (_standaloneConfigDTO != null
+                    && string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
+                {
+                    using var scope = Services.CreateScope();
+                    var summaryQueueBackgroundService = scope.ServiceProvider.GetRequiredService<ISummaryQueueBackgroundService>();
+                    summaryQueueBackgroundService.StartQueue();
+                }
+            }
+            catch (Exception)
+            {
             }
         }
-        catch (Exception)
-        {
-        }
+
+
         StopTcpBarcodeClient();
         StopTcpSocketServer();
         StopUdpServer();
@@ -3476,15 +3460,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     }
 
 
-    private async void OnTagInventoryEvent(object sender, TagInventoryEvent tagEvent)
+    private async void OnTagInventoryEvent(object sender,
+                                           TagInventoryEvent tagEvent)
     {
         try
         {
             var shouldProcess = false;
-            _logger.LogInformation("EPC Hex: {0} Antenna : {1} LastSeenTime {2}", tagEvent.EpcHex, tagEvent.AntennaPort,
-                tagEvent.LastSeenTime);
+            _logger.LogInformation($"EPC Hex: {tagEvent.EpcHex} Antenna : {tagEvent.AntennaPort} LastSeenTime {tagEvent.LastSeenTime}");
 
-            Task.Run(() => ProcessGpoBlinkAnyTagGpoPortAsync());
+            await Task.Run(() => ProcessGpoBlinkAnyTagGpoPortAsync());
 
 
             if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
@@ -6039,7 +6023,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected error on ProcessSocketJsonTagEventDataAsync " + ex.Message);
+                _logger.LogError(ex, "Unexpected error on ProcessUsbDriveJsonTagEventDataAsync " + ex.Message);
                 ProcessGpoErrorPortAsync();
 
                 //_messageQueueTagSmartReaderTagEventSocketServerRetry.Enqueue(smartReaderTagEventData);
@@ -6055,7 +6039,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             //{
             //    _logger.LogError(exception, "Unexpected error on ProcessSocketJsonTagEventDataAsync");
             //}
-            _logger.LogError(ex, "Unexpected error on ProcessSocketJsonTagEventDataAsync " + ex.Message,
+            _logger.LogError(ex, "Unexpected error on ProcessUsbDriveJsonTagEventDataAsync " + ex.Message,
                 SeverityType.Error);
             ProcessGpoErrorPortAsync();
         }
@@ -6421,7 +6405,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         "OnRunPeriodicTasksJobManagerEvent - Exit due to POST timeout (600 seconds) ");
 
                     await Task.Delay(TimeSpan.FromSeconds(2));
-                    _logger.LogInformation("Restarting process");
+                    _logger.LogInformation("Restarting process - Exit due to POST timeout (600 seconds) ");
                     // Restart the application by spawning a new process with the same arguments
                     var process = Process.GetCurrentProcess();
                     process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
@@ -6664,7 +6648,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             // exits the app
 
                             await Task.Delay(TimeSpan.FromSeconds(2));
-                            _logger.LogInformation("Restarting process");
+                            _logger.LogInformation("Restarting process - status 404");
                             // Restart the application by spawning a new process with the same arguments
                             var process = Process.GetCurrentProcess();
                             process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
@@ -7045,28 +7029,40 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             _iotDeviceInterfaceClient =
                 new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
-            try
+            //
+            if (_standaloneConfigDTO != null
+                            && !string.IsNullOrEmpty(_standaloneConfigDTO.smartreaderEnabledForManagementOnly)
+                            && !"1".Equals(_standaloneConfigDTO.smartreaderEnabledForManagementOnly))
             {
-                _iotDeviceInterfaceClient.UpdateReaderRfidInterface(
-                    RfidInterface.FromJson("{\"rfidInterface\":\"rest\"}"));
-            }
-            catch (Exception)
-            {
+                try
+                {
+                    _iotDeviceInterfaceClient.UpdateReaderRfidInterface(
+                        RfidInterface.FromJson("{\"rfidInterface\":\"rest\"}"));
+                }
+                catch (Exception)
+                {
+                }
             }
 
-
-            try
+            if (_standaloneConfigDTO != null
+                            && !string.IsNullOrEmpty(_standaloneConfigDTO.smartreaderEnabledForManagementOnly)
+                            && !"1".Equals(_standaloneConfigDTO.smartreaderEnabledForManagementOnly))
             {
-                if (_iotDeviceInterfaceClient == null)
-                    _iotDeviceInterfaceClient =
-                        new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                try
+                {
+                    if (_iotDeviceInterfaceClient == null)
+                        _iotDeviceInterfaceClient =
+                            new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
 
-                await _iotDeviceInterfaceClient.StopPresetAsync();
+                    await _iotDeviceInterfaceClient.StopPresetAsync();
 
+                }
+                catch (Exception)
+                {
+                }
             }
-            catch (Exception)
-            {
-            }
+
+            
 
             try
             {
@@ -11461,57 +11457,32 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private MqttApplicationMessage BuildMqttLastWillMessage()
     {
+        var lwtTopic = "/events/";
+        var lwtRetainMessage = true;
+
+        if (_standaloneConfigDTO != null)
+        {
+            if(!string.IsNullOrEmpty(_standaloneConfigDTO.mqttLwtTopic))
+            {
+                lwtTopic = _standaloneConfigDTO.mqttLwtTopic;
+            }
+            if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttLwtQoS))
+            {
+                bool.TryParse(_standaloneConfigDTO.mqttLwtQoS, out lwtRetainMessage);
+            }
+
+        }
         var mqttManagementEvents = new Dictionary<string, string>();
         mqttManagementEvents.Add("smartreader-mqtt-status", "disconnected");
         var jsonParam = JsonConvert.SerializeObject(mqttManagementEvents);
 
         var lastWillMessage = new MqttApplicationMessageBuilder()
-            .WithTopic("/events/")
+            .WithTopic(lwtTopic)
+            .WithRetainFlag(lwtRetainMessage)
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
             .WithPayload(Encoding.ASCII.GetBytes(jsonParam))
             .Build();
-        try
-        {
-            if (_standaloneConfigDTO != null)
-            {
-                var mqttManagementEventsTopic = _standaloneConfigDTO.mqttManagementEventsTopic;
-                if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase)
-                    && !string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementEventsTopic))
-                {
-                    if (_standaloneConfigDTO.mqttManagementEventsTopic.Contains("{{deviceId}}"))
-                        mqttManagementEventsTopic =
-                            _standaloneConfigDTO.mqttControlResponseTopic.Replace("{{deviceId}}",
-                                _standaloneConfigDTO.readerName);
-                    var qos = 0;
-                    var retain = false;
-                    var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
-                    try
-                    {
-                        int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
-                        bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
 
-                        mqttQualityOfServiceLevel = qos switch
-                        {
-                            1 => MqttQualityOfServiceLevel.AtLeastOnce,
-                            2 => MqttQualityOfServiceLevel.ExactlyOnce,
-                            _ => MqttQualityOfServiceLevel.AtMostOnce
-                        };
-                    }
-                    catch (Exception)
-                    {
-                    }
-
-                    lastWillMessage = new MqttApplicationMessageBuilder()
-                        .WithTopic(mqttManagementEventsTopic)
-                        .WithPayload(Encoding.ASCII.GetBytes(jsonParam))
-                        .WithQualityOfServiceLevel(mqttQualityOfServiceLevel)
-                        .WithRetainFlag(retain)
-                        .Build();
-                }
-            }
-        }
-        catch (Exception)
-        {
-        }
 
         return lastWillMessage;
     }
@@ -12573,6 +12544,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _logger.LogError(ex, "Unexpected error on SavePositioningDataAsync. " + ex.Message);
         }
     }
+
+    //public PostioningEpcs? GetPositioningEpc()
+    //{
+    //    return positioningEpc;
+    //}
 
     public async Task<TagReadPositioning> GetPositioningDataToReportAsync(string epc)
     {

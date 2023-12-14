@@ -53,7 +53,7 @@ public class UDPSocket
                 var data = Encoding.ASCII.GetBytes(text);
                 _socket.BeginSend(data, 0, data.Length, SocketFlags.None, ar =>
                 {
-                    var so = (State) ar.AsyncState;
+                    var so = (State)ar.AsyncState;
                     var bytes = _socket.EndSend(ar);
                     var remoteEndPoint = "";
                     if (_socket.RemoteEndPoint != null) remoteEndPoint = _socket.RemoteEndPoint.ToString();
@@ -108,7 +108,7 @@ public class UDPSocket
         {
             try
             {
-                var so = (State) ar.AsyncState;
+                var so = (State)ar.AsyncState;
                 var bytes = _socket.EndReceiveFrom(ar, ref epFrom);
 
                 _socket.BeginReceiveFrom(so.buffer, 0, bufSize, SocketFlags.None, ref epFrom, recv, so);

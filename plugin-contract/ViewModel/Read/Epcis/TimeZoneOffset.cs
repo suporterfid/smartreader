@@ -36,6 +36,6 @@ public class TimeZoneOffset
         var sign = value[0] == '-' ? -1 : +1;
         var parts = value.Split(':');
 
-        return (short) (sign * (Math.Abs(int.Parse(parts[0])) * 60 + int.Parse(parts[1])));
+        return (short)(sign * (Math.Abs(int.Parse(parts[0])) * 60 + int.Parse(parts[1])));
     }
 }

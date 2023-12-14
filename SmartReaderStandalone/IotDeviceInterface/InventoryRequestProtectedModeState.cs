@@ -8,9 +8,9 @@
 //
 //****************************************************************************************************
 #endregion
-using System.Globalization;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using System.Globalization;
 
 namespace SmartReader.IotDeviceInterface;
 

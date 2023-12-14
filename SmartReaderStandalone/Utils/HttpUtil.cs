@@ -8,12 +8,6 @@
 //
 //****************************************************************************************************
 #endregion
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Net.Mime;
-using System.Net.Security;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RestSharp;
@@ -22,9 +16,13 @@ using Serilog;
 using SmartReaderJobs.ViewModel.Antenna;
 using SmartReaderJobs.ViewModel.Events;
 using SmartReaderJobs.ViewModel.Mqtt;
-using SmartReaderJobs.ViewModel.Mqtt.Endpoint;
 using SmartReaderJobs.ViewModel.Reader;
 using SmartReaderJobs.ViewModel.ReaderCommand;
+using System.Net.Http.Headers;
+using System.Net.Mime;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 namespace SmartReaderJobs.Utils;
 
@@ -462,7 +460,7 @@ public class HttpUtil
         //var bodyRequest = "{\"login\": \"inventario\",\"password\": \"inventario\"}";
 
         var client = new RestClient(url);
-        
+
         //var request = new RestSharp.RestRequest();
         var request = new RestRequest(actionPath, Method.Post);
         //{
@@ -495,12 +493,12 @@ public class HttpUtil
         var returnedData = "";
         try
         {
-            
+
             var httpClient = _httpClientFactory.CreateClient();
-            
+
             //httpClient.DefaultRequestHeaders.ExpectContinue = true;
             httpClient.Timeout = TimeSpan.FromSeconds(3);
-            
+
             var param = JsonConvert.SerializeObject(bodyRequest);
             var completeUrl = "";
 
@@ -530,7 +528,7 @@ public class HttpUtil
             if (!string.IsNullOrEmpty(authHeader) && !string.IsNullOrEmpty(authHeaderValue))
                 request.Headers.Add(authHeader, authHeaderValue);
 
-            
+
             httpClient.DefaultRequestHeaders
                 .Accept
                 .Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -572,14 +570,14 @@ public class HttpUtil
             Log.Debug(content);
             Console.WriteLine(content);
             var statusCode = (int)response.StatusCode;
-            
+
             returnedData = statusCode + " - " + content;
             //if (checkResult)
             //    returnedData = response.StatusCode + " - " + content;
             //else
             //    returnedData = content;
 
-            Log.Debug("returnedData: "+ returnedData);
+            Log.Debug("returnedData: " + returnedData);
 
         }
         catch (Exception ex)
@@ -695,7 +693,7 @@ public class HttpUtil
                     var fileContent = new StreamContent(filestream);
                     //fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
                     //fileContent.Headers.ContentType = new MediaTypeHeaderValue("multipart/form-data");
-                    
+
 
                     var localFilename = Path.GetFileName(localFile);
                     // Add the file content to the form data
@@ -764,7 +762,7 @@ public class HttpUtil
 
             throw;
         }
-        
+
         return returnedData;
     }
 

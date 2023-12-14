@@ -8,9 +8,9 @@
 //
 //****************************************************************************************************
 #endregion
-using System.Globalization;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using System.Globalization;
 
 namespace SmartReaderJobs.ViewModel.Reader;
 
@@ -212,7 +212,7 @@ internal class ParseStringConverter : JsonConverter
             return;
         }
 
-        var value = (long) untypedValue;
+        var value = (long)untypedValue;
         serializer.Serialize(writer, value.ToString());
     }
 }

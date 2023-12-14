@@ -19,7 +19,7 @@ public static class Extensions
         var fi = value.GetType().GetField(value.ToString());
 
         var attributes =
-            (EnumMemberAttribute[]) fi.GetCustomAttributes(typeof(EnumMemberAttribute), false);
+            (EnumMemberAttribute[])fi.GetCustomAttributes(typeof(EnumMemberAttribute), false);
 
         if (attributes != null && attributes.Length > 0)
             return attributes[0].Value;

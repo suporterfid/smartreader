@@ -8,23 +8,11 @@
 //
 //****************************************************************************************************
 #endregion
-using System.Diagnostics;
-using System.Net;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Net.Security;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Http;
-using MQTTnet.Server;
 using MQTTnet;
+using MQTTnet.Server;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Serilog;
@@ -40,13 +28,19 @@ using SmartReaderStandalone.Services;
 using SmartReaderStandalone.Utils;
 using SmartReaderStandalone.ViewModel;
 using SmartReaderStandalone.ViewModel.Status;
-using Endpoint = SmartReaderJobs.ViewModel.Mqtt.Endpoint.Endpoint;
-using ILogger = Microsoft.Extensions.Logging.ILogger;
-using JsonSerializer = System.Text.Json.JsonSerializer;
-using System.IO;
+using System.Diagnostics;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Security;
 using System.Runtime.Loader;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using Endpoint = SmartReaderJobs.ViewModel.Mqtt.Endpoint.Endpoint;
+using JsonSerializer = System.Text.Json.JsonSerializer;
 
-if(File.Exists("/customer/upgrading"))
+if (File.Exists("/customer/upgrading"))
 {
     Environment.Exit(0);
 }
@@ -55,31 +49,8 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
     .CreateBootstrapLogger();
 
-//var configuration = new ConfigurationBuilder()
-//    .AddJsonFile("appsettings.json")
-//    .Build();
-
-//// Get the current build configuration
-//string buildConfiguration = "Release"; // Default to Debug if unable to determine
-//#if DEBUG
-//    buildConfiguration = "Debug";
-//#endif
-
-
-//// Get the value based on the build configuration
-//if("Debug".Equals(buildConfiguration))
-//{
-//    var debugAddress = configuration.GetValue<string>("ReaderInfo:DebugAddress");
-//    string mySettingValue = configuration["ReaderInfo:Address"] = debugAddress;
-
-//}
-
 
 var builder = WebApplication.CreateBuilder(args);
-
-//builder.Host.UseSerilog((ctx, lc) => lc
-//        .WriteTo.Console()
-//        .ReadFrom.Configuration(ctx.Configuration));
 
 builder.Host.UseSerilog((ctx, lc) => lc
     .WriteTo.Console()
@@ -89,8 +60,6 @@ builder.Host.UseSerilog((ctx, lc) => lc
         "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}",
         fileSizeLimitBytes: 102400, rollOnFileSizeLimit: true, retainedFileCountLimit: 2));
 
-
-//builder.Services.AddLogging();
 // Register the Serilog logger with DI
 builder.Services.AddLogging(loggingBuilder =>
 {
@@ -101,17 +70,7 @@ builder.Services.AddControllers();
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddHttpClient();
-//builder.Services.AddHttpClient("smartreaderHttpClient", client =>
-//{
-//    client.BaseAddress = new Uri("https://localhost");
-//});
-//builder.Services.Configure<HttpClientFactoryOptions>("smartreaderHttpClient", options =>
-//{
-//    options.HttpClientHandler = new HttpClientHandler
-//    {
-//        Proxy = new WebProxy("http://proxy.example.com:8888") // Replace with your proxy URL and port
-//    };
-//});
+
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -135,12 +94,8 @@ builder.WebHost.ConfigureKestrel(opt =>
 {
     opt.ListenAnyIP(8443, listOpt => { listOpt.UseHttps(@"/customer/localhost.pfx", "r700"); });
 });
-//builder.Services.AddRouting();
-//builder.Services.AddHostedService<SummaryQueueBackgroundService>();
-//builder.Services.AddHostedService<IotInterfaceService>();
 builder.Services.AddSingleton<IotInterfaceService>();
 builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvider => serviceProvider.GetService<IotInterfaceService>());
-//builder.Services.AddScoped<IIotInterfaceService, IotInterfaceService>();
 builder.Services.AddScoped<ISummaryQueueBackgroundService, SummaryQueueBackgroundService>();
 
 // Create and start the MQTT servers
@@ -149,7 +104,7 @@ MqttServer tcpMqttServer = null;
 try
 {
     var configDto = ConfigFileHelper.ReadFile();
-    if (configDto != null 
+    if (configDto != null
         && "127.0.0.1".Equals(configDto.mqttBrokerAddress))
     {
         // Configure the MQTT server options for TCP
@@ -166,12 +121,11 @@ try
 catch (Exception)
 {
 
-    
+
 }
 
 var app = builder.Build();
 
-//ILogger logger = app.Services.GetService<ILogger<Program>>();
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
 
 var readerAddress = app.Configuration["ReaderInfo:Address"] ?? "127.0.0.1";
@@ -197,14 +151,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-
-//app.UseCors(x => x
-//        .AllowAnyOrigin()
-//        .AllowAnyMethod()
-//        .AllowAnyHeader());
-
 // custom basic auth middleware
-
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<BasicAuthMiddleware>();
@@ -226,7 +173,6 @@ app.UseStaticFiles(new StaticFileOptions
             ctx.Context.Response.ContentLength = 0;
             ctx.Context.Response.Body = Stream.Null;
             ctx.Context.Response.Headers.Add("WWW-Authenticate", string.Format("Basic realm=\"{0}\"", "R700"));
-            //ctx.Context.Response.Redirect("/");
         }
     }
 });
@@ -242,58 +188,7 @@ if (Directory.Exists("/customer/wwwroot/logs"))
     });
 
 
-//app.MapGet("/api/stream/volumes", async (RuntimeDb db, HttpContext context) =>
-//{
 
-//    async IAsyncEnumerable<List<JsonDocument>> StreamSmartReaderSkuSummaryModelAsync()
-//    {
-
-//        var resp = context.Response;
-//        resp.Headers.ContentType = "text/event-stream";
-//        var keepaliveStopWatch = new Stopwatch();
-//        keepaliveStopWatch.Start();
-//        //var serializer = new JsonSerializer();
-//        while (true)
-//        {
-//            //JObject returnedData;
-//            var dataModel = db.SmartReaderSkuSummaryModels.LastOrDefault();
-//            if (dataModel != null && !string.IsNullOrEmpty(dataModel.Value))
-//            {
-
-//                var json = dataModel.Value;
-
-//                var jsonOject = JsonDocument.Parse(json);
-//                //JObject jsonOject = JObject.Parse(json);
-
-//                var jsonString = JsonSerializer.Serialize(jsonOject);
-//                var returnedData = Regex.Unescape(jsonString);
-
-//                if (returnedData.StartsWith("[")) returnedData = returnedData.Substring(1);
-
-//                db.SmartReaderSkuSummaryModels.Remove(dataModel);
-//                await db.SaveChangesAsync();
-
-//                List<JsonDocument> result = new();
-//                result.Add(jsonOject);
-
-//                yield return result;
-
-//            }
-//            else if (keepaliveStopWatch.IsRunning && keepaliveStopWatch.Elapsed.TotalSeconds > 10)
-//            {
-//                keepaliveStopWatch.Restart();
-//                var jsonOject = JsonDocument.Parse(@"{}");
-//                List<JsonDocument> result = new();
-//                result.Add(jsonOject);
-//                yield return result;
-//            }
-
-//            await Task.Delay(100);
-//        }
-//    }
-
-//    return StreamSmartReaderSkuSummaryModelAsync();
-//});
 
 app.MapGet("/api/stream/volumes", async (RuntimeDb db, HttpContext context) =>
 {
@@ -396,6 +291,31 @@ app.MapGet("/api/stream/tags", async (RuntimeDb db, HttpContext context) =>
 });
 //RequireAuth
 //app.MapGet("/api/settings", [Authorize] async (RuntimeDb db) =>
+
+app.MapGet("/api/restore-default-settings", [AuthorizeBasicAuth]  async (RuntimeDb db, IotInterfaceService backgroundService) =>
+{
+    try
+    {
+        var dtos = new List<StandaloneConfigDTO>();
+
+
+        var configDto = ConfigFileHelper.GetSmartreaderDefaultConfigDTO();
+
+        if(configDto != null)
+        {
+            backgroundService.SaveConfigDtoToDb(configDto);
+            dtos.Add(configDto);
+            return Results.Ok(dtos);
+        }
+
+        return Results.NotFound();
+    }
+    catch (Exception)
+    {
+        return Results.NotFound();
+    }
+});
+
 app.MapGet("/api/settings", [AuthorizeBasicAuth] async (RuntimeDb db) =>
 {
     try
@@ -1588,16 +1508,16 @@ app.MapGet("/api/image", [AuthorizeBasicAuth] async (RuntimeDb db) =>
         foreach (var line in lines)
         {
             logger.LogInformation(line);
-            if(line.ToUpper().Contains("STATUS"))
+            if (line.ToUpper().Contains("STATUS"))
             {
                 continue;
             }
             var lineData = line.Split("=");
-            if(lineData.Length > 1)
+            if (lineData.Length > 1)
             {
                 imageStatus.Add(lineData[0], lineData[1]);
             }
-            
+
         }
     }
     catch (Exception ex)

@@ -9,7 +9,6 @@
 //****************************************************************************************************
 #endregion
 using System.Net;
-using System.Runtime.Serialization.Formatters.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -80,7 +79,7 @@ public class Utils
     public static DateTime GetDateTime(ulong usecondsSinceEpoch)
     {
         var epoc = new DateTime(1970, 1, 1, 0, 0, 0);
-        var ticks = (long) usecondsSinceEpoch * 10 + epoc.Ticks;
+        var ticks = (long)usecondsSinceEpoch * 10 + epoc.Ticks;
         return new DateTime(ticks, DateTimeKind.Utc);
     }
 
@@ -89,7 +88,7 @@ public class Utils
     public static long CSharpMillisToJavaLong(DateTime dateTime)
     {
         var Jan1st1970 = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var diff = (long) (dateTime.ToUniversalTime() - Jan1st1970.ToUniversalTime()).TotalMilliseconds;
+        var diff = (long)(dateTime.ToUniversalTime() - Jan1st1970.ToUniversalTime()).TotalMilliseconds;
         //return diff / 1000;
         return diff;
     }
@@ -97,7 +96,7 @@ public class Utils
     public static long CSharpMillisToJavaLongMicroseconds(DateTime dateTime)
     {
         var Jan1st1970 = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var diff = (long) (dateTime.ToUniversalTime() - Jan1st1970.ToUniversalTime()).TotalMilliseconds;
+        var diff = (long)(dateTime.ToUniversalTime() - Jan1st1970.ToUniversalTime()).TotalMilliseconds;
         return diff * 1000;
     }
 
@@ -122,7 +121,7 @@ public class Utils
         //    3250, 3275, 3300
         //};
 
-        if(string.IsNullOrEmpty(readerModel) || "R700".Equals(readerModel))
+        if (string.IsNullOrEmpty(readerModel) || "R700".Equals(readerModel))
         {
 
             for (int i = 2025; i < 3025; i = i + 25)
@@ -131,7 +130,7 @@ public class Utils
             }
             if (isPoEPlus)
             {
-                if(!operatingRegion.Contains("India") && !operatingRegion.Contains("865"))
+                if (!operatingRegion.Contains("India") && !operatingRegion.Contains("865"))
                 {
                     for (int i = 2025; i < 3325; i = i + 25)
                     {
@@ -145,12 +144,12 @@ public class Utils
                         txTable.Add(i);
                     }
                 }
-                
+
             }
         }
         else
         {
-            if(isPoEPlus && !operatingRegion.Contains("India") && !operatingRegion.Contains("865"))
+            if (isPoEPlus && !operatingRegion.Contains("India") && !operatingRegion.Contains("865"))
             {
                 for (int i = 2025; i < 3325; i = i + 25)
                 {
@@ -225,7 +224,7 @@ public class Utils
     public static List<int> GetDefaultSearchModeTable()
     {
         var list = new List<int>();
-        int[] int_arr = {0, 1, 2, 3, 5, 6};
+        int[] int_arr = { 0, 1, 2, 3, 5, 6 };
 
         list.AddRange(int_arr);
 
@@ -236,22 +235,22 @@ public class Utils
 
 
 
-    public static T DeepClone<T>(T obj)
-    {
-        using (var ms = new MemoryStream())
-        {
+    //    public static T DeepClone<T>(T obj)
+    //    {
+    //        using (var ms = new MemoryStream())
+    //        {
 
-            var formatter = new BinaryFormatter();
-#pragma warning disable SYSLIB0011 // Type or member is obsolete
-            formatter.Serialize(ms, obj);
-#pragma warning restore SYSLIB0011 // Type or member is obsolete
-            ms.Position = 0;
+    //            var formatter = new BinaryFormatter();
+    //#pragma warning disable SYSLIB0011 // Type or member is obsolete
+    //            formatter.Serialize(ms, obj);
+    //#pragma warning restore SYSLIB0011 // Type or member is obsolete
+    //            ms.Position = 0;
 
-#pragma warning disable SYSLIB0011 // Type or member is obsolete
-            return (T) formatter.Deserialize(ms);
-#pragma warning restore SYSLIB0011 // Type or member is obsolete
-        }
-    }
+    //#pragma warning disable SYSLIB0011 // Type or member is obsolete
+    //            return (T) formatter.Deserialize(ms);
+    //#pragma warning restore SYSLIB0011 // Type or member is obsolete
+    //        }
+    //    }
 
     #region Utilities for testing whether a string contains only hex or binary characters
 

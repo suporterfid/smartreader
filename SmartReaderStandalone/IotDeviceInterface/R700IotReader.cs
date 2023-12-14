@@ -8,11 +8,10 @@
 //
 //****************************************************************************************************
 #endregion
-using System;
-using System.Collections.Generic;
+using Impinj.Atlas;
+using Newtonsoft.Json;
 using System.Collections.ObjectModel;
 using System.Net;
-using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.NetworkInformation;
 using System.Net.Security;
@@ -20,8 +19,6 @@ using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.RegularExpressions;
-using Impinj.Atlas;
-using Newtonsoft.Json;
 using NetworkInterface = Impinj.Atlas.NetworkInterface;
 
 namespace SmartReader.IotDeviceInterface;
@@ -76,7 +73,7 @@ internal class R700IotReader : IR700IotReader
     public bool IsNetworkConnected { get; private set; }
 
     public List<string> IpAddresses { get; private set; }
-     
+
 
     public async Task<ReaderStatus> GetStatusAsync()
     {
@@ -84,7 +81,7 @@ internal class R700IotReader : IR700IotReader
         UniqueId = statusAsync.SerialNumber;
         try
         {
-            
+
             var iFaces = await _r700IotEventProcessor.GetReaderSystemNetworkInterfacesAsync();
             if (iFaces != null && iFaces.Any())
             {
@@ -93,11 +90,11 @@ internal class R700IotReader : IR700IotReader
                 if (selectedIfaces != null && selectedIfaces.Any())
                 {
                     var selectedIface = selectedIfaces.FirstOrDefault();
-                    MacAddress = selectedIface.HardwareAddress;                   
+                    MacAddress = selectedIface.HardwareAddress;
                 }
             }
 
-            if(IpAddresses == null)
+            if (IpAddresses == null)
             {
                 IpAddresses = new List<string>();
             }
@@ -109,11 +106,11 @@ internal class R700IotReader : IR700IotReader
             IsNetworkConnected = false;
             foreach (var netInterface in iFaces)
             {
-                if(netInterface != null 
-                    && netInterface.NetworkAddress != null 
+                if (netInterface != null
+                    && netInterface.NetworkAddress != null
                     && netInterface.NetworkAddress.Count > 0)
                 {
-                    if(netInterface.Status == NetworkInterfaceStatus.Connected)
+                    if (netInterface.Status == NetworkInterfaceStatus.Connected)
                     {
                         try
                         {
@@ -122,7 +119,7 @@ internal class R700IotReader : IR700IotReader
                                 foreach (var networkAddress in netInterface.NetworkAddress)
                                 {
                                     string hostName = networkAddress.Gateway;
-                                    if(!string.IsNullOrEmpty(hostName))
+                                    if (!string.IsNullOrEmpty(hostName))
                                     {
                                         PingReply reply = await ping.SendPingAsync(hostName, 1000);
                                         //Console.WriteLine($"Ping status for ({hostName}): {reply.Status}");
@@ -130,21 +127,21 @@ internal class R700IotReader : IR700IotReader
                                         {
                                             IsNetworkConnected = true;
                                         }
-                                    }                                   
+                                    }
                                 }
-                                
-                            }   
+
+                            }
                         }
                         catch (Exception)
                         {
                         }
-                        
+
                     }
                     foreach (var networkAddress in netInterface.NetworkAddress)
                     {
                         IpAddresses.Add(networkAddress.Address);
                     }
-                    
+
                 }
             }
         }
@@ -181,7 +178,7 @@ internal class R700IotReader : IR700IotReader
         //var regionInfo = regionInfoAsync.OperatingRegion;
         return powerInfoAsync;
     }
-   
+
 
     public async Task<SystemInfo> GetSystemInfoAsync()
     {
@@ -506,7 +503,7 @@ internal class R700IotReader : IR700IotReader
             int proxyPort = 8080)
         {
             _hostname = Regex.Replace(hostname, "^https*\\://", "");
-            var num = (uint) hostPort > 0U ? 1 : 0;
+            var num = (uint)hostPort > 0U ? 1 : 0;
             _useHttpAlways = useHttpAlways;
             _useBasicAuthAlways = useBasicAuthAlways;
             var baseUrl1 = num != 0
@@ -517,14 +514,14 @@ internal class R700IotReader : IR700IotReader
             var timeSpan = new TimeSpan(0, 0, 0, 3, 0);
             ServicePointManager.ServerCertificateValidationCallback +=
                 (sender, certificate, chain, sslPolicyErrors) => true;
-            
+
 
             var httpClientHandler = new HttpClientHandler
-            {                
-                
+            {
+
 
                 ServerCertificateCustomValidationCallback =
-                    (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>) ((message, cert,
+                    (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
                         chain, errors) => true)
             };
 
@@ -536,7 +533,7 @@ internal class R700IotReader : IR700IotReader
                 webProxy.BypassProxyOnLocal = true;
                 webProxy.BypassList.Append("169.254.1.1");
                 webProxy.BypassList.Append(hostname);
-                
+
 
                 httpClientHandler = new HttpClientHandler
                 {
@@ -550,7 +547,7 @@ internal class R700IotReader : IR700IotReader
 
             if (useHttpAlways)
             {
-               
+
 
                 _httpClient = new HttpClient(httpClientHandler)
                 {
@@ -558,7 +555,7 @@ internal class R700IotReader : IR700IotReader
                     Timeout = timeSpan
                 };
                 _iotDeviceInterfaceClient = new AtlasClient(baseUrl2, _httpClient);
-                
+
             }
             else
             {
@@ -589,8 +586,8 @@ internal class R700IotReader : IR700IotReader
             var readerStatus = new ReaderStatus();
             var systemInfo = _iotDeviceInterfaceClient.SystemAsync().Result;
 
-            var currentInterface =  _iotDeviceInterfaceClient.SystemRfidInterfaceGetAsync().Result;
-            if(currentInterface.RfidInterface1 == RfidInterface1.Rest)
+            var currentInterface = _iotDeviceInterfaceClient.SystemRfidInterfaceGetAsync().Result;
+            if (currentInterface.RfidInterface1 == RfidInterface1.Rest)
             {
                 readerStatus = _iotDeviceInterfaceClient.StatusAsync().Result;
             }
@@ -598,7 +595,7 @@ internal class R700IotReader : IR700IotReader
             {
                 var llrpStatus = _iotDeviceInterfaceClient.SystemRfidLlrpAsync().Result;
                 readerStatus.Status = new ReaderStatusStatus();
-                if(llrpStatus.LlrpRfidStatus == LlrpStatusLlrpRfidStatus.Active)
+                if (llrpStatus.LlrpRfidStatus == LlrpStatusLlrpRfidStatus.Active)
                 {
                     readerStatus.Status = ReaderStatusStatus.Running;
                 }
@@ -609,7 +606,7 @@ internal class R700IotReader : IR700IotReader
 
                 readerStatus.SerialNumber = systemInfo.SerialNumber;
                 readerStatus.Time = DateTime.Now;
-                
+
             }
             //_iotDeviceInterfaceClient.SystemRfidLlrpAsync();
 
@@ -754,12 +751,12 @@ internal class R700IotReader : IR700IotReader
                         var error = JsonConvert.DeserializeObject<ErrorResponse>(
                             await responseMessage.Content.ReadAsStringAsync());
                         var headersDictionary = responseMessage.Headers.ToDictionary(
-                            (Func<KeyValuePair<string, IEnumerable<string>>, string>) (h => h.Key),
-                            (Func<KeyValuePair<string, IEnumerable<string>>, IEnumerable<string>>) (h => h.Value));
+                            (Func<KeyValuePair<string, IEnumerable<string>>, string>)(h => h.Key),
+                            (Func<KeyValuePair<string, IEnumerable<string>>, IEnumerable<string>>)(h => h.Value));
                         var response = await responseMessage.Content.ReadAsStringAsync();
                         throw new AtlasException(
                             string.Format("Unexpected error ", error.Message, error.InvalidPropertyId),
-                            (int) responseMessage.StatusCode, response, headersDictionary, null);
+                            (int)responseMessage.StatusCode, response, headersDictionary, null);
                     }
                 }
             }

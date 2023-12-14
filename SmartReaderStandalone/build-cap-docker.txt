@@ -1,4 +1,6 @@
-﻿docker compose build smartreader
+﻿docker system prune -a
+
+docker compose build smartreader
 
 docker compose up -d 
 

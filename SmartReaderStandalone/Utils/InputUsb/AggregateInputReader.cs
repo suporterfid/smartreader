@@ -8,7 +8,7 @@
 
         public AggregateInputReader(string filename)
         {
-            if(string.IsNullOrEmpty(filename))
+            if (string.IsNullOrEmpty(filename))
             {
                 var files = Directory.GetFiles("/dev/input/", "event*");
 
@@ -29,7 +29,7 @@
 
                 _readers.Add(reader);
             }
-            
+
         }
 
         private void ReaderOnOnKeyPress(KeyPressEvent e)

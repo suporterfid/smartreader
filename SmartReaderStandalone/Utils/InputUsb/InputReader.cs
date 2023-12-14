@@ -79,7 +79,7 @@ namespace SmartReaderStandalone.Utils.InputUsb
                 var valueHex = hexString.Substring(24, 8);
 
                 //Console.WriteLine($"HID Event HEX: {typeHex} Code:{codeHex} Value:{valueHex}");
-                if("0100".Equals(typeHex))
+                if ("0100".Equals(typeHex))
                 {
                     typeHex = typeHex.Substring(0, 2);
                     codeHex = codeHex.Substring(0, 2);
@@ -92,7 +92,7 @@ namespace SmartReaderStandalone.Utils.InputUsb
 
 
                 var eventType = (EventType)type;
-                if(eventType == 0)
+                if (eventType == 0)
                 {
                     continue;
                 }
@@ -114,8 +114,8 @@ namespace SmartReaderStandalone.Utils.InputUsb
         private void HandleKeyPressEvent(short code, int value)
         {
             var c = (EventCode)code;
-            var s = (KeyState)value;          
-            if(s == KeyState.KeyUp)
+            var s = (KeyState)value;
+            if (s == KeyState.KeyUp)
             {
                 switch (c)
                 {
@@ -675,7 +675,7 @@ namespace SmartReaderStandalone.Utils.InputUsb
                     default:
                         break;
                 }
-                if(c == EventCode.Enter)
+                if (c == EventCode.Enter)
                 {
                     var currentData = _bufferStringBuilder.ToString();
                     _bufferStringBuilder.Clear();

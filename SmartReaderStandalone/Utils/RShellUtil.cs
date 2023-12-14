@@ -28,23 +28,23 @@ namespace SmartReaderStandalone.Utils
             _password = password;
 
             sshClient = new SshClient(_hostAddress, _username, _password);
-            
+
             sshClient.HostKeyReceived += (sender, e) =>
             {
                 e.CanTrust = true;
             };
 
             sshClient.Connect();
-            
+
         }
 
         public string SendCommand(string command)
         {
             string result = "";
-            if(sshClient.IsConnected)
+            if (sshClient.IsConnected)
             {
-               var sshCommand = sshClient.RunCommand(command);
-               result = sshCommand.Execute();
+                var sshCommand = sshClient.RunCommand(command);
+                result = sshCommand.Execute();
             }
             return result;
         }

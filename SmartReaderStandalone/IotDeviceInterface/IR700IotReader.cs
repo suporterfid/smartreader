@@ -8,8 +8,8 @@
 //
 //****************************************************************************************************
 #endregion
-using System.Collections.ObjectModel;
 using Impinj.Atlas;
+using System.Collections.ObjectModel;
 
 namespace SmartReader.IotDeviceInterface;
 

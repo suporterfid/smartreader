@@ -8,8 +8,8 @@
 //
 //****************************************************************************************************
 #endregion
-using System.Text.Json;
 using SmartReader.Infrastructure.ViewModel;
+using System.Text.Json;
 
 namespace SmartReaderStandalone.Utils;
 
@@ -52,6 +52,23 @@ public class ConfigFileHelper
     {
         StandaloneConfigDTO standaloneConfigDTO = null;
         var fileName = @"/customer/config/smartreader.json";
+        if (File.Exists(fileName))
+        {
+            var length = new FileInfo(fileName).Length;
+            if (length > 0)
+            {
+                var fileContent = File.ReadAllText(fileName);
+                standaloneConfigDTO = JsonSerializer.Deserialize<StandaloneConfigDTO>(fileContent);
+            }
+        }
+
+        return standaloneConfigDTO;
+    }
+
+    public static StandaloneConfigDTO? GetSmartreaderDefaultConfigDTO()
+    {
+        StandaloneConfigDTO standaloneConfigDTO = null;
+        var fileName = @"/customer/config/smartreader-default.json";
         if (File.Exists(fileName))
         {
             var length = new FileInfo(fileName).Length;

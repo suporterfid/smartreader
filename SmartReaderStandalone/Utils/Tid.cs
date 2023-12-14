@@ -31,7 +31,7 @@ public class Tid : IEquatable<Tid>, IComparable<Tid>, IComparable, IEnumerable<u
         {
             var num1 = numArray[index] << 8;
             int num2 = numArray[index + 1];
-            _tidArray[index / 2] = (ushort) (num1 | num2);
+            _tidArray[index / 2] = (ushort)(num1 | num2);
         }
     }
 
@@ -60,10 +60,10 @@ public class Tid : IEquatable<Tid>, IComparable<Tid>, IComparable, IEnumerable<u
         if (num1 != 0)
             return num1;
         foreach (var data in _tidArray.Zip(other._tidArray, (b, b1) => new
-                 {
-                     T = b,
-                     O = b1
-                 }))
+        {
+            T = b,
+            O = b1
+        }))
         {
             var num2 = data.T - data.O;
             if (num2 != 0)
@@ -80,7 +80,7 @@ public class Tid : IEquatable<Tid>, IComparable<Tid>, IComparable, IEnumerable<u
 
     public IEnumerator<ushort> GetEnumerator()
     {
-        return ((IEnumerable<ushort>) _tidArray).GetEnumerator();
+        return ((IEnumerable<ushort>)_tidArray).GetEnumerator();
     }
 
     public bool Equals(Tid other)
@@ -137,13 +137,13 @@ public class Tid : IEquatable<Tid>, IComparable<Tid>, IComparable, IEnumerable<u
         for (var index = 0; index < _tidArray.Length; ++index)
         {
             var num1 = _tidArray[index] >> 12;
-            chArray[index * 4] = (char) (55 + num1 + (((num1 - 10) >> 31) & -7));
+            chArray[index * 4] = (char)(55 + num1 + (((num1 - 10) >> 31) & -7));
             var num2 = (_tidArray[index] >> 8) & 15;
-            chArray[index * 4 + 1] = (char) (55 + num2 + (((num2 - 10) >> 31) & -7));
+            chArray[index * 4 + 1] = (char)(55 + num2 + (((num2 - 10) >> 31) & -7));
             var num3 = (_tidArray[index] >> 4) & 15;
-            chArray[index * 4 + 2] = (char) (55 + num3 + (((num3 - 10) >> 31) & -7));
+            chArray[index * 4 + 2] = (char)(55 + num3 + (((num3 - 10) >> 31) & -7));
             var num4 = _tidArray[index] & 15;
-            chArray[index * 4 + 3] = (char) (55 + num4 + (((num4 - 10) >> 31) & -7));
+            chArray[index * 4 + 3] = (char)(55 + num4 + (((num4 - 10) >> 31) & -7));
         }
 
         return new string(chArray);

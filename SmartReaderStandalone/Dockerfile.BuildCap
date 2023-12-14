@@ -11,23 +11,33 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
 
 WORKDIR /etk
 RUN chmod 777 /etk
-COPY etk_tools/8.1.0_Octane_Embedded_Development_Tools.tar.gz /etk/
-RUN tar -xvzf /etk/8.1.0_Octane_Embedded_Development_Tools.tar.gz
-COPY bin/Release/net7.0/publish/* /etk/cap/
-COPY cap_template/* /etk/cap/ 
-RUN mv /etk/cap/cap_gen.sh /etk/cap_gen.sh
+COPY etk_tools/8.1.0_Octane_Embedded_Development_Tools.tar.gz /tmp/
+RUN tar -xvzf /tmp/8.1.0_Octane_Embedded_Development_Tools.tar.gz -C /tmp/
+RUN rm -rf /tmp/8.1.0_Octane_Embedded_Development_Tools.tar.gz
+# COPY bin/Release/net8.0/publish/* /etk/cap/
+COPY bin/Release/net8.0/linux-arm/* /etk/cap/
+# RUN [ -d /etk/cap/wwwroot ] || mkdir /etk/cap/wwwroot
+#COPY bin/Release/net8.0/publish/wwwroot /etk/cap/
+COPY bin/Release/net8.0/publish/cap_template/* /etk/cap/
+# COPY cap_template/* /etk/cap/ 
+# RUN mv /etk/cap/cap_gen.sh /etk/cap_gen.sh
+RUN mv /etk/cap/cap_gen.sh /tmp/8.1.0_Octane_Embedded_Development_Tools/
 RUN mv /etk/cap/cap_description.in /etk/cap_description.in
 RUN mv /etk/cap/capcommand.sh /etk/capcommand.sh 
+# RUN mv /etk/cap/cap_template/* /etk/cap/ 
 
-#RUN  [ -d /etk/cap/wwwroot ] && rm -rf /etk/cap/wwwroot
-RUN [ -d /etk/cap/wwwroot ] || mkdir /etk/cap/wwwroot 
-RUN mv /etk/cap/css /etk/cap/wwwroot/css
-RUN mv /etk/cap/fonts /etk/cap/wwwroot/fonts
-RUN mv /etk/cap/licenses /etk/cap/wwwroot/licenses
-RUN mv /etk/cap/js /etk/cap/wwwroot/js
+#RUN  [ -d /etk/cap/wwwroot ] && rm -rf /etk/cap/wwwroot 
+RUN mv /etk/cap/css /etk/cap/wwwroot/
+RUN mv /etk/cap/fonts /etk/cap/wwwroot/
+RUN mv /etk/cap/licenses /etk/cap/wwwroot/
+RUN mv /etk/cap/js /etk/cap/wwwroot/
 RUN mv /etk/cap/*.js /etk/cap/wwwroot/
 RUN mv /etk/cap/*.html /etk/cap/wwwroot/
 RUN mv /etk/cap/*.ico /etk/cap/wwwroot/
+RUN mkdir /etk/cap/wwwroot/css
+RUN mv /etk/cap/wwwroot/*.css /etk/cap/wwwroot/css/
+RUN mv /etk/cap/*.css /etk/cap/wwwroot/css/
+
 
 RUN rm -rf /etk/cap/config/*
 COPY cap_template/config/smartreader-default.json /etk/cap/config/
@@ -44,8 +54,15 @@ RUN dos2unix /etk/*.in
 RUN dos2unix /etk/cap/cust_app_upgrade
 RUN dos2unix /etk/cap/config/*.json
 RUN chmod -R 775 /etk/cap/*
-RUN ls -lh /etk/cap
-RUN /etk/8.1.0_Octane_Embedded_Development_Tools/cap_gen.sh -d /etk/cap_description.in -o /etk/smartreader_cap.upgx
+# RUN rm /etk/cap/smartreader-default.json
+#RUN rm /etk/cap/*.js
+#RUN rm /etk/cap/*.html
+#RUN rm -rf /etk/cap/css
+#RUN rm -rf /etk/cap/fonts
+#RUN rm -rf /etk/cap/js
+#RUN rm -rf /etk/cap/licenses
+#RUN ls -lh /etk/cap
+RUN /tmp/8.1.0_Octane_Embedded_Development_Tools/cap_gen.sh -d /etk/cap_description.in -o /etk/smartreader_cap.upgx
 RUN chmod 777 /etk/smartreader_cap.upgx
 #RUN rm -rf /tmp/etk/*
 #RUN cp /etk/smartreader_cap.upgx /tmp/etk/

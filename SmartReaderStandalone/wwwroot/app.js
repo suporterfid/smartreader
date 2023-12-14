@@ -15,7 +15,7 @@ var vueApplication = new Vue({
 			username: "",
 			password: ""
 		},
-		applicationLabel: 'version 4.0.0.37',
+		applicationLabel: 'version 4.0.0.39',
 		applicationBy: 'Smartreader R700',
 		//applicationBy: 'SoLink R700',
 
@@ -356,6 +356,31 @@ var vueApplication = new Vue({
 			});
 			
 			
+		},
+
+		restoreDefaultSettings: function () {
+			
+			const confirmed = window.confirm('Do you want to proceed with this action?');
+
+			if (confirmed) {
+				// User clicked OK (confirmed)
+				// Perform the action or execute the code for confirmation
+				console.log('reset to default settings confirmed.');
+				//let encodedBasicData = btoa(this.adminAccount.username + ':' + this.adminAccount.password);
+				var appReq = [];
+				this.$http.get('/api/restore-default-settings')
+					.success(function (appReq) {
+						this.fetchReaderConfig();
+					})
+					.error(function (err) {
+						console.log(err);
+						this.alertSettingsNotApplied();
+					});
+			} else {
+				// User clicked Cancel (not confirmed)
+				// Handle the cancellation or do nothing
+				console.log('reset to default settings canceled.');
+			}			
 		},
 
 		startApp: function () {

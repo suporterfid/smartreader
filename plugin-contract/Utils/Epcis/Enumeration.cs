@@ -8,8 +8,8 @@
 //
 //****************************************************************************************************
 #endregion
-using System.Reflection;
 using SmartReader.Infrastructure.Utils.Epcis.Exceptions;
+using System.Reflection;
 
 namespace SmartReader.Infrastructure.Utils.Epcis;
 
@@ -30,7 +30,7 @@ public abstract class Enumeration : IComparable
 
     public int CompareTo(object other)
     {
-        return Id.CompareTo(((Enumeration) other).Id);
+        return Id.CompareTo(((Enumeration)other).Id);
     }
 
     public static IEnumerable<T> GetAll<T>() where T : Enumeration, new()

@@ -8,7 +8,6 @@
 //
 //****************************************************************************************************
 #endregion
-using Microsoft.Extensions.Hosting;
 using SmartReaderStandalone.Entities;
 
 namespace SmartReaderStandalone.Authentication;
@@ -46,7 +45,7 @@ public class UserService : IUserService
         catch (Exception)
         {
 
-            
+
         }
     }
     private readonly List<User> _users = new();

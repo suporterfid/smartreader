@@ -601,7 +601,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
     public string systemImageUpgradeUrl { get; set; } = "";
 
-    public string enableTagEventsListBatch{ get; set; } = "0";
+    public string enableTagEventsListBatch { get; set; } = "0";
 
     public string enableTagEventsListBatchPublishing { get; set; } = "0";
 
@@ -617,7 +617,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
     public string tagPresenceTimeoutInSec { get; set; } = "2";
 
-    public string networkProxy{ get; set; } = "";
+    public string networkProxy { get; set; } = "";
 
     public string networkProxyPort { get; set; } = "";
 
@@ -1397,7 +1397,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
         if (!barcodeProcessNoDataString.Equals(otherStandaloneConfigDTO.barcodeProcessNoDataString)) return false;
 
         if (!barcodeLineEnd.Equals(otherStandaloneConfigDTO.barcodeLineEnd)) return false;
-        
+
 
 
         if (!httpAuthenticationHeader.Equals(otherStandaloneConfigDTO.httpAuthenticationHeader)) return false;
@@ -1426,7 +1426,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
         if (!externalApiVerificationChangeOrderStatusUrl.Equals(
                otherStandaloneConfigDTO.externalApiVerificationChangeOrderStatusUrl)) return false;
 
-        
+
 
         if (!externalApiVerificationHttpHeaderName.Equals(
                 otherStandaloneConfigDTO.externalApiVerificationHttpHeaderName)) return false;
@@ -1436,7 +1436,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
         if (!externalApiVerificationAuthLoginUrl.Equals(otherStandaloneConfigDTO
                 .externalApiVerificationAuthLoginUrl)) return false;
-        
+
         if (!operatingRegion.Equals(otherStandaloneConfigDTO
                 .operatingRegion)) return false;
 
@@ -1470,7 +1470,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
         if (!systemDisableImageFallbackStatus.Equals(otherStandaloneConfigDTO.systemDisableImageFallbackStatus)) return false;
 
         if (!smartreaderEnabledForManagementOnly.Equals(otherStandaloneConfigDTO.smartreaderEnabledForManagementOnly)) return false;
-        
+
 
 
 
@@ -1790,7 +1790,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
             config.mqttPuslishIntervalSec = HttpUtility.UrlDecode(config.mqttPuslishIntervalSec);
 
-            config.mqttEnableSmartreaderDefaultTopics = HttpUtility.UrlDecode(config.mqttEnableSmartreaderDefaultTopics);            
+            config.mqttEnableSmartreaderDefaultTopics = HttpUtility.UrlDecode(config.mqttEnableSmartreaderDefaultTopics);
 
             config.isCloudInterface = HttpUtility.UrlDecode(config.isCloudInterface);
 
@@ -1975,7 +1975,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
             config.softwareFilterTagIdValueOrPattern =
                 HttpUtility.UrlDecode(config.softwareFilterTagIdValueOrPattern);
-            
+
             config.isLogFileEnabled = HttpUtility.UrlDecode(config.isLogFileEnabled);
 
             config.rciSpotReportEnabled = HttpUtility.UrlDecode(config.rciSpotReportEnabled);
@@ -2052,7 +2052,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
             config.enableBarcodeSerial = HttpUtility.UrlDecode(config.enableBarcodeSerial);
 
-            config.enableBarcodeHid = HttpUtility.UrlDecode(config.enableBarcodeHid);           
+            config.enableBarcodeHid = HttpUtility.UrlDecode(config.enableBarcodeHid);
 
             config.groupEventsOnInventoryStatus = HttpUtility.UrlDecode(config.groupEventsOnInventoryStatus);
 
@@ -2068,7 +2068,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
             config.barcodeEnableQueue = HttpUtility.UrlDecode(config.barcodeEnableQueue);
 
-            config.barcodeLineEnd = HttpUtility.UrlDecode(config.barcodeLineEnd);           
+            config.barcodeLineEnd = HttpUtility.UrlDecode(config.barcodeLineEnd);
 
             config.httpAuthenticationHeader = HttpUtility.UrlDecode(config.httpAuthenticationHeader);
 
@@ -2103,7 +2103,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
             config.externalApiVerificationChangeOrderStatusUrl = HttpUtility.UrlDecode(config.externalApiVerificationChangeOrderStatusUrl);
 
-            
+
             config.operatingRegion =
                 HttpUtility.UrlDecode(config.operatingRegion);
 

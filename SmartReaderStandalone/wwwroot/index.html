@@ -1432,8 +1432,6 @@
                                        v-model="readerConfigs[0].mqttUseSsl"
                                        v-bind:true-value="1"
                                        v-bind:false-value="0">
-                                <br />
-                                <br />
                                 <label for="outputMqttUseSsl">Enable Command receiver</label>
                                 <br />
                                 <br />
@@ -2032,12 +2030,12 @@
                         <br />
 
                         <!--
-                        <input id="isLogFileEnabled" type="checkbox"
-                               v-model="readerConfigs[0].isLogFileEnabled"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
-                        <label for="isLogFileEnabled">Enable Log File.</label>
-                        -->
+    <input id="isLogFileEnabled" type="checkbox"
+           v-model="readerConfigs[0].isLogFileEnabled"
+           v-bind:true-value="1"
+           v-bind:false-value="0">
+    <label for="isLogFileEnabled">Enable Log File.</label>
+    -->
                         <br />
                         <button class="btn btn-primary pull-right" v-on:click="applySettings">Apply Settings</button>
                         <br>
@@ -2048,10 +2046,15 @@
                         <br />
                         <br />
 
-
+                        <br />
+                        <br />
+                        <label>Click the button below to restore the application settings:</label> <br>
+                        <button class="btn btn-warning btn-block" v-on:click="restoreDefaultSettings">Reset to Default Settings</button>
+                        <br />
+                        <br />
+                        <br />
+                        <br />
                     </div>
-
-
                 </div>
 
 

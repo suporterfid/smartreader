@@ -8,13 +8,13 @@
 //
 //****************************************************************************************************
 #endregion
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Encodings.Web;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.Extensions.Options;
-using Microsoft.Net.Http.Headers;
 
 namespace SmartReaderStandalone.Authentication;
 

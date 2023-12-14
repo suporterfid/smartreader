@@ -39,8 +39,8 @@ public class BasicAuthMiddleware
                 {
                     var encoding = Encoding.GetEncoding("iso-8859-1");
                     var usernameAndPassword = encoding.GetString(Convert.FromBase64String(authHeaderVal.Parameter));
-                    var username = usernameAndPassword.Split(new[] {':'})[0];
-                    var password = usernameAndPassword.Split(new[] {':'})[1];
+                    var username = usernameAndPassword.Split(new[] { ':' })[0];
+                    var password = usernameAndPassword.Split(new[] { ':' })[1];
                     if (username == configuration.GetValue<string>("BasicAuth:UserName") &&
                         password == configuration.GetValue<string>("BasicAuth:Password"))
                         httpContext.Items["BasicAuth"] = true;

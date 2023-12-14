@@ -8,12 +8,12 @@
 //
 //****************************************************************************************************
 #endregion
-using System.Collections.ObjectModel;
 using Impinj.Atlas;
 using SmartReader.Infrastructure.ViewModel;
 using SmartReaderJobs.ViewModel.Antenna;
 using SmartReaderJobs.ViewModel.Mqtt;
 using SmartReaderJobs.ViewModel.Reader;
+using System.Collections.ObjectModel;
 
 namespace SmartReader.IotDeviceInterface;
 
@@ -33,30 +33,30 @@ public class IoTInterfaceMapper
         mqttConfigurationRequest.BrokerHostname = smartMqttConfig.EnderecoBroker;
 
         if (smartMqttConfig.PortaBroker.HasValue)
-            mqttConfigurationRequest.BrokerPort = unchecked((int) smartMqttConfig.PortaBroker);
+            mqttConfigurationRequest.BrokerPort = unchecked((int)smartMqttConfig.PortaBroker);
         if (smartMqttConfig.CleanSession.HasValue && smartMqttConfig.CleanSession.Value == 1)
             mqttConfigurationRequest.CleanSession = true;
         else
             mqttConfigurationRequest.CleanSession = false;
 
         if (smartMqttConfig.TamanhoBufferEventos.HasValue)
-            mqttConfigurationRequest.EventBufferSize = unchecked((int) smartMqttConfig.TamanhoBufferEventos);
+            mqttConfigurationRequest.EventBufferSize = unchecked((int)smartMqttConfig.TamanhoBufferEventos);
 
         if (smartMqttConfig.LimiteEventosPendentesDeEntrega.HasValue)
             mqttConfigurationRequest.EventPendingDeliveryLimit =
-                unchecked((int) smartMqttConfig.LimiteEventosPendentesDeEntrega);
+                unchecked((int)smartMqttConfig.LimiteEventosPendentesDeEntrega);
 
         if (smartMqttConfig.LimiteDeEventosPorSegundo.HasValue)
-            mqttConfigurationRequest.EventPerSecondLimit = unchecked((int) smartMqttConfig.LimiteDeEventosPorSegundo);
+            mqttConfigurationRequest.EventPerSecondLimit = unchecked((int)smartMqttConfig.LimiteDeEventosPorSegundo);
 
         if (smartMqttConfig.IntervaloKeepaliveSegundos.HasValue)
             mqttConfigurationRequest.KeepAliveIntervalSeconds =
-                unchecked((int) smartMqttConfig.IntervaloKeepaliveSegundos);
+                unchecked((int)smartMqttConfig.IntervaloKeepaliveSegundos);
         else
             mqttConfigurationRequest.KeepAliveIntervalSeconds = 60;
 
         if (smartMqttConfig.Qos.HasValue)
-            mqttConfigurationRequest.EventQualityOfService = unchecked((int) smartMqttConfig.Qos);
+            mqttConfigurationRequest.EventQualityOfService = unchecked((int)smartMqttConfig.Qos);
         else
             mqttConfigurationRequest.EventQualityOfService = 1;
 
@@ -71,7 +71,7 @@ public class IoTInterfaceMapper
         mqttConfigurationRequest.WillTopic = smartMqttConfig.TopicoWill;
 
         if (smartMqttConfig.QosWill.HasValue)
-            mqttConfigurationRequest.WillQualityOfService = unchecked((int) smartMqttConfig.QosWill);
+            mqttConfigurationRequest.WillQualityOfService = unchecked((int)smartMqttConfig.QosWill);
 
 
         return mqttConfigurationRequest;
@@ -125,17 +125,17 @@ public class IoTInterfaceMapper
             var currentAntenna = smartReaderAntennaSetupList[i];
             if (currentAntenna.Status.HasValue && currentAntenna.Status.Value == 1)
             {
-                inventoryAntennaConfiguration.AntennaPort = unchecked((int) currentAntenna.Porta.Value);
+                inventoryAntennaConfiguration.AntennaPort = unchecked((int)currentAntenna.Porta.Value);
                 inventoryAntennaConfiguration.AntennaName = currentAntenna.Descricao;
                 inventoryAntennaConfiguration.EstimatedTagPopulation =
-                    unchecked((int) smartReaderConfig.PopulacaoEstimada);
+                    unchecked((int)smartReaderConfig.PopulacaoEstimada);
                 if (smartReaderConfig.Fastid.HasValue && smartReaderConfig.Fastid.Value == 1)
                     inventoryAntennaConfiguration.FastId = FastId.Enabled;
                 else
                     inventoryAntennaConfiguration.FastId = FastId.Disabled;
 
                 inventoryAntennaConfiguration.InventorySearchMode = InventorySearchMode.SingleTarget;
-                inventoryAntennaConfiguration.InventorySession = unchecked((int) smartReaderConfig.Sessao);
+                inventoryAntennaConfiguration.InventorySession = unchecked((int)smartReaderConfig.Sessao);
                 if (2 == smartReaderConfig.ModoBusca)
                     inventoryAntennaConfiguration.InventorySearchMode = InventorySearchMode.DualTarget;
                 if (3 == smartReaderConfig.ModoBusca)
@@ -149,12 +149,12 @@ public class IoTInterfaceMapper
                 if (6 == smartReaderConfig.ModoBusca)
                     inventoryAntennaConfiguration.InventorySearchMode = InventorySearchMode.DualTargetWithBToASelect;
 
-                inventoryAntennaConfiguration.RfMode = unchecked((int) smartReaderConfig.ModoLeitor);
+                inventoryAntennaConfiguration.RfMode = unchecked((int)smartReaderConfig.ModoLeitor);
                 var potencia = double.Parse(currentAntenna.Potencia) * 10;
                 inventoryAntennaConfiguration.TransmitPowerCdbm = Convert.ToInt32(potencia);
-                if (!string.IsNullOrEmpty((string) currentAntenna.Sensibilidade))
+                if (!string.IsNullOrEmpty((string)currentAntenna.Sensibilidade))
                 {
-                    var sensbilidade = int.Parse((string) currentAntenna.Sensibilidade) * 10;
+                    var sensbilidade = int.Parse((string)currentAntenna.Sensibilidade) * 10;
                     inventoryAntennaConfiguration.ReceiveSensitivityDbm = sensbilidade;
                 }
 

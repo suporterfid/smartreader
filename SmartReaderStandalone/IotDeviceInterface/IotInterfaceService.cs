@@ -8,59 +8,49 @@
 //
 //****************************************************************************************************
 #endregion
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Diagnostics;
-using System.Globalization;
-using System.IO.Ports;
-using System.Linq;
-using System.Net;
-using System.Net.Http.Headers;
-using System.Net.Security;
-using System.Reflection;
-using System.Runtime;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using System.Threading;
-using System.Timers;
 using Impinj.Atlas;
 using Impinj.Utils.DebugLogger;
 using McMaster.NETCore.Plugins;
 using MQTTnet;
+using MQTTnet.Client;
 using MQTTnet.Extensions.ManagedClient;
+using MQTTnet.Packets;
 using MQTTnet.Protocol;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Serilog;
-using Serilog.Events;
-using SimpleTcp;
 using SmartReader.Infrastructure.Database;
 using SmartReader.Infrastructure.ViewModel;
 using SmartReaderJobs.Utils;
 using SmartReaderJobs.ViewModel.Events;
 using SmartReaderStandalone.Entities;
+using SmartReaderStandalone.Plugins;
+using SmartReaderStandalone.Services;
 using SmartReaderStandalone.Utils;
+using SmartReaderStandalone.Utils.InputUsb;
 using SmartReaderStandalone.ViewModel.Filter;
 using SmartReaderStandalone.ViewModel.Gpo;
 using SmartReaderStandalone.ViewModel.Read;
 using SmartReaderStandalone.ViewModel.Read.Sku.Summary;
 using SmartReaderStandalone.ViewModel.Status;
+using SuperSimpleTcp;
+using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO.Ports;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Security;
+using System.Reflection;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Timers;
 using TagDataTranslation;
-using DataReceivedEventArgs = SimpleTcp.DataReceivedEventArgs;
+using DataReceivedEventArgs = SuperSimpleTcp.DataReceivedEventArgs;
 using ReaderStatus = SmartReaderStandalone.Entities.ReaderStatus;
 using Timer = System.Timers.Timer;
-using SmartReaderStandalone.Plugins;
-using SmartReaderStandalone.Services;
-using System;
-using Renci.SshNet;
-using System.Net.NetworkInformation;
-using SmartReaderStandalone.Utils.InputUsb;
-using MQTTnet.Packets;
-using MQTTnet.Client;
-using MQTTnet.Server;
 
 namespace SmartReader.IotDeviceInterface;
 
@@ -810,8 +800,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     {
         try
         {
-            var byteData = e.Data;
-            var messageData = Encoding.UTF8.GetString(byteData, 0, byteData.Length);
+            //var byteData = e.Data;
+            var messageData = Encoding.UTF8.GetString(e.Data.Array, 0, e.Data.Count);
+            Console.WriteLine($"BarcodeSocketClientEventsDataReceived: [{e.IpPort}] {messageData}");
             messageData = messageData.Replace("\n", "").Replace("\r", "");
             messageData = messageData.Trim();
             var receivedBarcode = ReceiveBarcode(messageData);
@@ -1077,6 +1068,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     _socketServer.Events.ClientConnected += ClientConnected;
                     _socketServer.Events.ClientDisconnected += ClientDisconnected;
                     _socketServer.Events.DataReceived += DataReceived;
+
+                    _socketServer.Keepalive.EnableTcpKeepAlives = true;
+                    _socketServer.Keepalive.TcpKeepAliveInterval = 5;      // seconds to wait before sending subsequent keepalive
+                    _socketServer.Keepalive.TcpKeepAliveTime = 5;          // seconds to wait before sending a keepalive
+                    _socketServer.Keepalive.TcpKeepAliveRetryCount = 5;    // number of failed keepalive probes before terminating connection
                 }
 
                 if (_socketServer != null && !_socketServer.IsListening)
@@ -1420,7 +1416,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         if (_iotDeviceInterfaceClient == null)
             _iotDeviceInterfaceClient =
                 new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
-        
+
         var readerStatus = await _iotDeviceInterfaceClient.GetStatusAsync();
         if (!_iotDeviceInterfaceClient.IsNetworkConnected)
         {
@@ -1518,7 +1514,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 await ProcessGpoErrorPortAsync();
             }
         }
-            
+
     }
 
     public async Task StopPresetAsync()
@@ -1527,7 +1523,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _iotDeviceInterfaceClient =
                 new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
 
-        if(_standaloneConfigDTO != null
+        if (_standaloneConfigDTO != null
                             && !string.IsNullOrEmpty(_standaloneConfigDTO.smartreaderEnabledForManagementOnly)
                             && !"1".Equals(_standaloneConfigDTO.smartreaderEnabledForManagementOnly))
         {
@@ -1563,7 +1559,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
             }
         }
-        
+
     }
 
     public async Task StartTasksAsync()
@@ -1591,7 +1587,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     _iotDeviceInterfaceClient.GpiTransitionEvent -= OnGpiTransitionEvent;
                     await _iotDeviceInterfaceClient.StopAsync();
                 }
-                    
+
             }
             catch (Exception)
             {
@@ -1648,7 +1644,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 if (_standaloneConfigDTO.isEnabled == "1") SaveStartCommandToDb();
             }
         }
-            
+
 
         try
         {
@@ -1733,7 +1729,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error cleaning-up previous preset. " + ex.Message);
+                _logger.LogInformation("Unable to clean-up previous preset. " + ex.Message);
             }
 
             try
@@ -2533,6 +2529,57 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     }
 
+    private bool ProcessBatteryStatusCheck()
+    {
+        bool currentStatus = false;
+        try
+        {
+
+            try
+            {
+                //cat /proc/driver/rtc
+                // Create a process info
+                ProcessStartInfo startInfo = new ProcessStartInfo
+                {
+                    FileName = "/bin/cat",  // Set the command (cat)
+                    Arguments = "/proc/driver/rtc",  // Set the file to read
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                // Start the process
+                using Process process = new Process();
+                process.StartInfo = startInfo;
+                process.Start();
+
+                // Read the output
+                using var reader = process.StandardOutput;
+                string output = reader.ReadToEnd();
+                var lines = output.Split("\n");
+                foreach (var line in lines)
+                {
+                    if (line.Contains("batt_status") && line.Contains("okay"))
+                    {
+                        currentStatus = true;
+                        break;
+                    }
+
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "error loading image status");
+        }
+        return currentStatus;
+    }
+
+
+
     private async void ProcessAppStatusDetailed()
     {
         Dictionary<string, string> statusEvent = new Dictionary<string, string>();
@@ -2650,6 +2697,19 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             statusEvent.Add("site", _standaloneConfigDTO.site);
         }
 
+        try
+        {
+            var currentBatStatus = ProcessBatteryStatusCheck();
+            if (currentBatStatus)
+                statusEvent.Add("batteryCondition", "ok");
+            else
+                statusEvent.Add("batteryCondition", "unknown");
+        }
+        catch (Exception)
+        {
+
+
+        }
 
 
         if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent, StringComparison.OrdinalIgnoreCase))
@@ -2814,7 +2874,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     if (lineData.Length > 1)
                     {
                         var lineValueContent = "";
-                        if(lineData[1].Contains("'"))
+                        if (lineData[1].Contains("'"))
                         {
                             lineValueContent = lineData[1].Replace("'", "");
                         }
@@ -2844,7 +2904,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
 
 
-        
+
 
         var jsonData = JsonConvert.SerializeObject(statusEvent);
         var dataToPublish = JObject.Parse(jsonData);
@@ -3465,6 +3525,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     {
         try
         {
+            if (!_isStarted)
+            {
+                _isStarted = true;
+            }
+
             var shouldProcess = false;
             _logger.LogInformation($"EPC Hex: {tagEvent.EpcHex} Antenna : {tagEvent.AntennaPort} LastSeenTime {tagEvent.LastSeenTime}");
 
@@ -3612,7 +3677,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                     var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
                     if (timeDiff.TotalSeconds > expiration)
-                    {                       
+                    {
                         _readEpcs[tagEvent.EpcHex] = currentEventTimestamp;
                         Task.Run(() => ProcessGpoBlinkNewTagStatusGpoPortAsync(1));
                         shouldProcess = true;
@@ -4438,11 +4503,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     _logger.LogError(ex, "Unexpected error on remove _readEpcs" + ex.Message);
                 }
             }
-               
 
 
 
-           
+
+
 
             //if (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterEnabled)
             //    && !"0".Equals(_standaloneConfigDTO.softwareFilterEnabled))
@@ -4504,7 +4569,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled, StringComparison.OrdinalIgnoreCase))
             {
-                if(_isStarted)
+                if (_isStarted)
                 {
                     try
                     {
@@ -4674,7 +4739,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     _smartReaderTagEventsListBatch.Clear();
                     _smartReaderTagEventsAbsence.Clear();
                 }
-                
+
             }
         }
         catch (Exception)
@@ -7062,7 +7127,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
             }
 
-            
+
 
             try
             {
@@ -10327,7 +10392,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         var newStartTriggerGpiPort = _standaloneConfigDTO.startTriggerGpiPort;
                         var newStartTriggerGpiEvent = _standaloneConfigDTO.startTriggerGpiEvent;
                         var newStartTriggerOffset = _standaloneConfigDTO.startTriggerOffset;
-                        var newStartTriggerPeriod = _standaloneConfigDTO.startTriggerPeriod;                       
+                        var newStartTriggerPeriod = _standaloneConfigDTO.startTriggerPeriod;
                         var newStartTriggerUTCTimestamp = _standaloneConfigDTO.startTriggerUTCTimestamp;
 
                         var newStopTriggerType = _standaloneConfigDTO.stopTriggerType;
@@ -10760,7 +10825,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                                     if (startTriggerJObject != null && startTriggerJObject.ContainsKey("startTriggerType"))
                                     {
-                                        newStartTriggerType = startTriggerJObject["startTriggerType"].Value<string>();                                       
+                                        newStartTriggerType = startTriggerJObject["startTriggerType"].Value<string>();
                                     }
                                     if (startTriggerJObject != null && startTriggerJObject.ContainsKey("startTriggerGpiPort"))
                                     {
@@ -11462,7 +11527,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         if (_standaloneConfigDTO != null)
         {
-            if(!string.IsNullOrEmpty(_standaloneConfigDTO.mqttLwtTopic))
+            if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttLwtTopic))
             {
                 lwtTopic = _standaloneConfigDTO.mqttLwtTopic;
             }
@@ -11976,11 +12041,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     StringComparison.OrdinalIgnoreCase))
                 try
                 {
-                    dataToPublish.Property("tag_reads").Descendants()
+                    if (string.Equals("0", _standaloneConfigDTO.tagPresenceTimeoutEnabled, StringComparison.OrdinalIgnoreCase))
+                    {
+                        dataToPublish.Property("tag_reads").Descendants()
                         .OfType<JProperty>()
                         .Where(attr => attr.Name.StartsWith("firstSeenTimestamp"))
                         .ToList()
                         .ForEach(attr => attr.Remove());
+                    }
+
                 }
                 catch (Exception)
                 {

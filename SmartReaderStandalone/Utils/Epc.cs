@@ -8,8 +8,8 @@
 //
 //****************************************************************************************************
 #endregion
-using System.Collections;
 using Newtonsoft.Json;
+using System.Collections;
 
 namespace SmartReader.Infrastructure.Utils;
 
@@ -33,7 +33,7 @@ public class Epc : IEquatable<Epc>, IComparable<Epc>, IComparable, IEnumerable<u
         {
             var num1 = numArray[index] << 8;
             int num2 = numArray[index + 1];
-            _epcArray[index / 2] = (ushort) (num1 | num2);
+            _epcArray[index / 2] = (ushort)(num1 | num2);
         }
     }
 
@@ -61,10 +61,10 @@ public class Epc : IEquatable<Epc>, IComparable<Epc>, IComparable, IEnumerable<u
         if (num1 != 0)
             return num1;
         foreach (var data in _epcArray.Zip(other._epcArray, (b, b1) => new
-                 {
-                     T = b,
-                     O = b1
-                 }))
+        {
+            T = b,
+            O = b1
+        }))
         {
             var num2 = data.T - data.O;
             if (num2 != 0)
@@ -81,7 +81,7 @@ public class Epc : IEquatable<Epc>, IComparable<Epc>, IComparable, IEnumerable<u
 
     public IEnumerator<ushort> GetEnumerator()
     {
-        return ((IEnumerable<ushort>) _epcArray).GetEnumerator();
+        return ((IEnumerable<ushort>)_epcArray).GetEnumerator();
     }
 
     public bool Equals(Epc other)
@@ -138,13 +138,13 @@ public class Epc : IEquatable<Epc>, IComparable<Epc>, IComparable, IEnumerable<u
         for (var index = 0; index < _epcArray.Length; ++index)
         {
             var num1 = _epcArray[index] >> 12;
-            chArray[index * 4] = (char) (55 + num1 + (((num1 - 10) >> 31) & -7));
+            chArray[index * 4] = (char)(55 + num1 + (((num1 - 10) >> 31) & -7));
             var num2 = (_epcArray[index] >> 8) & 15;
-            chArray[index * 4 + 1] = (char) (55 + num2 + (((num2 - 10) >> 31) & -7));
+            chArray[index * 4 + 1] = (char)(55 + num2 + (((num2 - 10) >> 31) & -7));
             var num3 = (_epcArray[index] >> 4) & 15;
-            chArray[index * 4 + 2] = (char) (55 + num3 + (((num3 - 10) >> 31) & -7));
+            chArray[index * 4 + 2] = (char)(55 + num3 + (((num3 - 10) >> 31) & -7));
             var num4 = _epcArray[index] & 15;
-            chArray[index * 4 + 3] = (char) (55 + num4 + (((num4 - 10) >> 31) & -7));
+            chArray[index * 4 + 3] = (char)(55 + num4 + (((num4 - 10) >> 31) & -7));
         }
 
         return new string(chArray);

@@ -4898,7 +4898,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
                             StringComparison.OrdinalIgnoreCase))
                 {
-                    while (httpPostTimer.Elapsed.Seconds < httpPostIntervalInSec)
+                    while (httpPostTimer.Elapsed.TotalSeconds < httpPostIntervalInSec)
                     {
                         await Task.Delay(10);
                     }
@@ -4941,7 +4941,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
                 else
                 {
-                    while (httpPostTimer.Elapsed.Seconds < httpPostIntervalInSec)
+                    while (httpPostTimer.Elapsed.TotalSeconds < httpPostIntervalInSec)
                         while (_messageQueueTagSmartReaderTagEventHttpPost.TryDequeue(out smartReaderTagReadEvent))
                             try
                             {

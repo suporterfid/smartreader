@@ -1420,3 +1420,5 @@ SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/wwwroot/ytem.js
 /SmartReaderStandalone/wwwroot/shipping.html
 /SmartReaderStandalone/cap_template/plugins
 *.dll
+/SmartReaderStandalone/bin
+/ConsoleAppHash/obj

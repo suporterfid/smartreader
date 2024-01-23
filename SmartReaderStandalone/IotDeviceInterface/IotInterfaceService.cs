@@ -21,6 +21,7 @@ using Newtonsoft.Json.Linq;
 using Serilog;
 using SmartReader.Infrastructure.Database;
 using SmartReader.Infrastructure.ViewModel;
+using SmartReader.ViewModel.Auth;
 using SmartReaderJobs.Utils;
 using SmartReaderJobs.ViewModel.Events;
 using SmartReaderStandalone.Entities;
@@ -45,10 +46,12 @@ using System.Net.Security;
 using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Timers;
 using TagDataTranslation;
 using DataReceivedEventArgs = SuperSimpleTcp.DataReceivedEventArgs;
+using JsonSerializer = Newtonsoft.Json.JsonSerializer;
 using ReaderStatus = SmartReaderStandalone.Entities.ReaderStatus;
 using Timer = System.Timers.Timer;
 
@@ -2282,6 +2285,317 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
         }
 
+    }
+
+    private string ProcessAdminPasswordUpdate(string updateAdminPasswordCommandPayload)
+    {
+        string commandResult = "success";
+        string username = "admin";
+        string currentPassword = "admin";
+        string newPassword = "admin";
+        try
+        {
+            JObject commandPayloadJObject = new();
+            var deserializedConfigData = JsonConvert.DeserializeObject<JObject>(updateAdminPasswordCommandPayload);
+            if (deserializedConfigData.ContainsKey("payload"))
+            {
+                commandPayloadJObject = deserializedConfigData["payload"].Value<JObject>();
+            }
+            else if (deserializedConfigData.ContainsKey("fields"))
+            {
+                commandPayloadJObject = deserializedConfigData["fields"].Value<JObject>();
+            }
+            if (commandPayloadJObject != null && commandPayloadJObject.ContainsKey("username"))
+            {
+                try
+                {
+                    var commandUsername = commandPayloadJObject["username"].Value<string>();
+                    if (!string.IsNullOrEmpty(commandUsername))
+                    {
+                        username = commandUsername;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    commandResult = "error setting the new username";
+                    _logger.LogError(ex,
+                        "ProcessAdminPasswordUpdate (username): Unexpected error" + ex.Message);
+                    return commandResult;
+                }
+
+            }
+            if (commandPayloadJObject != null && commandPayloadJObject.ContainsKey("currentPassword"))
+            {
+
+                try
+                {
+                    var commandCurrentPassword = commandPayloadJObject["currentPassword"].Value<string>();
+                    if (!string.IsNullOrEmpty(commandCurrentPassword))
+                    {
+                        currentPassword = commandCurrentPassword;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    commandResult = "error setting the current password";
+                    _logger.LogError(ex,
+                        "ProcessAdminPasswordUpdate (password): Unexpected error" + ex.Message);
+                    return commandResult;
+                }
+            }
+            if (commandPayloadJObject != null && commandPayloadJObject.ContainsKey("newPassword"))
+            {
+
+                try
+                {
+                    var commandNewPassword = commandPayloadJObject["newPassword"].Value<string>();
+                    if (!string.IsNullOrEmpty(commandNewPassword))
+                    {
+                        newPassword = commandNewPassword;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    commandResult = "error setting the new password";
+                    _logger.LogError(ex,
+                        "ProcessAdminPasswordUpdate (password): Unexpected error" + ex.Message);
+                    return commandResult;
+                }
+            }
+            var dtos = new List<StandaloneConfigDTO>();
+            var configDto = ConfigFileHelper.GetSmartreaderDefaultConfigDTO();
+
+            if (configDto != null)
+            {
+                try
+                {
+                    // Read the JSON file content
+                    string json = "";
+                    CustomAuth data = new CustomAuth();
+                    try
+                    {
+                        using (StreamReader reader = File.OpenText("customsettings.json"))
+                        {
+                            json = reader.ReadToEndAsync().Result;
+                        }
+                        if(!string.IsNullOrEmpty(json))
+                        {
+                            // Deserialize JSON to a data structure
+                            data = System.Text.Json.JsonSerializer.Deserialize<CustomAuth>(json);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        commandResult = "error parsing data.";
+                        _logger.LogError(ex,
+                        "ProcessAdminPasswordUpdate error parsing data" + ex.Message);
+                        return commandResult;
+                    }
+
+                    // Modify the data
+                    data.BasicAuth.UserName = username;
+                    if(!data.BasicAuth.Password.Equals(newPassword))
+                    {
+                        data.BasicAuth.Password = newPassword;
+                    }
+
+                    //data.RShellAuth.UserName = "root";
+                    //data.RShellAuth.Password = "impinj";
+                    if (string.IsNullOrEmpty(data.RShellAuth.UserName))
+                    {
+                        data.RShellAuth.UserName = "root";
+                    }
+                    if (string.IsNullOrEmpty(data.RShellAuth.Password))
+                    {
+                        data.RShellAuth.Password = "impinj";
+                    }
+
+
+                    // Serialize the modified data back to JSON
+                    var options = new JsonSerializerOptions { WriteIndented = true };
+                    var updatedJson = System.Text.Json.JsonSerializer.Serialize(data, options);
+
+                    // Write the updated JSON back to the file
+                    using (StreamWriter writer = File.CreateText("customsettings.json"))
+                    {
+                        writer.WriteAsync(updatedJson).Wait();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    commandResult = "error saving data.";
+                    _logger.LogError(ex,
+                    "ProcessAdminPasswordUpdate error saving data" + ex.Message);
+                    return commandResult;
+
+                }
+                
+                return commandResult;
+            }
+        }
+        catch (Exception ex)
+        {
+
+            commandResult = "error processing command.";
+            _logger.LogError(ex,
+            "ProcessAdminPasswordUpdate error processing command" + ex.Message);
+            return commandResult;
+        }
+        return commandResult;
+    }
+
+    private string ProcessRShellPasswordUpdate(string updateRShellPasswordCommandPayload)
+    {
+        string commandResult = "success";
+        string username = "root";
+        string currentPassword = "impinj";
+        string newPassword = "impinj";
+        try
+        {
+            JObject commandPayloadJObject = new();
+            var deserializedConfigData = JsonConvert.DeserializeObject<JObject>(updateRShellPasswordCommandPayload);
+            if (deserializedConfigData.ContainsKey("payload"))
+            {
+                commandPayloadJObject = deserializedConfigData["payload"].Value<JObject>();
+            }
+            else if (deserializedConfigData.ContainsKey("fields"))
+            {
+                commandPayloadJObject = deserializedConfigData["fields"].Value<JObject>();
+            }
+            if (commandPayloadJObject != null && commandPayloadJObject.ContainsKey("username"))
+            {
+                try
+                {
+                    var commandUsername = commandPayloadJObject["username"].Value<string>();
+                    if (!string.IsNullOrEmpty(commandUsername))
+                    {
+                        username = commandUsername;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    commandResult = "error setting the new username";
+                    _logger.LogError(ex,
+                        "ProcessAdminPasswordUpdate (username): Unexpected error" + ex.Message);
+                    return commandResult;
+                }
+
+            }
+            if (commandPayloadJObject != null && commandPayloadJObject.ContainsKey("currentPassword"))
+            {
+
+                try
+                {
+                    var commandCurrentPassword = commandPayloadJObject["currentPassword"].Value<string>();
+                    if (!string.IsNullOrEmpty(commandCurrentPassword))
+                    {
+                        currentPassword = commandCurrentPassword;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    commandResult = "error setting the current password";
+                    _logger.LogError(ex,
+                        "ProcessAdminPasswordUpdate (password): Unexpected error" + ex.Message);
+                    return commandResult;
+                }
+            }
+            if (commandPayloadJObject != null && commandPayloadJObject.ContainsKey("newPassword"))
+            {
+
+                try
+                {
+                    var commandNewPassword = commandPayloadJObject["newPassword"].Value<string>();
+                    if (!string.IsNullOrEmpty(commandNewPassword))
+                    {
+                        newPassword = commandNewPassword;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    commandResult = "error setting the new password";
+                    _logger.LogError(ex,
+                        "ProcessAdminPasswordUpdate (password): Unexpected error" + ex.Message);
+                    return commandResult;
+                }
+            }
+            var dtos = new List<StandaloneConfigDTO>();
+            var configDto = ConfigFileHelper.GetSmartreaderDefaultConfigDTO();
+
+            if (configDto != null)
+            {
+                try
+                {
+                    // Read the JSON file content
+                    string json = "";
+                    CustomAuth data = new CustomAuth();
+                    try
+                    {
+                        using (StreamReader reader = File.OpenText("customsettings.json"))
+                        {
+                            json = reader.ReadToEndAsync().Result;
+                        }
+                        if (!string.IsNullOrEmpty(json))
+                        {
+                            // Deserialize JSON to a data structure
+                            data = System.Text.Json.JsonSerializer.Deserialize<CustomAuth>(json);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        commandResult = "error parsing data.";
+                        _logger.LogError(ex,
+                        "ProcessAdminPasswordUpdate error parsing data" + ex.Message);
+                        return commandResult;
+                    }
+
+
+                    if(string.IsNullOrEmpty(data.BasicAuth.UserName))
+                    {
+                        data.BasicAuth.UserName = "admin";
+                    }
+                    if (string.IsNullOrEmpty(data.BasicAuth.Password))
+                    {
+                        data.BasicAuth.Password = "admin";
+                    }
+                    // Modify the data
+                    data.RShellAuth.UserName = username;
+                    if(!data.RShellAuth.Password.Equals(newPassword))
+                    {
+                        data.RShellAuth.Password = newPassword;
+                    }
+                    
+                    // Serialize the modified data back to JSON
+                    var options = new JsonSerializerOptions { WriteIndented = true };
+                    var updatedJson = System.Text.Json.JsonSerializer.Serialize(data, options);
+
+                    // Write the updated JSON back to the file
+                    using (StreamWriter writer = File.CreateText("customsettings.json"))
+                    {
+                        writer.WriteAsync(updatedJson).Wait();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    commandResult = "error saving data.";
+                    _logger.LogError(ex,
+                    "ProcessAdminPasswordUpdate error saving data" + ex.Message);
+                    return commandResult;
+
+                }
+
+                return commandResult;
+            }
+        }
+        catch (Exception ex)
+        {
+
+            commandResult = "error processing command.";
+            _logger.LogError(ex,
+            "ProcessAdminPasswordUpdate error processing command" + ex.Message);
+            return commandResult;
+        }
+        return commandResult;
     }
 
     private async void ProcessAppStatus()
@@ -9440,6 +9754,182 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             {
                                 var commandResponse = new JProperty("response", commandStatus);
                                 deserializedCmdData.Add(commandResponse);
+                            }
+
+                            var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
+
+                            result = serializedData;
+
+                            if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
+                                if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
+                                    _standaloneConfigDTO.mqttManagementResponseTopic =
+                                        _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
+                                            _standaloneConfigDTO.readerName);
+                            if (shouldPublishToMqtt)
+                            {
+                                var qos = 0;
+                                var retain = false;
+                                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                                try
+                                {
+                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                        out retain);
+
+                                    mqttQualityOfServiceLevel = qos switch
+                                    {
+                                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                                        _ => MqttQualityOfServiceLevel.AtMostOnce
+                                    };
+                                }
+                                catch (Exception)
+                                {
+                                }
+
+                                var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
+                                await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
+                                    mqttQualityOfServiceLevel, retain);
+                                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                            }
+
+
+                        }
+                        else if ("update-admin-password".Equals(commandValue))
+                        {
+                            try
+                            {
+                                commandStatus = ProcessAdminPasswordUpdate(managementCommandJson);
+                                //if (!"success".Equals(updateAdminPwdResult)) commandStatus = "error";
+                            }
+                            catch (Exception e)
+                            {
+                                commandStatus = "error";
+                                _logger.LogError(e, "Unexpected error");
+                            }
+
+                            if (deserializedCmdData.ContainsKey("response"))
+                            {
+                                deserializedCmdData["response"] = commandStatus;
+                            }
+                            else
+                            {
+                                var commandResponse = new JProperty("response", commandStatus);
+                                deserializedCmdData.Add(commandResponse);
+                            }
+                            try
+                            {
+                                deserializedCmdData.Property("payload").Descendants()
+                                    .OfType<JProperty>()
+                                    .Where(attr => attr.Name.StartsWith("currentPassword"))
+                                    .ToList()
+                                    .ForEach(attr => attr.Remove());
+                            }
+                            catch (Exception)
+                            {
+
+                                
+                            }
+                            try
+                            {
+                                deserializedCmdData.Property("payload").Descendants()
+                                    .OfType<JProperty>()
+                                    .Where(attr => attr.Name.StartsWith("newPassword"))
+                                    .ToList()
+                                    .ForEach(attr => attr.Remove());
+                            }
+                            catch (Exception)
+                            {
+
+
+                            }
+
+                            var serializedData = JsonConvert.SerializeObject(deserializedCmdData);
+
+                            result = serializedData;
+
+                            if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementResponseTopic))
+                                if (_standaloneConfigDTO.mqttManagementResponseTopic.Contains("{{deviceId}}"))
+                                    _standaloneConfigDTO.mqttManagementResponseTopic =
+                                        _standaloneConfigDTO.mqttManagementResponseTopic.Replace("{{deviceId}}",
+                                            _standaloneConfigDTO.readerName);
+                            if (shouldPublishToMqtt)
+                            {
+                                var qos = 0;
+                                var retain = false;
+                                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                                try
+                                {
+                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                        out retain);
+
+                                    mqttQualityOfServiceLevel = qos switch
+                                    {
+                                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                                        _ => MqttQualityOfServiceLevel.AtMostOnce
+                                    };
+                                }
+                                catch (Exception)
+                                {
+                                }
+
+                                var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
+                                await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
+                                    mqttQualityOfServiceLevel, retain);
+                                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                            }
+
+
+                        }
+                        else if ("update-rshell-password".Equals(commandValue))
+                        {
+                            try
+                            {
+                                commandStatus = ProcessRShellPasswordUpdate(managementCommandJson);
+                                //if (!"success".Equals(updateAdminPwdResult)) commandStatus = "error";
+                            }
+                            catch (Exception e)
+                            {
+                                commandStatus = "error";
+                                _logger.LogError(e, "Unexpected error");
+                            }
+
+                            if (deserializedCmdData.ContainsKey("response"))
+                            {
+                                deserializedCmdData["response"] = commandStatus;
+                            }
+                            else
+                            {
+                                var commandResponse = new JProperty("response", commandStatus);
+                                deserializedCmdData.Add(commandResponse);
+                            }
+                            try
+                            {
+                                deserializedCmdData.Property("payload").Descendants()
+                                    .OfType<JProperty>()
+                                    .Where(attr => attr.Name.StartsWith("currentPassword"))
+                                    .ToList()
+                                    .ForEach(attr => attr.Remove());
+                            }
+                            catch (Exception)
+                            {
+
+
+                            }
+                            try
+                            {
+                                deserializedCmdData.Property("payload").Descendants()
+                                    .OfType<JProperty>()
+                                    .Where(attr => attr.Name.StartsWith("newPassword"))
+                                    .ToList()
+                                    .ForEach(attr => attr.Remove());
+                            }
+                            catch (Exception)
+                            {
+
+
                             }
 
                             var serializedData = JsonConvert.SerializeObject(deserializedCmdData);

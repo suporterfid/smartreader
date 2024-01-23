@@ -88,6 +88,9 @@
     <Content Update="cap_template\config\smartreader-default.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Update="customsettings.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Update="wwwroot\app.js">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>

@@ -15,7 +15,13 @@ var vueApplication = new Vue({
 			username: "",
 			password: ""
 		},
-		applicationLabel: 'version 4.0.0.40',
+		adminCurrentPassword: "",
+		adminNewPassword: "",
+		adminNewPasswordCheck: "",
+		rshellCurrentPassword: "",
+		rshellNewPassword: "",
+		rshellNewPasswordCheck: "",
+		applicationLabel: 'version 4.0.0.41',
 		applicationBy: 'Smartreader R700',
 		//applicationBy: 'SoLink R700',
 
@@ -184,6 +190,48 @@ var vueApplication = new Vue({
 
 		togglePanelBody: function () {
 			this.showImageSummaryPanelBody = !this.showImageSummaryPanelBody;
+		},
+
+		checkPassword: function (event) {
+			if (document.getElementById('outputAdminNewPassword').value ==
+				document.getElementById('outputAdminNewPasswordCheck').value) {
+				document.getElementById('messageAdmin').style.color = 'green';
+				document.getElementById('messageAdmin').innerHTML = 'Password matching';
+			} else {
+				document.getElementById('messageAdmin').style.color = 'red';
+				document.getElementById('messageAdmin').innerHTML = 'Password not matching';
+			}
+		},
+
+		checkRShellPassword: function (event) {
+			if (document.getElementById('outputRShellNewPassword').value ==
+				document.getElementById('outputRShellNewPasswordCheck').value) {
+				document.getElementById('messageRShell').style.color = 'green';
+				document.getElementById('messageRShell').innerHTML = 'Password matching';
+			} else {
+				document.getElementById('messageRShell').style.color = 'red';
+				document.getElementById('messageRShell').innerHTML = 'Password not matching';
+			}
+		},
+
+		alertPasswordUpdated: function (event) {
+			alert('Password updated, please stop and then reload the application.');
+			this.adminCurrentPassword = "";
+			this.adminNewPassword = "";
+			this.adminNewPasswordCheck = "";
+			this.rshellCurrentPassword = "";
+			this.rshellNewPassword = "";
+			this.rshellNewPasswordCheck = "";
+		},
+
+		alertPassworNotUpdated: function (event) {
+			alert('Error changing password.');
+			this.adminCurrentPassword = "";
+			this.adminNewPassword = "";
+			this.adminNewPasswordCheck = "";
+			this.rshellCurrentPassword = "";
+			this.rshellNewPassword = "";
+			this.rshellNewPasswordCheck = "";
 		},
 
 		alertSettingsApplied: function (event) {
@@ -642,6 +690,77 @@ var vueApplication = new Vue({
 			});
         },
 
+		updateAdminPassword: function (event) {
+			const eventDate = new Date().toISOString();
+			var postData = {
+				command: "update-admin-password",
+				command_id: eventDate,
+				payload: {
+					username: "admin",
+					currentPassword: this.adminCurrentPassword,
+					newPassword: this.adminNewPassword
+				}
+			};
+			// POST /apply-settings
+			this.$http.post('/command/management', postData).then((response) => {
+
+				// get status
+				console.log(response.status);
+
+				// get status text
+				console.log(response.statusText);
+
+				// get 'Expires' header
+				//console.log(response.headers.get('Expires'));
+
+				// set data on vm
+				//this.$set('someData', response.body);
+				console.log('Password updated!!');
+				this.alertPasswordUpdated();
+
+
+			}, (response) => {
+				// error callback
+				console.log('Error changing password:' + err);
+				this.alertPassworNotUpdated();
+			});
+		},
+
+		updateRShellPassword: function (event) {
+			const eventDate = new Date().toISOString();
+			var postData = {
+				command: "update-rshell-password",
+				command_id: eventDate,
+				payload: {
+					username: "root",
+					currentPassword: this.rshellCurrentPassword,
+					newPassword: this.rshellNewPassword
+				}
+			};
+			// POST /apply-settings
+			this.$http.post('/command/management', postData).then((response) => {
+
+				// get status
+				console.log(response.status);
+
+				// get status text
+				console.log(response.statusText);
+
+				// get 'Expires' header
+				//console.log(response.headers.get('Expires'));
+
+				// set data on vm
+				//this.$set('someData', response.body);
+				console.log('Password updated!!');
+				this.alertPasswordUpdated();
+
+
+			}, (response) => {
+				// error callback
+				console.log('Error changing password:' + err);
+				this.alertPassworNotUpdated();
+			});
+		},
 
 		applySettings: function (event) {
 

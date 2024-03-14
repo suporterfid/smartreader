@@ -84,7 +84,7 @@ public static class AgentConfigJsonConverter
 
         dto.id = smartReaderConfig.Id.ToString();
         dto.readerName = smartReaderConfig.ReaderName;
-        dto.serial = smartReaderConfig.Serial;
+        //dto.serial = smartReaderConfig.Serial;
         dto.isEnabled = UtilConverter.ConvertBoolToNumericString(smartReaderConfig.IsEnabled);
         dto.licenseKey = smartReaderConfig.LicenseKey;
         dto.profileName = smartReaderConfig.ProfileName;
@@ -459,7 +459,7 @@ public static class AgentConfigJsonConverter
         if (!string.IsNullOrEmpty(dto.id)) smartReaderConfig.Id = UtilConverter.ConvertfromNumericStringToInt(dto.id);
 
         smartReaderConfig.ReaderName = dto.readerName;
-        smartReaderConfig.Serial = dto.serial;
+        //smartReaderConfig.Serial = dto.serial;
         smartReaderConfig.LicenseKey = dto.licenseKey;
         smartReaderConfig.IpAddress = dto.ipAddress;
         smartReaderConfig.IsEnabled = UtilConverter.ConvertfromNumericStringToBool(dto.isEnabled);

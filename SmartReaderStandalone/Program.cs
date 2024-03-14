@@ -56,8 +56,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 //builder.Configuration.AddJsonFile
 
-builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-    .AddJsonFile("customsettings.json", optional: false, reloadOnChange: true);
+builder.Configuration.AddJsonFile("/customer/appsettings.json", optional: false, reloadOnChange: true)
+    .AddJsonFile("/customer/customsettings.json", optional: false, reloadOnChange: true);
 
 // Register IConfiguration in services
 builder.Services.AddSingleton(builder.Configuration);
@@ -154,7 +154,7 @@ var rshellAuthUserName = app.Configuration["RShellAuth:UserName"] ?? "root";
 
 var rshellAuthPassword = app.Configuration["RShellAuth:Password"] ?? "impinj";
 
-
+Console.WriteLine($"using rshell [{rshellAuthPassword}]");
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

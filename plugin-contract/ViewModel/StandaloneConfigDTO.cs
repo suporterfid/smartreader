@@ -641,7 +641,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
         if (!readerName.Equals(otherStandaloneConfigDTO.readerName)) return false;
 
-        if (!serial.Equals(otherStandaloneConfigDTO.serial)) return false;
+        //if (!serial.Equals(otherStandaloneConfigDTO.serial)) return false;
 
         if (!isEnabled.Equals(otherStandaloneConfigDTO.isEnabled)) return false;
 
@@ -1492,7 +1492,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
             config.readerName = HttpUtility.UrlDecode(config.readerName);
 
-            config.serial = HttpUtility.UrlDecode(config.serial);
+            //config.serial = HttpUtility.UrlDecode(config.serial);
 
             config.isEnabled = HttpUtility.UrlDecode(config.isEnabled);
 

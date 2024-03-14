@@ -277,6 +277,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         var filePath = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
 
+
+        // Load the custom JSON configuration file
+        _configuration = new ConfigurationBuilder()
+            .AddJsonFile("/customer/appsettings.json", optional: false, reloadOnChange: true)
+    .AddJsonFile("/customer/customsettings.json", optional: false, reloadOnChange: true).Build();
+
         var serverUrl = _configuration.GetValue<string>("ServerInfo:Url");
         var serverToken = _configuration.GetValue<string>("ServerInfo:AuthToken");
 
@@ -290,8 +296,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             _readerAddress = _configuration.GetValue<string>("ReaderInfo:DebugAddress") ?? _readerAddress;
         }
-        _readerUsername = _configuration.GetValue<string>("RShell:UserName") ?? "root";
-        _readerPassword = _configuration.GetValue<string>("RShell:Password") ?? "impinj";
+        _readerUsername = _configuration.GetValue<string>("RShellAuth:UserName") ?? "root";
+        _readerPassword = _configuration.GetValue<string>("RShellAuth:Password") ?? "impinj";
 
         _httpUtil = new HttpUtil(HttpClientFactory, serverUrl, serverToken);
 

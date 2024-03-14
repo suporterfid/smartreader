@@ -16,7 +16,7 @@ public class SmartReaderConfig
 
     public string ReaderName { get; set; }
 
-    public string Serial { get; set; }
+    //public string Serial { get; set; }
 
     public bool IsEnabled { get; set; }
 

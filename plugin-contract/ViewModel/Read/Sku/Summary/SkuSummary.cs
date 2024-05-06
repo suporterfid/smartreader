@@ -17,10 +17,10 @@ namespace SmartReaderStandalone.ViewModel.Read.Sku.Summary;
 public partial class SkuSummary
 {
     [JsonProperty("barcode", NullValueHandling = NullValueHandling.Ignore)]
-    public string Barcode { get; set; }
+    public string? Barcode { get; set; }
 
     [JsonProperty("sku", NullValueHandling = NullValueHandling.Ignore)]
-    public string Sku { get; set; }
+    public string? Sku { get; set; }
 
     [JsonProperty("qty", NullValueHandling = NullValueHandling.Ignore)]
     public long? Qty { get; set; }
@@ -29,10 +29,10 @@ public partial class SkuSummary
     public long? EventTimestamp { get; set; }
 
     [JsonProperty("additionalData", NullValueHandling = NullValueHandling.Ignore)]
-    public Dictionary<string, string> AdditionalData { get; set; }
+    public Dictionary<string, string>? AdditionalData { get; set; }
 
     [JsonProperty("epcs", NullValueHandling = NullValueHandling.Ignore)]
-    public List<string> Epcs { get; set; }
+    public List<string>? Epcs { get; set; }
 }
 
 public partial class SkuSummary

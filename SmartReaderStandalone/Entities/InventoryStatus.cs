@@ -17,9 +17,9 @@ public class InventoryStatus
 {
     [Key]
     [DatabaseGenerated(DatabaseGeneratedOption.None)]
-    public string Id { get; set; }
+    public string? Id { get; set; }
 
-    public string CurrentStatus { get; set; }
+    public string? CurrentStatus { get; set; }
 
     public string? CycleId { get; set; }
 

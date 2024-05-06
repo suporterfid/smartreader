@@ -1,4 +1,37 @@
-﻿docker system prune -a
+﻿## Docker Commands Documentation
+
+### Using docker build instead of docker compose:
+
+The following commands demonstrate using `docker build` instead of `docker compose` to build and run the Docker container:
+
+```bash
+docker system prune -a -f
+
+docker build --progress=plain --platform=linux/arm -t smartreader-upgx -f ./Dockerfile ../
+
+docker run -d --name smartreader-container smartreader-upgx 
+
+docker container cp smartreader-container:/etk/smartreader_cap.upgx cap_deploy/
+
+docker container rm -f smartreader-container
+```
+
+#### Alternative to inspect the container:
+
+To inspect the container, you can run the following command:
+
+```bash
+docker run --rm -it --entrypoint=/bin/bash smartreader-upgx
+```
+
+---
+
+### Docker Compose Alternative:
+
+The following commands provide an alternative using Docker Compose to build and run the Docker container:
+
+```bash
+docker system prune -a  -f
 
 docker compose build smartreader
 
@@ -6,8 +39,10 @@ docker compose up -d
 
 docker compose cp smartreader:/etk/smartreader_cap.upgx cap_deploy/
 
-
 docker compose down
+```
 
+---
 
-
+You can use these commands according to your preference and requirements. 
+Make sure to replace placeholders like `smartreader-upgx` and `smartreader-container` with your actual container names.

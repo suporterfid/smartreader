@@ -17,9 +17,9 @@ public class ReaderCommands
 {
     [Key]
     [DatabaseGenerated(DatabaseGeneratedOption.None)]
-    public string Id { get; set; }
+    public string? Id { get; set; }
 
-    public string Value { get; set; }
+    public string? Value { get; set; }
 
     public DateTime Timestamp { get; set; }
 }

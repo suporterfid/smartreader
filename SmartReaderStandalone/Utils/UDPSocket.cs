@@ -20,9 +20,9 @@ public class UDPSocket
     private const int bufSize = 8 * 1024;
     public readonly ConcurrentDictionary<string, int> _udpClients = new();
     private readonly State state = new();
-    public Socket _socket;
+    public Socket? _socket;
     private EndPoint epFrom = new IPEndPoint(IPAddress.Any, 0);
-    private AsyncCallback recv;
+    private AsyncCallback? recv;
 
     public void Server(string address, int port)
     {

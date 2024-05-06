@@ -17,11 +17,11 @@ public class PostioningEpcs
 {
     [Key]
     [DatabaseGenerated(DatabaseGeneratedOption.None)]
-    public string Epc { get; set; }
+    public string? Epc { get; set; }
 
     public long AntennaPort { get; set; }
 
-    public string AntennaZone { get; set; }
+    public string? AntennaZone { get; set; }
 
     public double? PeakRssi { get; set; }
 

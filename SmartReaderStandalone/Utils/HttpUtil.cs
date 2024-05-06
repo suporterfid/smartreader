@@ -41,11 +41,9 @@ public class HttpUtil
 
     public async Task<List<SmartReaderCommandData>> GetCommandsAsync()
     {
-        var filter = "{ \"filters\": [ [\"status\",\"=\",\"SOLICITADO\"] ]}";
-        var responseData = new List<SmartReaderCommandData>();
-
-        var httpClient = _httpClientFactory.CreateClient();
-        var request = new HttpRequestMessage
+        string filter = "{ \"filters\": [ [\"status\",\"=\",\"SOLICITADO\"] ]}";
+        HttpClient httpClient = _httpClientFactory.CreateClient();
+        HttpRequestMessage request = new()
         {
             Method = HttpMethod.Get,
             RequestUri = new Uri(_url + "/comandosleitores"),
@@ -55,12 +53,13 @@ public class HttpUtil
         //request.Headers.Add("Accept", "application/json");
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
-        var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+        HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         //.AddParameter("foo", "bar");
-        var deserializedData = JsonConvert.DeserializeObject<SmartReaderCommand>(content);
+        SmartReaderCommand? deserializedData = JsonConvert.DeserializeObject<SmartReaderCommand>(content);
+        List<SmartReaderCommandData> responseData = new();
         responseData = deserializedData.Data;
 
 
@@ -69,12 +68,12 @@ public class HttpUtil
 
     public async Task<List<SmartReaderCommandData>> GetCommandsRunningByReaderAndTypeAsync(int readerId, string cmdType)
     {
-        var filter = "{ \"filters\": [ [\"id_leitor\",\"=\"," + readerId +
+        string filter = "{ \"filters\": [ [\"id_leitor\",\"=\"," + readerId +
                      "], [\"status\",\"=\",\"EXECUTANDO\"], [\"tipo_comando\",\"=\",\"" + cmdType + "\"] ]}";
-        var responseData = new List<SmartReaderCommandData>();
+        List<SmartReaderCommandData> responseData = new();
 
-        var httpClient = _httpClientFactory.CreateClient();
-        var request = new HttpRequestMessage
+        HttpClient httpClient = _httpClientFactory.CreateClient();
+        HttpRequestMessage request = new()
         {
             Method = HttpMethod.Get,
             RequestUri = new Uri(_url + "/comandosleitores"),
@@ -84,11 +83,11 @@ public class HttpUtil
         //request.Headers.Add("Accept", "application/json");
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
-        var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+        HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-        var deserializedData = JsonConvert.DeserializeObject<SmartReaderCommand>(content);
+        SmartReaderCommand? deserializedData = JsonConvert.DeserializeObject<SmartReaderCommand>(content);
         responseData = deserializedData.Data;
 
         return responseData;
@@ -96,11 +95,11 @@ public class HttpUtil
 
     public async Task<List<SmartReaderCommandData>> GetCommandsRunningByReaderAsync(int readerId)
     {
-        var filter = "{ \"filters\": [ [\"id_leitor\",\"=\"," + readerId + "], [\"status\",\"=\",\"EXECUTANDO\"] ]}";
-        var responseData = new List<SmartReaderCommandData>();
+        string filter = "{ \"filters\": [ [\"id_leitor\",\"=\"," + readerId + "], [\"status\",\"=\",\"EXECUTANDO\"] ]}";
+        List<SmartReaderCommandData> responseData = new();
 
-        var httpClient = _httpClientFactory.CreateClient();
-        var request = new HttpRequestMessage
+        HttpClient httpClient = _httpClientFactory.CreateClient();
+        HttpRequestMessage request = new()
         {
             Method = HttpMethod.Get,
             RequestUri = new Uri(_url + "/comandosleitores"),
@@ -110,11 +109,11 @@ public class HttpUtil
         //request.Headers.Add("Accept", "application/json");
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
-        var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+        HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-        var deserializedData = JsonConvert.DeserializeObject<SmartReaderCommand>(content);
+        SmartReaderCommand? deserializedData = JsonConvert.DeserializeObject<SmartReaderCommand>(content);
         responseData = deserializedData.Data;
 
         return responseData;
@@ -122,11 +121,11 @@ public class HttpUtil
 
     public async Task<List<SmartReaderCommandData>> GetCommandsByReaderAsync(int readerId)
     {
-        var filter = "{ \"filters\": [ [\"id_leitor\",\"=\"," + readerId + "] ]}";
-        var responseData = new List<SmartReaderCommandData>();
+        string filter = "{ \"filters\": [ [\"id_leitor\",\"=\"," + readerId + "] ]}";
+        List<SmartReaderCommandData> responseData = new();
 
-        var httpClient = _httpClientFactory.CreateClient();
-        var request = new HttpRequestMessage
+        HttpClient httpClient = _httpClientFactory.CreateClient();
+        HttpRequestMessage request = new()
         {
             Method = HttpMethod.Get,
             RequestUri = new Uri(_url + "/comandosleitores"),
@@ -136,11 +135,11 @@ public class HttpUtil
         //request.Headers.Add("Accept", "application/json");
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
-        var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+        HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-        var deserializedData = JsonConvert.DeserializeObject<SmartReaderCommand>(content);
+        SmartReaderCommand? deserializedData = JsonConvert.DeserializeObject<SmartReaderCommand>(content);
         responseData = deserializedData.Data;
 
         return responseData;
@@ -148,9 +147,9 @@ public class HttpUtil
 
     public async Task<bool> PostCommandsAsync(SmartReaderCommandData command)
     {
-        var httpClient = _httpClientFactory.CreateClient();
-        var param = JsonConvert.SerializeObject(command);
-        var request = new HttpRequestMessage
+        HttpClient httpClient = _httpClientFactory.CreateClient();
+        string param = JsonConvert.SerializeObject(command);
+        HttpRequestMessage request = new()
         {
             Method = HttpMethod.Post,
             RequestUri = new Uri(_url + "/comandosleitores"),
@@ -160,20 +159,20 @@ public class HttpUtil
         //request.Headers.Add("Accept", "application/json");
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
-        var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+        HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         return response.IsSuccessStatusCode;
     }
 
     public async Task<bool> PostStatusAsync(SmartReaderCommandData readerStatus)
     {
-        var httpClient = _httpClientFactory.CreateClient();
+        HttpClient httpClient = _httpClientFactory.CreateClient();
         //httpClient.DefaultRequestHeaders.ExpectContinue = true;
         httpClient.Timeout = TimeSpan.FromSeconds(5);
-        var param = JsonConvert.SerializeObject(readerStatus);
-        var request = new HttpRequestMessage
+        string param = JsonConvert.SerializeObject(readerStatus);
+        HttpRequestMessage request = new()
         {
             Method = HttpMethod.Post,
             RequestUri = new Uri(_url + "/statusleitores"),
@@ -183,20 +182,20 @@ public class HttpUtil
         //request.Headers.Add("Accept", "application/json");
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
-        var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+        HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         return response.IsSuccessStatusCode;
     }
 
     public async Task<bool> PostTagEventToSmartReaderServerAsync(SmartReaderTagEventData tagEventData)
     {
-        var httpClient = _httpClientFactory.CreateClient();
+        HttpClient httpClient = _httpClientFactory.CreateClient();
         //httpClient.DefaultRequestHeaders.ExpectContinue = true;
         httpClient.Timeout = TimeSpan.FromSeconds(3);
-        var param = JsonConvert.SerializeObject(tagEventData);
-        var request = new HttpRequestMessage
+        string param = JsonConvert.SerializeObject(tagEventData);
+        HttpRequestMessage request = new()
         {
             Method = HttpMethod.Post,
             RequestUri = new Uri(_url + "/leituras"),
@@ -206,21 +205,19 @@ public class HttpUtil
         //request.Headers.Add("Accept", "application/json");
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
-        var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+        HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         return response.IsSuccessStatusCode;
     }
 
     public async Task<SmartReaderSetupData> GetLeitorAsync(int readerId)
     {
-        List<SmartReaderSetupData> responseData = null;
+        string filter = "{ \"filters\": [ [\"id\",\"=\"," + readerId + "] ]}";
 
-        var filter = "{ \"filters\": [ [\"id\",\"=\"," + readerId + "] ]}";
-
-        var httpClient = _httpClientFactory.CreateClient();
-        var request = new HttpRequestMessage
+        HttpClient httpClient = _httpClientFactory.CreateClient();
+        HttpRequestMessage request = new()
         {
             Method = HttpMethod.Get,
             RequestUri = new Uri(_url + "/leitores"),
@@ -230,12 +227,11 @@ public class HttpUtil
         //request.Headers.Add("Accept", "application/json");
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
-        var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+        HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-        var deserializedData = JsonConvert.DeserializeObject<SmartReaderSetup>(content);
-        responseData = deserializedData.Data;
-
+        string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        SmartReaderSetup? deserializedData = JsonConvert.DeserializeObject<SmartReaderSetup>(content);
+        List<SmartReaderSetupData> responseData = deserializedData.Data;
         if (responseData != null && responseData.Any()) return responseData.FirstOrDefault();
 
         return null;
@@ -243,12 +239,10 @@ public class HttpUtil
 
     public async Task<SmartReaderSetupData> GetLeitorBySerialAsync(string serial)
     {
-        List<SmartReaderSetupData> responseData = null;
+        string filter = "{ \"filters\": [ [\"serial\",\"=\"," + serial + "] ]}";
 
-        var filter = "{ \"filters\": [ [\"serial\",\"=\"," + serial + "] ]}";
-
-        var httpClient = _httpClientFactory.CreateClient();
-        var request = new HttpRequestMessage
+        HttpClient httpClient = _httpClientFactory.CreateClient();
+        HttpRequestMessage request = new()
         {
             Method = HttpMethod.Get,
             RequestUri = new Uri(_url + "/leitores"),
@@ -258,12 +252,11 @@ public class HttpUtil
         //request.Headers.Add("Accept", "application/json");
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
-        var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+        HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-        var deserializedData = JsonConvert.DeserializeObject<SmartReaderSetup>(content);
-        responseData = deserializedData.Data;
-
+        string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        SmartReaderSetup? deserializedData = JsonConvert.DeserializeObject<SmartReaderSetup>(content);
+        List<SmartReaderSetupData> responseData = deserializedData.Data;
         if (responseData != null && responseData.Any()) return responseData.FirstOrDefault();
 
         return null;
@@ -271,10 +264,10 @@ public class HttpUtil
 
     public async Task<List<SmartReaderAntennaSetupListData>> GetAntenasAsync(int readerId)
     {
-        var filter = "{ \"filters\": [ [\"id_leitor\",\"=\"," + readerId + "] ]}";
+        string filter = "{ \"filters\": [ [\"id_leitor\",\"=\"," + readerId + "] ]}";
 
-        var httpClient = _httpClientFactory.CreateClient();
-        var request = new HttpRequestMessage
+        HttpClient httpClient = _httpClientFactory.CreateClient();
+        HttpRequestMessage request = new()
         {
             Method = HttpMethod.Get,
             RequestUri = new Uri(_url + "/antenas"),
@@ -284,22 +277,22 @@ public class HttpUtil
         //request.Headers.Add("Accept", "application/json");
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
-        var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+        HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-        var deserializedData = JsonConvert.DeserializeObject<SmartReaderAntennaSetup>(content);
-        var responseData = deserializedData.Data;
+        SmartReaderAntennaSetup? deserializedData = JsonConvert.DeserializeObject<SmartReaderAntennaSetup>(content);
+        List<SmartReaderAntennaSetupListData> responseData = deserializedData.Data;
 
         return responseData;
     }
 
     public async Task<List<SmartReaderMqttData>> GetMqttAsync(int readerId)
     {
-        var filter = "{ \"filters\": [ [\"id_leitor\",\"=\"," + readerId + "] ]}";
+        string filter = "{ \"filters\": [ [\"id_leitor\",\"=\"," + readerId + "] ]}";
 
-        var httpClient = _httpClientFactory.CreateClient();
-        var request = new HttpRequestMessage
+        HttpClient httpClient = _httpClientFactory.CreateClient();
+        HttpRequestMessage request = new()
         {
             Method = HttpMethod.Get,
             RequestUri = new Uri(_url + "/mqtt"),
@@ -309,12 +302,12 @@ public class HttpUtil
         //request.Headers.Add("Accept", "application/json");
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
-        var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+        HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-        var deserializedData = JsonConvert.DeserializeObject<SmartReaderMqtt>(content);
-        var responseData = deserializedData.Data;
+        SmartReaderMqtt? deserializedData = JsonConvert.DeserializeObject<SmartReaderMqtt>(content);
+        List<SmartReaderMqttData> responseData = deserializedData.Data;
 
         return responseData;
     }
@@ -328,14 +321,14 @@ public class HttpUtil
 
         try
         {
-            var fullUriData = new Uri(url);
-            var host = fullUriData.Host;
-            var baseUri = fullUriData.GetLeftPart(UriPartial.Authority);
-            var rightActionPath = url.Replace(baseUri, "");
-            var httpClient = _httpClientFactory.CreateClient();
+            Uri fullUriData = new(url);
+            string host = fullUriData.Host;
+            string baseUri = fullUriData.GetLeftPart(UriPartial.Authority);
+            string rightActionPath = url.Replace(baseUri, "");
+            HttpClient httpClient = _httpClientFactory.CreateClient();
 
 
-            var request = new HttpRequestMessage
+            HttpRequestMessage request = new()
             {
                 Method = HttpMethod.Post,
                 RequestUri = new Uri(url),
@@ -359,18 +352,18 @@ public class HttpUtil
             Log.Debug(jsonBody);
             Console.WriteLine(jsonBody);
 
-            var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+            HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
             //var response = await httpClient.PostAsJsonAsync(fullUriData, request).ConfigureAwait(false);
             //response.EnsureSuccessStatusCode();
-            var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
             Log.Debug(content);
             Console.WriteLine(content);
 
             if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
             {
-                var tokenResult = response.Content.ReadAsStringAsync().Result;
-                var tokenJson = JObject.Parse(tokenResult);
+                string tokenResult = response.Content.ReadAsStringAsync().Result;
+                JObject tokenJson = JObject.Parse(tokenResult);
                 if (tokenJson.ContainsKey("token")) token = tokenJson.GetValue("token").ToString();
             }
 
@@ -432,91 +425,91 @@ public class HttpUtil
         return token;
     }
 
-    public async Task<string?> GetDataAsync(string url, string basicAuthUsername, string basicAuthPassword,
-        string bearerToken)
-    {
-        var client = new RestClient(url);
+    //public async Task<string?> GetDataAsync(string url, string basicAuthUsername, string basicAuthPassword,
+    //    string bearerToken)
+    //{
+    //    var client = new RestClient(url);
 
-        var request = new RestRequest();
+    //    var request = new RestRequest();
 
-        request.AddHeader("Accept", "application/json");
-        if (!string.IsNullOrEmpty(basicAuthUsername) && !string.IsNullOrEmpty(basicAuthPassword))
-            client.Authenticator = new HttpBasicAuthenticator(basicAuthUsername, basicAuthPassword);
-        else if (!string.IsNullOrEmpty(bearerToken)) request.AddHeader("Authorization", "Bearer " + bearerToken);
+    //    request.AddHeader("Accept", "application/json");
+    //    if (!string.IsNullOrEmpty(basicAuthUsername) && !string.IsNullOrEmpty(basicAuthPassword))
+    //        client.Authenticator = new HttpBasicAuthenticator(basicAuthUsername, basicAuthPassword);
+    //    else if (!string.IsNullOrEmpty(bearerToken)) request.AddHeader("Authorization", "Bearer " + bearerToken);
 
-        var response = await client.ExecuteGetAsync(request);
+    //    var response = await client.ExecuteGetAsync(request);
 
-        if (response.IsSuccessful) return response.Content;
+    //    if (response.IsSuccessful) return response.Content;
 
-        return null;
-    }
+    //    return null;
+    //}
 
-    public async Task<bool> PostJsonListBodyDataAsync(string url, object bodyRequest, string basicAuthUsername,
-        string basicAuthPassword, string bearerToken, bool checkResult, string actionPath)
-    {
-        var success = true;
-        //var hostName = "http://coala-app01-api.elisbrasil.com";//ApplicationConfiguration.Get("http://coala-app01-api.elisbrasil.com");
-        //var urlToken = hostName + "/api2/Sync/PostClientEventTagPortal";
-        //var bodyRequest = "{\"login\": \"inventario\",\"password\": \"inventario\"}";
+    //public async Task<bool> PostJsonListBodyDataAsync(string url, object bodyRequest, string basicAuthUsername,
+    //    string basicAuthPassword, string bearerToken, bool checkResult, string actionPath)
+    //{
+    //    var success = true;
+    //    //var hostName = "http://coala-app01-api.elisbrasil.com";//ApplicationConfiguration.Get("http://coala-app01-api.elisbrasil.com");
+    //    //var urlToken = hostName + "/api2/Sync/PostClientEventTagPortal";
+    //    //var bodyRequest = "{\"login\": \"inventario\",\"password\": \"inventario\"}";
 
-        var client = new RestClient(url);
+    //    var client = new RestClient(url);
 
-        //var request = new RestSharp.RestRequest();
-        var request = new RestRequest(actionPath, Method.Post);
-        //{
-        //    RequestFormat = RestSharp.DataFormat.Json
-        //};
-        var json = JsonConvert.SerializeObject(bodyRequest);
-        request.AddParameter("application/json; charset=utf-8", json, ParameterType.RequestBody);
-        request.RequestFormat = DataFormat.Json;
-        //request.AddHeader("Content-Type", "application/json");
-        request.AddHeader("Accept", "*/*");
+    //    //var request = new RestSharp.RestRequest();
+    //    var request = new RestRequest(actionPath, Method.Post);
+    //    //{
+    //    //    RequestFormat = RestSharp.DataFormat.Json
+    //    //};
+    //    var json = JsonConvert.SerializeObject(bodyRequest);
+    //    request.AddParameter("application/json; charset=utf-8", json, ParameterType.RequestBody);
+    //    request.RequestFormat = DataFormat.Json;
+    //    //request.AddHeader("Content-Type", "application/json");
+    //    request.AddHeader("Accept", "*/*");
 
-        //request.AddBody(bodyRequest);
+    //    //request.AddBody(bodyRequest);
 
 
-        if (!string.IsNullOrEmpty(basicAuthUsername) && !string.IsNullOrEmpty(basicAuthPassword))
-            client.Authenticator = new HttpBasicAuthenticator(basicAuthUsername, basicAuthPassword);
-        else if (!string.IsNullOrEmpty(bearerToken)) request.AddHeader("Authorization", "Bearer " + bearerToken);
+    //    if (!string.IsNullOrEmpty(basicAuthUsername) && !string.IsNullOrEmpty(basicAuthPassword))
+    //        client.Authenticator = new HttpBasicAuthenticator(basicAuthUsername, basicAuthPassword);
+    //    else if (!string.IsNullOrEmpty(bearerToken)) request.AddHeader("Authorization", "Bearer " + bearerToken);
 
-        var response = await client.ExecuteAsync(request);
+    //    var response = await client.ExecuteAsync(request);
 
-        if (checkResult) success = response.IsSuccessful;
+    //    if (checkResult) success = response.IsSuccessful;
 
-        return success;
-    }
+    //    return success;
+    //}
 
     public async Task<string> PostJsonObjectDataAsync(string url, object bodyRequest, string basicAuthUsername,
         string basicAuthPassword, string bearerToken, bool checkResult, string actionPath, string? authHeader = null,
         string? authHeaderValue = null)
     {
-        var returnedData = "";
+        string? returnedData;
         try
         {
 
-            var httpClient = _httpClientFactory.CreateClient();
+            HttpClient httpClient = _httpClientFactory.CreateClient();
 
             //httpClient.DefaultRequestHeaders.ExpectContinue = true;
             httpClient.Timeout = TimeSpan.FromSeconds(3);
 
-            var param = JsonConvert.SerializeObject(bodyRequest);
-            var completeUrl = "";
+            string param = JsonConvert.SerializeObject(bodyRequest);
+            string completeUrl = "";
 
             //new StringContent(param, Encoding.UTF8, "application/json" /* or "application/json" in older versions */),
             //JsonContent.Create(bodyRequest),
-            var uri = new Uri(url);
-            var baseUri = uri.GetLeftPart(UriPartial.Authority);
-            var rightUriData = url.Replace(baseUri, "");
+            Uri uri = new(url);
+            string baseUri = uri.GetLeftPart(UriPartial.Authority);
+            string rightUriData = url.Replace(baseUri, "");
 
             if (string.IsNullOrEmpty(actionPath))
                 actionPath = rightUriData;
             else
                 actionPath = rightUriData + actionPath;
 
-            var fullUriData = baseUri + actionPath;
+            string fullUriData = baseUri + actionPath;
 
-            var baseUriObj = new Uri(baseUri);
-            var request = new HttpRequestMessage
+            Uri baseUriObj = new(baseUri);
+            HttpRequestMessage request = new()
             {
                 Method = HttpMethod.Post,
                 RequestUri = new Uri(baseUriObj, actionPath),
@@ -546,7 +539,7 @@ public class HttpUtil
             //request.Headers.Add("Content-Type", "application/json");
             if (!string.IsNullOrEmpty(basicAuthUsername) && !string.IsNullOrEmpty(basicAuthPassword))
             {
-                var authToken = Encoding.ASCII.GetBytes($"{basicAuthUsername}:{basicAuthPassword}");
+                byte[] authToken = Encoding.ASCII.GetBytes($"{basicAuthUsername}:{basicAuthPassword}");
                 httpClient.DefaultRequestHeaders.Authorization =
                     new AuthenticationHeaderValue("Basic", Convert.ToBase64String(authToken));
                 //request.Headers.Add("Authorization", _token);
@@ -562,14 +555,14 @@ public class HttpUtil
             //    actionPath= actionPath.Remove(0,1);
             //}
 
-            var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+            HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
             //var response = await httpClient.PostAsJsonAsync(fullUriData, request).ConfigureAwait(false);
             //response.EnsureSuccessStatusCode();
-            var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
             Log.Debug(content);
             Console.WriteLine(content);
-            var statusCode = (int)response.StatusCode;
+            int statusCode = (int)response.StatusCode;
 
             returnedData = statusCode + " - " + content;
             //if (checkResult)
@@ -591,67 +584,67 @@ public class HttpUtil
         return returnedData;
     }
 
-    public async Task<string> PostJsonObjectDataRestSharpAsync(string url, object bodyRequest, string basicAuthUsername,
-        string basicAuthPassword, string bearerToken, bool checkResult, string actionPath)
-    {
-        var returnedData = "";
-        try
-        {
-            var uri = new Uri(url);
-            var baseUri = uri.GetLeftPart(UriPartial.Authority);
-            var rightUriData = url.Replace(baseUri, "");
+    //public async Task<string> PostJsonObjectDataRestSharpAsync(string url, object bodyRequest, string basicAuthUsername,
+    //    string basicAuthPassword, string bearerToken, bool checkResult, string actionPath)
+    //{
+    //    var returnedData = "";
+    //    try
+    //    {
+    //        var uri = new Uri(url);
+    //        var baseUri = uri.GetLeftPart(UriPartial.Authority);
+    //        var rightUriData = url.Replace(baseUri, "");
 
-            if (string.IsNullOrEmpty(actionPath))
-                actionPath = rightUriData;
-            else
-                actionPath = rightUriData + actionPath;
+    //        if (string.IsNullOrEmpty(actionPath))
+    //            actionPath = rightUriData;
+    //        else
+    //            actionPath = rightUriData + actionPath;
 
-            var fullUriData = baseUri + actionPath;
+    //        var fullUriData = baseUri + actionPath;
 
-            var restClient = new RestClient(baseUri);
+    //        var restClient = new RestClient(baseUri);
 
-            if (!string.IsNullOrEmpty(basicAuthUsername) && !string.IsNullOrEmpty(basicAuthPassword))
-                restClient.Authenticator = new HttpBasicAuthenticator(basicAuthUsername, basicAuthPassword);
-            var request = new RestRequest(actionPath, Method.Post);
-            request.AddHeader("Accept", "*/*");
-            request.AddHeader("Content-Type", "application/json");
-            request.AddHeader("cache-control", "no-cache");
+    //        if (!string.IsNullOrEmpty(basicAuthUsername) && !string.IsNullOrEmpty(basicAuthPassword))
+    //            restClient.Authenticator = new HttpBasicAuthenticator(basicAuthUsername, basicAuthPassword);
+    //        var request = new RestRequest(actionPath, Method.Post);
+    //        request.AddHeader("Accept", "*/*");
+    //        request.AddHeader("Content-Type", "application/json");
+    //        request.AddHeader("cache-control", "no-cache");
 
-            //var body = @"{""keys"":[""303B03568348D70000000001""]}";
-            var body = JsonConvert.SerializeObject(bodyRequest);
-            //request.RequestFormat = DataFormat.Json;
-            request.AddParameter("application/json", body, ParameterType.RequestBody, false);
-            //request.AddJsonBody(bodyRequest);
+    //        //var body = @"{""keys"":[""303B03568348D70000000001""]}";
+    //        var body = JsonConvert.SerializeObject(bodyRequest);
+    //        //request.RequestFormat = DataFormat.Json;
+    //        request.AddParameter("application/json", body, ParameterType.RequestBody, false);
+    //        //request.AddJsonBody(bodyRequest);
 
-            Console.WriteLine(request.ToString());
+    //        Console.WriteLine(request.ToString());
 
-            var response = restClient.ExecuteAsync(request);
-            Console.WriteLine(response.Result.Content);
+    //        var response = restClient.ExecuteAsync(request);
+    //        Console.WriteLine(response.Result.Content);
 
-            var content = response.Result.Content;
-            Log.Debug(content);
-            Console.WriteLine(content);
-            if (checkResult)
-                returnedData = response.Result.StatusCode + " - " + content;
-            else
-                returnedData = content;
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Unexpected error sending data");
-            throw;
-        }
+    //        var content = response.Result.Content;
+    //        Log.Debug(content);
+    //        Console.WriteLine(content);
+    //        if (checkResult)
+    //            returnedData = response.Result.StatusCode + " - " + content;
+    //        else
+    //            returnedData = content;
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        Log.Error(ex, "Unexpected error sending data");
+    //        throw;
+    //    }
 
-        return returnedData;
-    }
+    //    return returnedData;
+    //}
 
     public async Task DownloadFileAsync(string remoteUrl, string localFile)
     {
-        var httpClient = new HttpClient();
+        HttpClient httpClient = new();
 
-        using (var stream = await httpClient.GetStreamAsync(remoteUrl))
+        using (Stream stream = await httpClient.GetStreamAsync(remoteUrl))
         {
-            using (var fileStream = new FileStream(localFile, FileMode.CreateNew))
+            using (FileStream fileStream = new(localFile, FileMode.CreateNew))
             {
                 await stream.CopyToAsync(fileStream);
             }
@@ -662,7 +655,7 @@ public class HttpUtil
     {
 
 
-        var httpClientHandler = new HttpClientHandler
+        HttpClientHandler httpClientHandler = new()
         {
 
 
@@ -675,31 +668,31 @@ public class HttpUtil
 
         try
         {
-            using (HttpClient httpClient = new HttpClient(httpClientHandler))
+            using (HttpClient httpClient = new(httpClientHandler))
             {
                 if (!string.IsNullOrEmpty(basicAuthUsername) && !string.IsNullOrEmpty(basicAuthPassword))
                 {
-                    var authToken = Encoding.ASCII.GetBytes($"{basicAuthUsername}:{basicAuthPassword}");
+                    byte[] authToken = Encoding.ASCII.GetBytes($"{basicAuthUsername}:{basicAuthPassword}");
                     httpClient.DefaultRequestHeaders.Authorization =
                         new AuthenticationHeaderValue("Basic", Convert.ToBase64String(authToken));
                     //request.Headers.Add("Authorization", _token);
                 }
 
-                using (MultipartFormDataContent formData = new MultipartFormDataContent())
+                using (MultipartFormDataContent formData = new())
                 {
                     // Create the file stream content
                     //FileStreamContent fileContent = new FileStreamContent(File.OpenRead(localFile));
-                    var filestream = File.OpenRead(localFile);
-                    var fileContent = new StreamContent(filestream);
+                    FileStream filestream = File.OpenRead(localFile);
+                    StreamContent fileContent = new(filestream);
                     //fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
                     //fileContent.Headers.ContentType = new MediaTypeHeaderValue("multipart/form-data");
 
 
-                    var localFilename = Path.GetFileName(localFile);
+                    string localFilename = Path.GetFileName(localFile);
                     // Add the file content to the form data
                     formData.Add(fileContent, "upgradeFile", localFilename);
 
-                    var url = "https://" + readerAddress + "/api/v1/system/image/upgrade";
+                    string url = "https://" + readerAddress + "/api/v1/system/image/upgrade";
                     httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
                     httpClient.Timeout = TimeSpan.FromSeconds(120);
                     // Send the POST request
@@ -746,14 +739,14 @@ public class HttpUtil
 
     public string ExternalApiAuthenticateAsync(string url, string data)
     {
-        var returnedData = "";
+        string? returnedData;
         try
         {
-            var client = new HttpClient();
-            var request = new HttpRequestMessage(HttpMethod.Post, url);
-            var content = new StringContent(data, null, "application/json");
+            HttpClient client = new();
+            HttpRequestMessage request = new(HttpMethod.Post, url);
+            StringContent content = new(data, null, "application/json");
             request.Content = content;
-            var response = client.SendAsync(request).Result;
+            HttpResponseMessage response = client.SendAsync(request).Result;
             response.EnsureSuccessStatusCode();
             returnedData = response.Content.ReadAsStringAsync().Result;
         }
@@ -768,15 +761,15 @@ public class HttpUtil
 
     public string ExternalApiSearchOrderAsync(string url, string token, string data)
     {
-        var returnedData = "";
+        string? returnedData;
         try
         {
-            var client = new HttpClient();
-            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            HttpClient client = new();
+            HttpRequestMessage request = new(HttpMethod.Get, url);
             request.Headers.Add("Authorization", token);
-            var content = new StringContent(data, null, "application/json");
+            StringContent content = new(data, null, "application/json");
             request.Content = content;
-            var response = client.SendAsync(request).Result;
+            HttpResponseMessage response = client.SendAsync(request).Result;
             response.EnsureSuccessStatusCode();
             returnedData = response.Content.ReadAsStringAsync().Result;
         }
@@ -791,15 +784,15 @@ public class HttpUtil
 
     public string ExternalApiOrderPublishDataAsync(string url, string token, string data)
     {
-        var returnedData = "";
+        string? returnedData;
         try
         {
-            var client = new HttpClient();
-            var request = new HttpRequestMessage(HttpMethod.Put, url);
+            HttpClient client = new();
+            HttpRequestMessage request = new(HttpMethod.Put, url);
             request.Headers.Add("Authorization", token);
-            var content = new StringContent(data, null, "application/json");
+            StringContent content = new(data, null, "application/json");
             request.Content = content;
-            var response = client.SendAsync(request).Result;
+            HttpResponseMessage response = client.SendAsync(request).Result;
             response.EnsureSuccessStatusCode();
             returnedData = response.Content.ReadAsStringAsync().Result;
         }

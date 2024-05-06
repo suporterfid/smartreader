@@ -12,7 +12,7 @@ namespace SmartReaderStandalone.ViewModel.Filter;
 
 public class ReadCountTimeoutEvent
 {
-    public string Epc { get; set; }
+    public string? Epc { get; set; }
 
     public int Antenna { get; set; }
 

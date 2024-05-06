@@ -35,7 +35,7 @@ internal class R700IotReader : IR700IotReader
         string uname = "root",
         string pwd = "impinj",
         int hostPort = 0,
-        string proxy = "",
+        string? proxy = "",
         int proxyPort = 8080)
     {
         if (string.IsNullOrWhiteSpace(hostname))

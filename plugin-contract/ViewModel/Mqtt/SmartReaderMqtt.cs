@@ -17,10 +17,10 @@ namespace SmartReaderJobs.ViewModel.Mqtt;
 public partial class SmartReaderMqtt
 {
     [JsonProperty("status", NullValueHandling = NullValueHandling.Ignore)]
-    public string Status { get; set; }
+    public string? Status { get; set; }
 
     [JsonProperty("data", NullValueHandling = NullValueHandling.Ignore)]
-    public List<SmartReaderMqttData> Data { get; set; }
+    public List<SmartReaderMqttData>? Data { get; set; }
 }
 
 public class SmartReaderMqttData
@@ -38,7 +38,7 @@ public class SmartReaderMqttData
     public long? AtivarTls { get; set; }
 
     [JsonProperty("endereco_broker", NullValueHandling = NullValueHandling.Ignore)]
-    public string EnderecoBroker { get; set; }
+    public string? EnderecoBroker { get; set; }
 
     [JsonProperty("porta_broker", NullValueHandling = NullValueHandling.Ignore)]
     [JsonConverter(typeof(ParseStringConverter))]
@@ -69,36 +69,36 @@ public class SmartReaderMqttData
     public long? Qos { get; set; }
 
     [JsonProperty("topico_eventos", NullValueHandling = NullValueHandling.Ignore)]
-    public string TopicoEventos { get; set; }
+    public string? TopicoEventos { get; set; }
 
     [JsonProperty("intervalo_keepalive_segundos", NullValueHandling = NullValueHandling.Ignore)]
     [JsonConverter(typeof(ParseStringConverter))]
     public long? IntervaloKeepaliveSegundos { get; set; }
 
     [JsonProperty("usuario", NullValueHandling = NullValueHandling.Ignore)]
-    public string Usuario { get; set; }
+    public string? Usuario { get; set; }
 
     [JsonProperty("senha", NullValueHandling = NullValueHandling.Ignore)]
-    public string Senha { get; set; }
+    public string? Senha { get; set; }
 
     [JsonProperty("topico_will", NullValueHandling = NullValueHandling.Ignore)]
-    public string TopicoWill { get; set; }
+    public string? TopicoWill { get; set; }
 
     [JsonProperty("mensagem_will", NullValueHandling = NullValueHandling.Ignore)]
-    public string MensagemWill { get; set; }
+    public string? MensagemWill { get; set; }
 
     [JsonProperty("qos_will", NullValueHandling = NullValueHandling.Ignore)]
     [JsonConverter(typeof(ParseStringConverter))]
     public long? QosWill { get; set; }
 
     [JsonProperty("sub_smartreader_client_id", NullValueHandling = NullValueHandling.Ignore)]
-    public string ClientIdSmartReader { get; set; }
+    public string? ClientIdSmartReader { get; set; }
 
     [JsonProperty("sub_smartreader_usuario", NullValueHandling = NullValueHandling.Ignore)]
-    public string UsuarioSmartReader { get; set; }
+    public string? UsuarioSmartReader { get; set; }
 
     [JsonProperty("sub_smartreader_senha", NullValueHandling = NullValueHandling.Ignore)]
-    public string SenhaSmartReader { get; set; }
+    public string? SenhaSmartReader { get; set; }
 }
 
 public partial class SmartReaderMqtt

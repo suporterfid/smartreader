@@ -14,20 +14,20 @@ namespace SmartReader.ViewModel.Auth
 
             RShellAuth = new Auth();
         }
-        [JsonProperty("BasicAuth")]
-        public Auth BasicAuth { get; set; }
+        [JsonProperty(nameof(BasicAuth))]
+        public Auth? BasicAuth { get; set; }
 
-        [JsonProperty("RShellAuth")]
-        public Auth RShellAuth { get; set; }
+        [JsonProperty(nameof(RShellAuth))]
+        public Auth? RShellAuth { get; set; }
     }
 
     public partial class Auth
     {
-        [JsonProperty("UserName")]
-        public string UserName { get; set; }
+        [JsonProperty(nameof(UserName))]
+        public string? UserName { get; set; }
 
-        [JsonProperty("Password")]
-        public string Password { get; set; }
+        [JsonProperty(nameof(Password))]
+        public string? Password { get; set; }
     }
 
     public partial class CustomAuth

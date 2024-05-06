@@ -2,9 +2,9 @@
 {
     public class AggregateInputReader : IDisposable
     {
-        private List<InputReader> _readers = new();
+        private List<InputReader>? _readers = new();
 
-        public event InputReader.RaiseKeyPress OnKeyPress;
+        public event InputReader.RaiseKeyPress? OnKeyPress;
 
         public AggregateInputReader(string filename)
         {
@@ -39,13 +39,16 @@
 
         public void Dispose()
         {
-            foreach (var d in _readers)
+            if(_readers != null )
             {
-                d.OnKeyPress -= ReaderOnOnKeyPress;
-                d.Dispose();
-            }
+                foreach (var d in _readers)
+                {
+                    d.OnKeyPress -= ReaderOnOnKeyPress;
+                    d.Dispose();
+                }
 
-            _readers = null;
+                _readers = null;
+            }
         }
     }
 }

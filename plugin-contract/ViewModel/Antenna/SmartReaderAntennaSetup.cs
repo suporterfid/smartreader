@@ -17,10 +17,10 @@ namespace SmartReaderJobs.ViewModel.Antenna;
 public partial class SmartReaderAntennaSetup
 {
     [JsonProperty("status", NullValueHandling = NullValueHandling.Ignore)]
-    public string Status { get; set; }
+    public string? Status { get; set; }
 
     [JsonProperty("data", NullValueHandling = NullValueHandling.Ignore)]
-    public List<SmartReaderAntennaSetupListData> Data { get; set; }
+    public List<SmartReaderAntennaSetupListData>? Data { get; set; }
 }
 
 public class SmartReaderAntennaSetupListData
@@ -30,16 +30,16 @@ public class SmartReaderAntennaSetupListData
     public long? Id { get; set; }
 
     [JsonProperty("descricao", NullValueHandling = NullValueHandling.Ignore)]
-    public string Descricao { get; set; }
+    public string? Descricao { get; set; }
 
     [JsonProperty("porta", NullValueHandling = NullValueHandling.Ignore)]
     [JsonConverter(typeof(ParseStringConverter))]
     public long? Porta { get; set; }
 
     [JsonProperty("potencia", NullValueHandling = NullValueHandling.Ignore)]
-    public string Potencia { get; set; }
+    public string? Potencia { get; set; }
 
-    [JsonProperty("sensibilidade")] public object Sensibilidade { get; set; }
+    [JsonProperty("sensibilidade")] public object? Sensibilidade { get; set; }
 
     [JsonProperty("status", NullValueHandling = NullValueHandling.Ignore)]
     [JsonConverter(typeof(ParseStringConverter))]

@@ -14,17 +14,17 @@ public class SmartReaderConfig
 {
     public int Id { get; set; }
 
-    public string ReaderName { get; set; }
+    public string? ReaderName { get; set; }
 
     //public string Serial { get; set; }
 
     public bool IsEnabled { get; set; }
 
-    public string IpAddress { get; set; }
+    public string? IpAddress { get; set; }
 
-    public string LicenseKey { get; set; }
+    public string? LicenseKey { get; set; }
 
-    public string ProfileName { get; set; }
+    public string? ProfileName { get; set; }
 
     public bool IsCurrentProfile { get; set; }
 
@@ -58,9 +58,9 @@ public class SmartReaderConfig
 
     public bool UsbHid { get; set; }
 
-    public string LineEnd { get; set; }
+    public string? LineEnd { get; set; }
 
-    public string FieldDelim { get; set; }
+    public string? FieldDelim { get; set; }
 
     public bool SoftwareFilterEnabled { get; set; }
 
@@ -106,7 +106,7 @@ public class SmartReaderConfig
 
     public bool SiteEnabled { get; set; }
 
-    public string Site { get; set; }
+    public string? Site { get; set; }
 
     public bool HttpPostEnabled { get; set; }
 
@@ -114,21 +114,21 @@ public class SmartReaderConfig
 
     public int HttpPostIntervalSec { get; set; }
 
-    public string HttpPostURL { get; set; }
+    public string? HttpPostURL { get; set; }
 
     public int HttpAuthenticationType { get; set; }
 
-    public string HttpAuthenticationUsername { get; set; }
+    public string? HttpAuthenticationUsername { get; set; }
 
-    public string HttpAuthenticationPassword { get; set; }
+    public string? HttpAuthenticationPassword { get; set; }
 
     public bool HttpAuthenticationTokenApiEnabled { get; set; }
 
-    public string HttpAuthenticationTokenApiUrl { get; set; }
+    public string? HttpAuthenticationTokenApiUrl { get; set; }
 
-    public string HttpAuthenticationTokenApiBody { get; set; }
+    public string? HttpAuthenticationTokenApiBody { get; set; }
 
-    public string HttpAuthenticationTokenApiValue { get; set; }
+    public string? HttpAuthenticationTokenApiValue { get; set; }
 
     public bool HttpVerifyPostHttpReturnCode { get; set; }
 
@@ -168,13 +168,13 @@ public class SmartReaderConfig
 
     public int C1g2FilterPointer { get; set; }
 
-    public string C1g2FilterMask { get; set; }
+    public string? C1g2FilterMask { get; set; }
 
     public int C1g2FilterLen { get; set; }
 
-    public string DataPrefix { get; set; }
+    public string? DataPrefix { get; set; }
 
-    public string DataSuffix { get; set; }
+    public string? DataSuffix { get; set; }
 
     public bool BackupToFlashDriveOnGpiEventEnabled { get; set; }
 
@@ -194,27 +194,27 @@ public class SmartReaderConfig
 
     public bool MqttUseSsl { get; set; }
 
-    public string MqttBrokerAddress { get; set; }
+    public string? MqttBrokerAddress { get; set; }
 
     public int MqttBrokerPort { get; set; }
 
-    public string MqttTopic { get; set; }
+    public string? MqttTopic { get; set; }
 
     public int MqttQoS { get; set; }
 
-    public string MqttCommandTopic { get; set; }
+    public string? MqttCommandTopic { get; set; }
 
     public int MqttCommandQoS { get; set; }
 
-    public string MqttUsername { get; set; }
+    public string? MqttUsername { get; set; }
 
-    public string MqttPassword { get; set; }
+    public string? MqttPassword { get; set; }
 
-    public string MqttProxyUrl { get; set; }
+    public string? MqttProxyUrl { get; set; }
 
-    public string MqttProxyUsername { get; set; }
+    public string? MqttProxyUsername { get; set; }
 
-    public string MqttProxyPassword { get; set; }
+    public string? MqttProxyPassword { get; set; }
 
     public int MqttPuslishIntervalSec { get; set; }
 
@@ -224,11 +224,11 @@ public class SmartReaderConfig
 
     public int IpAddressMode { get; set; }
 
-    public string IpMask { get; set; }
+    public string? IpMask { get; set; }
 
-    public string GatewayAddress { get; set; }
+    public string? GatewayAddress { get; set; }
 
-    public string BroadcastAddress { get; set; }
+    public string? BroadcastAddress { get; set; }
 
     public bool ParseSgtinEnabled { get; set; }
 
@@ -242,41 +242,41 @@ public class SmartReaderConfig
 
     public int CsvFileFormat { get; set; }
 
-    public string HeartbeatUrl { get; set; }
+    public string? HeartbeatUrl { get; set; }
 
-    public string HeartbeatHttpAuthenticationType { get; set; }
+    public string? HeartbeatHttpAuthenticationType { get; set; }
 
-    public string HeartbeatHttpAuthenticationUsername { get; set; }
+    public string? HeartbeatHttpAuthenticationUsername { get; set; }
 
-    public string HeartbeatHttpAuthenticationPassword { get; set; }
+    public string? HeartbeatHttpAuthenticationPassword { get; set; }
 
     public bool HeartbeatHttpAuthenticationTokenApiEnabled { get; set; }
 
-    public string HeartbeatHttpAuthenticationTokenApiUrl { get; set; }
+    public string? HeartbeatHttpAuthenticationTokenApiUrl { get; set; }
 
-    public string HeartbeatHttpAuthenticationTokenApiBody { get; set; }
+    public string? HeartbeatHttpAuthenticationTokenApiBody { get; set; }
 
-    public string HeartbeatHttpAuthenticationTokenApiUsernameField { get; set; }
+    public string? HeartbeatHttpAuthenticationTokenApiUsernameField { get; set; }
 
-    public string HeartbeatHttpAuthenticationTokenApiUsernameValue { get; set; }
+    public string? HeartbeatHttpAuthenticationTokenApiUsernameValue { get; set; }
 
-    public string HeartbeatHttpAuthenticationTokenApiPasswordField { get; set; }
+    public string? HeartbeatHttpAuthenticationTokenApiPasswordField { get; set; }
 
-    public string HeartbeatHttpAuthenticationTokenApiPasswordValue { get; set; }
+    public string? HeartbeatHttpAuthenticationTokenApiPasswordValue { get; set; }
 
-    public string HeartbeatHttpAuthenticationTokenApiValue { get; set; }
+    public string? HeartbeatHttpAuthenticationTokenApiValue { get; set; }
 
-    public string HttpAuthenticationTokenApiUsernameField { get; set; }
+    public string? HttpAuthenticationTokenApiUsernameField { get; set; }
 
-    public string HttpAuthenticationTokenApiUsernameValue { get; set; }
+    public string? HttpAuthenticationTokenApiUsernameValue { get; set; }
 
-    public string HttpAuthenticationTokenApiPasswordField { get; set; }
+    public string? HttpAuthenticationTokenApiPasswordField { get; set; }
 
-    public string HttpAuthenticationTokenApiPasswordValue { get; set; }
+    public string? HttpAuthenticationTokenApiPasswordValue { get; set; }
 
     public bool ToiValidationEnabled { get; set; }
 
-    public string ToiValidationUrl { get; set; }
+    public string? ToiValidationUrl { get; set; }
 
     public int ToiValidationGpoDuration { get; set; }
 
@@ -294,27 +294,27 @@ public class SmartReaderConfig
 
     public bool CustomField1Enabled { get; set; }
 
-    public string CustomField1Name { get; set; }
+    public string? CustomField1Name { get; set; }
 
-    public string CustomField1Value { get; set; }
+    public string? CustomField1Value { get; set; }
 
     public bool CustomField2Enabled { get; set; }
 
-    public string CustomField2Name { get; set; }
+    public string? CustomField2Name { get; set; }
 
-    public string CustomField2Value { get; set; }
+    public string? CustomField2Value { get; set; }
 
     public bool CustomField3Enabled { get; set; }
 
-    public string CustomField3Name { get; set; }
+    public string? CustomField3Name { get; set; }
 
-    public string CustomField3Value { get; set; }
+    public string? CustomField3Value { get; set; }
 
     public bool CustomField4Enabled { get; set; }
 
-    public string CustomField4Name { get; set; }
+    public string? CustomField4Name { get; set; }
 
-    public string CustomField4Value { get; set; }
+    public string? CustomField4Value { get; set; }
 
     public bool WriteUsbJson { get; set; }
 
@@ -325,5 +325,5 @@ public class SmartReaderConfig
     public int AntennaIdentifier { get; set; }
 
     public int TagIdentifier { get; set; }
-    public List<SmartReaderAntennaConfig> SmartReaderAntennaConfigs { get; set; }
+    public List<SmartReaderAntennaConfig>? SmartReaderAntennaConfigs { get; set; }
 }

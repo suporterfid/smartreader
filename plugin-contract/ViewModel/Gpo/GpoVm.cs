@@ -17,7 +17,7 @@ namespace SmartReaderStandalone.ViewModel.Gpo;
 public partial class GpoVm
 {
     [JsonProperty("gpoConfigurations", NullValueHandling = NullValueHandling.Ignore)]
-    public List<SmartReaderGpoConfiguration> GpoConfigurations { get; set; }
+    public List<SmartReaderGpoConfiguration>? GpoConfigurations { get; set; }
 }
 
 public class SmartReaderGpoConfiguration

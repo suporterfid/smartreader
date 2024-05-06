@@ -15,6 +15,7 @@ namespace SmartReader.Infrastructure.Utils;
 
 public static class AgentConfigJsonConverter
 {
+#pragma warning disable CS8600, CS8601, CS8602, CS8604  // Dereference of a possibly null reference.
     public static StandaloneConfigDTO FromEntityToDto(SmartReaderConfig smartReaderConfig)
     {
         return FromEntityToDto(smartReaderConfig, smartReaderConfig.SmartReaderAntennaConfigs);
@@ -23,7 +24,7 @@ public static class AgentConfigJsonConverter
     public static StandaloneConfigDTO FromEntityToDto(SmartReaderConfig smartReaderConfig,
         List<SmartReaderAntennaConfig> smartReaderAntennaConfigs)
     {
-        StandaloneConfigDTO dto = null;
+        StandaloneConfigDTO? dto = null;
         dto = new StandaloneConfigDTO();
 
         var antennaPorts = "";
@@ -643,4 +644,5 @@ public static class AgentConfigJsonConverter
         smartReaderConfig.SmartReaderAntennaConfigs = smartReaderAntennaConfigs;
         return smartReaderConfig;
     }
+#pragma warning restore CS8600, CS8601, CS8602, CS8604 // Dereference of a possibly null reference.
 }

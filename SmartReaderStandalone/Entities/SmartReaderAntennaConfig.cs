@@ -34,5 +34,5 @@ public class SmartReaderAntennaConfig
 
     public int SmartReaderConfigId { get; set; }
 
-    public SmartReaderConfig SmartReaderConfig { get; set; }
+    public SmartReaderConfig? SmartReaderConfig { get; set; }
 }

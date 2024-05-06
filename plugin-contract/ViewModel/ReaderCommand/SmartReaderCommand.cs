@@ -17,10 +17,10 @@ namespace SmartReaderJobs.ViewModel.ReaderCommand;
 public partial class SmartReaderCommand
 {
     [JsonProperty("status", NullValueHandling = NullValueHandling.Ignore)]
-    public string Status { get; set; }
+    public string? Status { get; set; }
 
     [JsonProperty("data", NullValueHandling = NullValueHandling.Ignore)]
-    public List<SmartReaderCommandData> Data { get; set; }
+    public List<SmartReaderCommandData>? Data { get; set; }
 }
 
 public class SmartReaderCommandData
@@ -34,13 +34,13 @@ public class SmartReaderCommandData
     public long? IdLeitor { get; set; }
 
     [JsonProperty("nome_comando", NullValueHandling = NullValueHandling.Ignore)]
-    public string NomeComando { get; set; }
+    public string? NomeComando { get; set; }
 
     [JsonProperty("tipo_comando", NullValueHandling = NullValueHandling.Ignore)]
-    public string TipoComando { get; set; }
+    public string? TipoComando { get; set; }
 
     [JsonProperty("status", NullValueHandling = NullValueHandling.Ignore)]
-    public string Status { get; set; }
+    public string? Status { get; set; }
 
     [JsonProperty("data_comando", NullValueHandling = NullValueHandling.Ignore)]
     public DateTimeOffset? DataComando { get; set; }
@@ -53,13 +53,13 @@ public class SmartReaderCommandData
     public long? TentativasInicializacao { get; set; }
 
     [JsonProperty("motivo_parada", NullValueHandling = NullValueHandling.Ignore)]
-    public string MotivoParada { get; set; }
+    public string? MotivoParada { get; set; }
 
     [JsonProperty("mensagem_erro", NullValueHandling = NullValueHandling.Ignore)]
-    public string MensagemErro { get; set; }
+    public string? MensagemErro { get; set; }
 
     [JsonProperty("parametros", NullValueHandling = NullValueHandling.Ignore)]
-    public string Parametros { get; set; }
+    public string? Parametros { get; set; }
 }
 
 public partial class SmartReaderCommand

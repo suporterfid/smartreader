@@ -25,12 +25,12 @@ public abstract class Enumeration : IComparable
         DisplayName = displayName;
     }
 
-    public string DisplayName { get; }
-    public short Id { get; }
+    public string? DisplayName { get; }
+    public short? Id { get; }
 
     public int CompareTo(object other)
     {
-        return Id.CompareTo(((Enumeration)other).Id);
+        return Id.Value.CompareTo(((Enumeration)other).Id);
     }
 
     public static IEnumerable<T> GetAll<T>() where T : Enumeration, new()

@@ -17,44 +17,44 @@ namespace SmartReaderJobs.ViewModel.Status;
 public partial class SmartReaderStatus
 {
     [JsonProperty("status", NullValueHandling = NullValueHandling.Ignore)]
-    public string Status { get; set; }
+    public string? Status { get; set; }
 
     [JsonProperty("data", NullValueHandling = NullValueHandling.Ignore)]
-    public List<SmartReaderStatusData> Data { get; set; }
+    public List<SmartReaderStatusData>? Data { get; set; }
 }
 
 public class SmartReaderStatusData
 {
     [JsonProperty("fabricante", NullValueHandling = NullValueHandling.Ignore)]
-    public string Fabricante { get; set; }
+    public string? Fabricante { get; set; }
 
     [JsonProperty("firmware", NullValueHandling = NullValueHandling.Ignore)]
-    public string Firmware { get; set; }
+    public string? Firmware { get; set; }
 
     [JsonProperty("horario", NullValueHandling = NullValueHandling.Ignore)]
     public DateTimeOffset Horario { get; set; }
 
     [JsonProperty("hostname", NullValueHandling = NullValueHandling.Ignore)]
-    public string Hostname { get; set; }
+    public string? Hostname { get; set; }
 
     [JsonProperty("id_leitor", NullValueHandling = NullValueHandling.Ignore)]
     [JsonConverter(typeof(ParseStringConverter))]
     public long? IdLeitor { get; set; }
 
     [JsonProperty("modelo", NullValueHandling = NullValueHandling.Ignore)]
-    public string Modelo { get; set; }
+    public string? Modelo { get; set; }
 
     [JsonProperty("uptime", NullValueHandling = NullValueHandling.Ignore)]
     public long? Uptime { get; set; }
 
     [JsonProperty("status_leitor", NullValueHandling = NullValueHandling.Ignore)]
-    public string StatusLeitor { get; set; }
+    public string? StatusLeitor { get; set; }
 
     [JsonProperty("status_mqtt", NullValueHandling = NullValueHandling.Ignore)]
-    public string StatusMqtt { get; set; }
+    public string? StatusMqtt { get; set; }
 
     [JsonProperty("status_http", NullValueHandling = NullValueHandling.Ignore)]
-    public string StatusHttp { get; set; }
+    public string? StatusHttp { get; set; }
 }
 
 public partial class SmartReaderStatus

@@ -17,10 +17,10 @@ namespace SmartReaderJobs.ViewModel.Reader;
 public partial class SmartReaderSetup
 {
     [JsonProperty("status", NullValueHandling = NullValueHandling.Ignore)]
-    public string Status { get; set; }
+    public string? Status { get; set; }
 
     [JsonProperty("data", NullValueHandling = NullValueHandling.Ignore)]
-    public List<SmartReaderSetupData> Data { get; set; }
+    public List<SmartReaderSetupData>? Data { get; set; }
 }
 
 public class SmartReaderSetupData
@@ -30,26 +30,26 @@ public class SmartReaderSetupData
     public long? Id { get; set; }
 
     [JsonProperty("descricao", NullValueHandling = NullValueHandling.Ignore)]
-    public string Descricao { get; set; }
+    public string? Descricao { get; set; }
 
     [JsonProperty("serial", NullValueHandling = NullValueHandling.Ignore)]
-    public string Serial { get; set; }
+    public string? Serial { get; set; }
 
     [JsonProperty("ip", NullValueHandling = NullValueHandling.Ignore)]
-    public string Ip { get; set; }
+    public string? Ip { get; set; }
 
     [JsonProperty("porta", NullValueHandling = NullValueHandling.Ignore)]
     [JsonConverter(typeof(ParseStringConverter))]
     public long? Porta { get; set; }
 
     [JsonProperty("tipo", NullValueHandling = NullValueHandling.Ignore)]
-    public string Tipo { get; set; }
+    public string? Tipo { get; set; }
 
     [JsonProperty("tipo_conexao", NullValueHandling = NullValueHandling.Ignore)]
     public string? TipoConexao { get; set; }
 
     [JsonProperty("local", NullValueHandling = NullValueHandling.Ignore)]
-    public string Local { get; set; }
+    public string? Local { get; set; }
 
     [JsonProperty("habilitar_mascara_epc", NullValueHandling = NullValueHandling.Ignore)]
     [JsonConverter(typeof(ParseStringConverter))]
@@ -144,13 +144,13 @@ public class SmartReaderSetupData
     public long? UsarConexaoSegura { get; set; }
 
     [JsonProperty("usuario", NullValueHandling = NullValueHandling.Ignore)]
-    public string Usuario { get; set; }
+    public string? Usuario { get; set; }
 
     [JsonProperty("senha", NullValueHandling = NullValueHandling.Ignore)]
-    public string Senha { get; set; }
+    public string? Senha { get; set; }
 
     [JsonProperty("filtro_epc_software", NullValueHandling = NullValueHandling.Ignore)]
-    public string FiltroEpcSoftware { get; set; }
+    public string? FiltroEpcSoftware { get; set; }
 
     [JsonProperty("habilitar_tarefas", NullValueHandling = NullValueHandling.Ignore)]
     [JsonConverter(typeof(ParseStringConverter))]

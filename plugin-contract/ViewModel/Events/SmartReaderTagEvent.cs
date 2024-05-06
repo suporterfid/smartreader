@@ -17,10 +17,10 @@ namespace SmartReaderJobs.ViewModel.Events;
 public partial class SmartReaderTagEvent
 {
     [JsonProperty("status", NullValueHandling = NullValueHandling.Ignore)]
-    public string Status { get; set; }
+    public string? Status { get; set; }
 
     [JsonProperty("data", NullValueHandling = NullValueHandling.Ignore)]
-    public List<SmartReaderTagEventData> Data { get; set; }
+    public List<SmartReaderTagEventData>? Data { get; set; }
 }
 
 public class SmartReaderTagEventData
@@ -35,10 +35,10 @@ public class SmartReaderTagEventData
     public DateTimeOffset DataLeitura { get; set; }
 
     [JsonProperty("descricao_antena", NullValueHandling = NullValueHandling.Ignore)]
-    public string DescricaoAntena { get; set; }
+    public string? DescricaoAntena { get; set; }
 
     [JsonProperty("epc", NullValueHandling = NullValueHandling.Ignore)]
-    public string Epc { get; set; }
+    public string? Epc { get; set; }
 
     [JsonProperty("frequencia", NullValueHandling = NullValueHandling.Ignore)]
     public double? Frequencia { get; set; }
@@ -47,7 +47,7 @@ public class SmartReaderTagEventData
     public long? Id { get; set; }
 
     [JsonProperty("leitor", NullValueHandling = NullValueHandling.Ignore)]
-    public string Leitor { get; set; }
+    public string? Leitor { get; set; }
 
     [JsonProperty("pc", NullValueHandling = NullValueHandling.Ignore)]
     public string? Pc { get; set; }
@@ -59,13 +59,13 @@ public class SmartReaderTagEventData
     public double? Rssi { get; set; }
 
     [JsonProperty("tid", NullValueHandling = NullValueHandling.Ignore)]
-    public string Tid { get; set; }
+    public string? Tid { get; set; }
 
     [JsonProperty("visto_ultima_vez", NullValueHandling = NullValueHandling.Ignore)]
-    public string VistoUltimaVez { get; set; }
+    public string? VistoUltimaVez { get; set; }
 
     [JsonProperty("data_leitura_unix", NullValueHandling = NullValueHandling.Ignore)]
-    public string DataLeituraUnix { get; set; }
+    public string? DataLeituraUnix { get; set; }
 
     [JsonProperty("data_hora_servidor", NullValueHandling = NullValueHandling.Ignore)]
     public DateTimeOffset DataHoraServidor { get; set; }

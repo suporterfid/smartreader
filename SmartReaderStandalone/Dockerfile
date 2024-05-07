@@ -39,7 +39,7 @@ RUN dotnet build "./SmartReaderStandalone/SmartReaderStandalone.csproj" -c $BUIL
 #RUN dotnet publish "./SmartReaderStandalone/SmartReaderStandalone.csproj" --no-restore -o /app -c $BUILD_CONFIGURATION /p:UseAppHost=false --arch $TARGETARCH --self-contained
 RUN dotnet publish "./SmartReaderStandalone/SmartReaderStandalone.csproj" -o /app -c $BUILD_CONFIGURATION /p:UseAppHost=true --runtime linux-arm --self-contained
 RUN ls -l /app
-RUN dotnet publish "./SmartReaderStandalone/SmartReaderStandalone.csproj" -o /app64 /p:UseAppHost=true --runtime win-x64 
+RUN dotnet publish "./SmartReaderStandalone/SmartReaderStandalone.csproj" -o /app64 /p:UseAppHost=true --runtime win-x64 --self-contained
 RUN ls -l /app64
 # final stage/image
 #FROM mcr.microsoft.com/dotnet/runtime:8.0-jammy-arm32v7AS stage
@@ -99,9 +99,15 @@ COPY --from=build /app /etk/cap
 ## RUN [ -d /etk/cap/wwwroot ] || mkdir /etk/cap/wwwroot
 #COPY bin/Release/net8.0/publish/cap_template/* /etk/cap/
 COPY --from=build /app/cap_template/* /etk/cap
+RUN rm -rf /etk/cap/SmartReaderStandalone.deps.json
+#RUN rm -rf /etk/cap/SmartReaderStandalone.dll
+#RUN rm -rf /etk/cap/SmartReaderStandalone.exe
+#RUN rm -rf /etk/cap/SmartReaderStandalone.pdb
+COPY --from=build /app/SmartReaderStandalone.deps.json /etk/cap
+#COPY --from=build /app64/SmartReaderStandalone.dll /etk/cap
+#COPY --from=build /app64/SmartReaderStandalone.exe /etk/cap
+#COPY --from=build /app64/SmartReaderStandalone.pdb /etk/cap
 ## ---- copy binaries for ETK compatibility on cross compiling/packing ---- 
-RUN rm -rf /etk/cap/SmartReaderStandalone*
-COPY --from=build /app64/SmartReaderStandalone* /etk/cap
 ## COPY cap_template/* /etk/cap/ 
 ## RUN mv /etk/cap/cap_gen.sh /etk/cap_gen.sh
 RUN ls -l /etk

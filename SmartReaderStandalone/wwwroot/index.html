@@ -1376,12 +1376,13 @@
 
                                 <label for="mqttBrokerProtocol">MQTT Broker Protocol:</label>
                                 <select id="mqttBrokerProtocol" class="form-control" v-model="readerConfigs[0].mqttBrokerProtocol">
-                                    <option value="tcp">tcp</option>
+                                    <option value="mqtt">mqtt</option>
+                                    <option value="mqtts">mqtts</option>
                                     <option value="ws">ws</option>
                                     <option value="wss">wss</option>
                                 </select>
                                 <br>
-                                <template v-if="readerConfigs[0].mqttBrokerProtocol != 'tcp'">
+                                <template v-if="containsWs">
                                     <label for="mqttBrokerWebSocketPath">Web Socket Path:</label>
                                     <input id="mqttBrokerWebSocketPath" class="form-control" v-model="readerConfigs[0].mqttBrokerWebSocketPath">
                                 </template>
@@ -2066,17 +2067,17 @@
                         <br />
                         <br />
                         <label for="outputAdminNewPassword">New Admin Password:</label>
-                        <input type="password" id="outputAdminNewPassword" class="form-control" v-model="adminNewPassword" v-on:onkeyup='checkPassword();'>
+                        <input type="password" id="outputAdminNewPassword" class="form-control" v-model="adminNewPassword">
                         <br />
                         <br />
                         <label for="outputAdminNewPasswordCheck">Re-type the New Admin Password:</label>
-                        <input type="password" id="outputAdminNewPasswordCheck" class="form-control" v-model="adminNewPasswordCheck" v-on:onkeyup='checkPassword();'>
+                        <input type="password" id="outputAdminNewPasswordCheck" class="form-control" v-model="adminNewPasswordCheck">
                         <br />
                         <br />
                         <span id='messageAdmin'></span>
                         <br />
                         <br />
-                        <button class="btn btn-primary pull-right" v-on:click="updateAdminPassword">Update Admin Password</button>
+                        <button class="btn btn-primary pull-right" v-on:click="checkPassword">Update Admin Password</button>
                         <br>
                         <br>
                         <br />
@@ -2095,7 +2096,7 @@
                         <span id='messageRShell'></span>
                         <br />
                         <br />
-                        <button class="btn btn-primary pull-right" v-on:click="updateRShellPassword">Update RShell Password</button>
+                        <button class="btn btn-primary pull-right" v-on:click="checkRShellPassword">Update RShell Password</button>
                         <br>
                         <br>
                     </div>

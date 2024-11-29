@@ -21,9 +21,9 @@ var vueApplication = new Vue({
 		rshellCurrentPassword: "",
 		rshellNewPassword: "",
 		rshellNewPasswordCheck: "",
-		applicationLabel: 'version 4.0.0.43',
-		//applicationBy: 'Smartreader R700',
-		applicationBy: 'SoLink R700',
+		applicationLabel: 'version 4.0.0.47',
+		applicationBy: 'Smartreader R700',
+		//applicationBy: 'SoLink R700',
 
 		applicationLogo: 'none',
 		selectTxPowerOptions: [],
@@ -62,6 +62,9 @@ var vueApplication = new Vue({
 	},
 	
 	computed: {
+		containsWs() {
+			return this.readerConfigs[0].mqttBrokerProtocol.includes('ws');
+		},
 		viewSourceUrl: function () {
 			logUrl = 'http://view-source:'+window.location.host+'/api/log';
 			console.log('viewSourceUrl: '+logUrl);
@@ -193,25 +196,44 @@ var vueApplication = new Vue({
 		},
 
 		checkPassword: function (event) {
-			if (document.getElementById('outputAdminNewPassword').value ==
-				document.getElementById('outputAdminNewPasswordCheck').value) {
-				document.getElementById('messageAdmin').style.color = 'green';
-				document.getElementById('messageAdmin').innerHTML = 'Password matching';
-			} else {
+			if (this.adminNewPassword !== this.adminNewPasswordCheck) {
 				document.getElementById('messageAdmin').style.color = 'red';
-				document.getElementById('messageAdmin').innerHTML = 'Password not matching';
+				document.getElementById('messageAdmin').innerHTML = 'The new passwords do not match.';
 			}
+			else {
+				document.getElementById('messageAdmin').style.color = 'green';
+				document.getElementById('messageAdmin').innerHTML = 'The new passwords match.';
+				this.updateAdminPassword();
+			}
+			//if (document.getElementById('outputAdminNewPassword').value ==
+			//	document.getElementById('outputAdminNewPasswordCheck').value) {
+			//	document.getElementById('messageAdmin').style.color = 'green';
+			//	document.getElementById('messageAdmin').innerHTML = 'Passwords matching';
+			//	this.updateAdminPassword();
+			//} else {
+			//	document.getElementById('messageAdmin').style.color = 'red';
+			//	document.getElementById('messageAdmin').innerHTML = 'Passwords not matching';
+			//}
 		},
 
 		checkRShellPassword: function (event) {
-			if (document.getElementById('outputRShellNewPassword').value ==
-				document.getElementById('outputRShellNewPasswordCheck').value) {
-				document.getElementById('messageRShell').style.color = 'green';
-				document.getElementById('messageRShell').innerHTML = 'Password matching';
-			} else {
+			if (this.rshellNewPassword !== this.rshellNewPasswordCheck) {
 				document.getElementById('messageRShell').style.color = 'red';
-				document.getElementById('messageRShell').innerHTML = 'Password not matching';
+				document.getElementById('messageRShell').innerHTML = 'The new passwords do not match.';
 			}
+			else {
+				document.getElementById('messageRShell').style.color = 'green';
+				document.getElementById('messageRShell').innerHTML = 'The new passwords match.';
+				this.updateRShellPassword();
+			}
+			//if (document.getElementById('outputRShellNewPassword').value ==
+			//	document.getElementById('outputRShellNewPasswordCheck').value) {
+			//	document.getElementById('messageRShell').style.color = 'green';
+			//	document.getElementById('messageRShell').innerHTML = 'Passwords matching';
+			//} else {
+			//	document.getElementById('messageRShell').style.color = 'red';
+			//	document.getElementById('messageRShell').innerHTML = 'Passwords not matching';
+			//}
 		},
 
 		alertPasswordUpdated: function (event) {

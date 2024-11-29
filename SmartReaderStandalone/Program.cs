@@ -1601,6 +1601,53 @@ app.MapGet("/api/restore", [AuthorizeBasicAuth] async (RuntimeDb db) =>
     }
 });
 
+app.MapDelete("/cleanup-usb-files", [AuthorizeBasicAuth] (string? filename) =>
+{
+    string path = Path.Combine(Directory.GetCurrentDirectory(), "customer", "wwwroot", "files");
+
+    if (!Directory.Exists(path))
+    {
+        return Results.NotFound(new { message = "Directory not found" });
+    }
+
+    try
+    {
+        if (string.IsNullOrEmpty(filename))
+        {
+            // Original logic to clean up all files
+            DirectoryInfo di = new DirectoryInfo(path);
+            foreach (FileInfo file in di.GetFiles())
+            {
+                file.Delete();
+            }
+            foreach (DirectoryInfo dir in di.GetDirectories())
+            {
+                dir.Delete(true);
+            }
+            return Results.Ok(new { message = "All files cleaned successfully" });
+        }
+        else
+        {
+            // Logic to delete a specific file
+            string filePath = Path.Combine(path, filename);
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+                return Results.Ok(new { message = $"File '{filename}' deleted successfully" });
+            }
+            else
+            {
+                return Results.NotFound(new { message = $"File '{filename}' not found" });
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { message = $"An error occurred: {ex.Message}" }, statusCode: 500);
+    }
+})
+.WithName("CleanupCustomerFiles");
+
 app.MapPost("/api/test", [AuthorizeBasicAuth] async ([FromBody] BearerDTO bearerDTO, RuntimeDb db) =>
 {
     var token = "";

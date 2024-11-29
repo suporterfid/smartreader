@@ -1,0 +1,58 @@
+﻿# Define the target directory
+$TARGET_DIR = "C:\customer"
+
+# Define the source directory (current project path)
+$SOURCE_DIR = (Get-Location).Path
+
+# List of specific files to copy
+$FILES_TO_COPY = @(
+    "localhost.pfx",
+    "appsettings.json",
+    "customsettings.json"
+    # "subdir\file4.txt"
+    # Add more files as needed
+)
+
+# List of directories to create
+$DIRECTORIES_TO_CREATE = @(
+    "$TARGET_DIR\config",
+    "$TARGET_DIR\plugins",
+    "$TARGET_DIR\wwwroot",
+    "$TARGET_DIR\wwwroot\logs"
+)
+
+# Create the target directories if they don't exist
+foreach ($dir in $DIRECTORIES_TO_CREATE) {
+    if (-Not (Test-Path -Path $dir)) {
+        Write-Output "Creating directory $dir"
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    } else {
+        Write-Output "Directory $dir already exists"
+    }
+}
+
+# Copy specific files from the source directory to the target directory
+foreach ($file in $FILES_TO_COPY) {
+    $sourcePath = Join-Path -Path $SOURCE_DIR -ChildPath $file
+    $targetPath = Join-Path -Path $TARGET_DIR -ChildPath (Split-Path -Leaf $file)
+
+    if (Test-Path -Path $sourcePath) {
+        Write-Output "Copying $file to $TARGET_DIR"
+        Copy-Item -Path $sourcePath -Destination $targetPath -Recurse -Force
+    } else {
+        Write-Warning "Warning: $file does not exist in $SOURCE_DIR"
+    }
+}
+
+# Copy the smartreader-default.json file to /customer/config as smartreader.json
+$sourceConfigFile = Join-Path -Path $SOURCE_DIR -ChildPath "cap_template\config\smartreader-default.json"
+$targetConfigFile = Join-Path -Path $TARGET_DIR -ChildPath "config\smartreader.json"
+
+if (Test-Path -Path $sourceConfigFile) {
+    Write-Output "Copying $sourceConfigFile to $targetConfigFile"
+    Copy-Item -Path $sourceConfigFile -Destination $targetConfigFile -Force
+} else {
+    Write-Warning "Warning: $sourceConfigFile does not exist"
+}
+
+Write-Output "Setup completed successfully"

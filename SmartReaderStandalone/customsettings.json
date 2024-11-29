@@ -3,7 +3,6 @@
     "UserName": "admin",
     "Password": "admin"
   },
-
   "RShellAuth": {
     "UserName": "root",
     "Password": "impinj"

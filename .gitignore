@@ -1422,3 +1422,5 @@ SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/wwwroot/ytem.js
 *.dll
 /SmartReaderStandalone/bin
 /ConsoleAppHash/obj
+.aider*
+.env

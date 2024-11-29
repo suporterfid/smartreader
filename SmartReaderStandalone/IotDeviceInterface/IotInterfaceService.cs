@@ -5574,8 +5574,19 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             if (_socketServer == null || !_socketServer.IsListening)
             {
-                _logger.LogWarning("Socket server not available, messages will be queued");
-                return;
+                _logger.LogWarning("Socket server not available, attempting restart...");
+                try {
+                    StartTcpSocketServer();
+                    if (_socketServer == null || !_socketServer.IsListening)
+                    {
+                        _logger.LogError("Failed to restart socket server, messages will be queued");
+                        return;
+                    }
+                }
+                catch (Exception ex) {
+                    _logger.LogError(ex, "Error restarting socket server");
+                    return;
+                }
             }
 
             // Process in smaller batches to avoid overwhelming the socket
@@ -13382,11 +13393,23 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             if (string.Equals("1", _standaloneConfigDTO.socketServer, StringComparison.OrdinalIgnoreCase))
                 try
                 {
-                    if (_messageQueueTagSmartReaderTagEventSocketServer.Count < 1000)
+                    const int MaxQueueSize = 1000;
+                    if (_messageQueueTagSmartReaderTagEventSocketServer.Count < MaxQueueSize)
+                    {
                         _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(dataToPublish);
+                        if (_messageQueueTagSmartReaderTagEventSocketServer.Count > (MaxQueueSize * 0.8))
+                        {
+                            _logger.LogWarning($"Socket queue filling up: {_messageQueueTagSmartReaderTagEventSocketServer.Count}/{MaxQueueSize}");
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogError($"Socket queue full ({MaxQueueSize}), dropping message");
+                    }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    _logger.LogError(ex, "Failed to enqueue socket message");
                 }
 
             if (string.Equals("1", _standaloneConfigDTO.usbFlashDrive, StringComparison.OrdinalIgnoreCase))

@@ -5556,34 +5556,68 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 #pragma warning restore CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
     }
 
+    private readonly object _socketQueueLock = new object();
+    private volatile bool _isSocketProcessing = false;
+
     private async void OnRunPeriodicTagPublisherSocketTasksEvent(object sender, ElapsedEventArgs e)
     {
-        _timerTagPublisherSocket.Enabled = false;
-        _timerTagPublisherSocket.Stop();
-
+        if (_isSocketProcessing)
+        {
+            _logger.LogWarning("Socket publisher still processing previous batch, skipping this iteration");
+            return;
+        }
 
         try
         {
-            JObject? smartReaderTagReadEvent;
-            var currentSocketQueueData = new ConcurrentQueue<JObject>(_messageQueueTagSmartReaderTagEventSocketServer);
-            _messageQueueTagSmartReaderTagEventSocketServer.Clear();
-            while (currentSocketQueueData.TryDequeue(out smartReaderTagReadEvent))
+            _isSocketProcessing = true;
+            _timerTagPublisherSocket.Enabled = false;
+
+            if (_socketServer == null || !_socketServer.IsListening)
+            {
+                _logger.LogWarning("Socket server not available, messages will be queued");
+                return;
+            }
+
+            // Process in smaller batches to avoid overwhelming the socket
+            const int batchSize = 100;
+            int processedCount = 0;
+
+            while (processedCount < batchSize && _messageQueueTagSmartReaderTagEventSocketServer.TryDequeue(out var smartReaderTagReadEvent))
+            {
                 try
                 {
                     await ProcessSocketJsonTagEventDataAsync(smartReaderTagReadEvent);
+                    processedCount++;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherTasksEvent " + ex.Message);
+                    _logger.LogError(ex, "Error processing socket message, requeueing");
+                    // Requeue failed message
+                    if (_messageQueueTagSmartReaderTagEventSocketServer.Count < 1000)
+                    {
+                        _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(smartReaderTagReadEvent);
+                    }
+                    else
+                    {
+                        _logger.LogError("Socket queue full, dropping message");
+                    }
                 }
+            }
+
+            if (processedCount > 0)
+            {
+                _logger.LogInformation($"Processed {processedCount} socket messages");
+            }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Fatal error in socket publisher");
         }
-
-
-        _timerTagPublisherSocket.Enabled = true;
-        _timerTagPublisherSocket.Start();
+        finally
+        {
+            _isSocketProcessing = false;
+            _timerTagPublisherSocket.Enabled = true;
+        }
     }
 
     private async void OnRunPeriodicSummaryStreamPublisherTasksEvent(object sender, ElapsedEventArgs e)

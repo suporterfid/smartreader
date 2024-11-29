@@ -34,8 +34,8 @@ PLEASE READ THE FOLLOWING LICENSE & DISCLAIMER (“AGREEMENT”) CAREFULLY BEFOR
 
  ## Requirements:
 
- • Docker must be installed and running
- • docker-compose.yml and Dockerfile must be present in the project directory
+- Docker must be installed and running
+- docker-compose.yml and Dockerfile must be present in the project directory
 
 The generated .upgx file will be available in the cap_deploy/ directory after successful build.
 

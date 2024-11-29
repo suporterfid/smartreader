@@ -44,6 +44,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Security;
 using System.Reflection;
+using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
@@ -3873,13 +3874,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     if (string.Equals("1", _standaloneConfigDTO.groupEventsOnInventoryStatus,
                             StringComparison.OrdinalIgnoreCase)
                         && string.Equals("0", _standaloneConfigDTO.stopTriggerDuration, StringComparison.OrdinalIgnoreCase))
-                        //if (_messageQueueTagSmartReaderTagEventGroupToValidate.Count > 0)
-                        //{
-                        //var existingItems = _messageQueueTagSmartReaderTagEventBarcodeGroup.ToArray();
-                        //foreach (var item in existingItems)
-                        //{
-                        //    _messageQueueTagSmartReaderTagEventHttpPost.Enqueue(item);
-                        //}
                         try
                         {
                             //_ = Task.Run(() => ProcessValidationTagQueue());
@@ -3890,33 +3884,18 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             _logger.LogError(ex, "Unexpected error on ProcessBarcodeQueue " + ex.Message);
                             //throw;
                         }
-                    if (string.Equals("3", _standaloneConfigDTO.startTriggerType, StringComparison.OrdinalIgnoreCase))
-                    {
-                        try
-                        {
-                            StartPresetAsync();
-                        }
-                        catch (Exception)
-                        {
+                    ////if (string.Equals("3", _standaloneConfigDTO.startTriggerType, StringComparison.OrdinalIgnoreCase))
+                    ////{
+                    ////    try
+                    ////    {
+                    ////        StartPresetAsync();
+                    ////    }
+                    ////    catch (Exception)
+                    ////    {
 
 
-                        }
-                    }
-                    //}
-                    //else if (string.Equals("1", _standaloneConfigDTO.enableBarcodeTcp, StringComparison.OrdinalIgnoreCase)
-                    //           && _messageQueueBarcode.Count > 0 && _messageQueueTagSmartReaderTagEventGroupToValidate.Count == 0)
-                    //{
-                    //    Console.WriteLine("=====================================================================");
-                    //    Console.WriteLine("Inventory Iddle event detected, trying to dequeue pending barcode...");                            
-                    //    var dequeuedBarcode = ProcessBarcodeQueue();
-                    //    Console.WriteLine("=============> dequeuedBarcode ["+ dequeuedBarcode + "]");
-                    //    Console.WriteLine("=====================================================================");
-                    //}
-                    //else
-                    //{
-                    //    string barcode = "";
-                    //    _messageQueueBarcode.TryDequeue(out barcode);
-                    //}
+                    ////    }
+                    ////}
                     //}
 
                     if (!string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoEnabled)
@@ -4096,7 +4075,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
             }
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
-            if (!string.IsNullOrEmpty(_standaloneConfigDTO.stopTriggerDuration))
+            if (!string.IsNullOrEmpty(_standaloneConfigDTO.stopTriggerDuration)
+                && string.Equals("1", _standaloneConfigDTO.stopTriggerType,
+                            StringComparison.OrdinalIgnoreCase))
             {
                 long stopTiggerDuration = 100;
                 long.TryParse(_standaloneConfigDTO.stopTriggerDuration, out stopTiggerDuration);
@@ -5613,6 +5594,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
             if (string.Equals("0", _standaloneConfigDTO.stopTriggerType, StringComparison.OrdinalIgnoreCase)
+                && _messageQueueTagSmartReaderTagEventGroupToValidate.Count > 0)
+            {
+                ProcessValidationTagQueue();
+            }
+            if (_isStarted && string.Equals("2", _standaloneConfigDTO.stopTriggerType, StringComparison.OrdinalIgnoreCase)
                 && _messageQueueTagSmartReaderTagEventGroupToValidate.Count > 0)
             {
                 ProcessValidationTagQueue();
@@ -7607,7 +7593,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         if (string.IsNullOrEmpty(DeviceId))
                             if (!string.IsNullOrEmpty(serialFromReader))
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
-                                DeviceIdMqtt = serialFromReader + _standaloneConfigDTO.readerName;
+                                DeviceIdMqtt = serialFromReader;
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
 
                         if (!string.IsNullOrEmpty(serialFromReader) && !string.Equals(DeviceId, serialFromReader,
@@ -8263,6 +8249,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 _logger.LogInformation("Serial number retrieved from file: " + serialNumber);
                 //_logger.LogInformation("Serial number retrieved from file: " + serialNumber, SeverityType.Debug);
                 if (string.IsNullOrEmpty(DeviceId)) DeviceId = serialNumber;
+                DeviceIdMqtt = _standaloneConfigDTO.readerName;
                 if (string.IsNullOrEmpty(DeviceIdMqtt)) DeviceIdMqtt = serialNumber + _standaloneConfigDTO.readerName;
                 _logger.LogInformation("Device: " + DeviceId);
                 _logger.LogInformation("DeviceIdMqtt: " + DeviceIdMqtt);
@@ -12296,6 +12283,53 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     {
                         mqttBrokerWebSocketPath = _standaloneConfigDTO.mqttBrokerWebSocketPath;
                     }
+                    if(_standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("wss"))
+                    {
+                        _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
+                    .WithClientOptions(new MqttClientOptionsBuilder()
+                        //.WithCleanSession()
+                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
+                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
+                        .WithClientId(localClientId)
+                         .WithWebSocketServer(o => o.WithUri($"{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}"))
+                        .WithCredentials(mqttUsername, mqttPassword)
+                                                .WithWillPayload(lastWillMessage.PayloadSegment)
+                        .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
+                        .WithWillTopic(lastWillMessage.Topic)
+                        .WithWillRetain(lastWillMessage.Retain)
+                        .WithWillContentType(lastWillMessage.ContentType)
+                        .WithTlsOptions(o =>
+                        {
+                            // The used public broker sometimes has invalid certificates. This sample accepts all
+                            // certificates. This should not be used in live environments.
+                            o.WithCertificateValidationHandler(_ => true);
+
+                            // The default value is determined by the OS. Set manually to force version.
+                            o.WithSslProtocols(SslProtocols.Tls12);
+                        })
+                        //.WithWillMessage(lastWillMessage)
+                        .Build())
+                    .Build();
+                    }
+                    else
+                    {
+                        _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
+                                            .WithClientOptions(new MqttClientOptionsBuilder()
+                                                //.WithCleanSession()
+                                                .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
+                                                //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
+                                                .WithClientId(localClientId)
+                                                 .WithWebSocketServer(o => o.WithUri($"{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}"))
+                                                .WithCredentials(mqttUsername, mqttPassword)
+                                                                        .WithWillPayload(lastWillMessage.PayloadSegment)
+                                                .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
+                                                .WithWillTopic(lastWillMessage.Topic)
+                                                .WithWillRetain(lastWillMessage.Retain)
+                                                .WithWillContentType(lastWillMessage.ContentType)
+                                                //.WithWillMessage(lastWillMessage)
+                                                .Build())
+                                            .Build();
+                    }
                     _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
                     .WithClientOptions(new MqttClientOptionsBuilder()
                         //.WithCleanSession()
@@ -12315,22 +12349,54 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
                 else
                 {
-                    _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
-                    .WithClientOptions(new MqttClientOptionsBuilder()
-                        //.WithCleanSession()
-                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                        .WithClientId(localClientId)
-                        .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
-                        .WithCredentials(mqttUsername, mqttPassword)
-                                                .WithWillPayload(lastWillMessage.PayloadSegment)
-                        .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
-                        .WithWillTopic(lastWillMessage.Topic)
-                        .WithWillRetain(lastWillMessage.Retain)
-                        .WithWillContentType(lastWillMessage.ContentType)
-                        //.WithWillMessage(lastWillMessage)
-                        .Build())
-                    .Build();
+                    if (_standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("mqtts"))
+                    {
+                        _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
+                            .WithClientOptions(new MqttClientOptionsBuilder()
+                                //.WithCleanSession()
+                                .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
+                                //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
+                                .WithClientId(localClientId)
+                                .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
+                                .WithCredentials(mqttUsername, mqttPassword)
+                                                        .WithWillPayload(lastWillMessage.PayloadSegment)
+                                .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
+                                .WithWillTopic(lastWillMessage.Topic)
+                                .WithWillRetain(lastWillMessage.Retain)
+                                .WithWillContentType(lastWillMessage.ContentType)
+                                .WithTlsOptions(o =>
+                                {
+                                    // The used public broker sometimes has invalid certificates. This sample accepts all
+                                    // certificates. This should not be used in live environments.
+                                    o.WithCertificateValidationHandler(_ => true);
+
+                                    // The default value is determined by the OS. Set manually to force version.
+                                    o.WithSslProtocols(SslProtocols.Tls12);
+                                })
+                                //.WithWillMessage(lastWillMessage)
+                                .Build())
+                            .Build();
+                    }
+                    else
+                    {
+                        _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
+                            .WithClientOptions(new MqttClientOptionsBuilder()
+                                //.WithCleanSession()
+                                .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
+                                //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
+                                .WithClientId(localClientId)
+                                .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
+                                .WithCredentials(mqttUsername, mqttPassword)
+                                                        .WithWillPayload(lastWillMessage.PayloadSegment)
+                                .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
+                                .WithWillTopic(lastWillMessage.Topic)
+                                .WithWillRetain(lastWillMessage.Retain)
+                                .WithWillContentType(lastWillMessage.ContentType)
+                                //.WithWillMessage(lastWillMessage)
+                                .Build())
+                            .Build();
+                    }
+                    
                 }
             }
 
@@ -12432,16 +12498,23 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     var diconnectDetails = $"Disconnection: ConnectResult {e.ConnectResult} \n";
                     diconnectDetails += $"Disconnection: Reason {e.Reason} \n";
-                    diconnectDetails += $" ResultCode {e.ConnectResult.ResultCode} \n";
+                    if(e.ConnectResult != null)
+                    {
+                        diconnectDetails += $" ResultCode {e.ConnectResult.ResultCode} \n";
+                    }
                     diconnectDetails += $" ClientWasConnected {e.ClientWasConnected} \n";
-
+                    if(e.Exception != null && !string.IsNullOrEmpty(e.Exception.Message))
+                    {
+                        diconnectDetails += $" Message {e.Exception.Message} \n";
+                    }
+                    
                     _logger.LogInformation($"### Details {diconnectDetails}");
 
                     await ProcessGpoErrorPortAsync();
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-
+                    _logger.LogError(ex, "MQTT Disconnected.");
                 }
 
             };
@@ -12885,7 +12958,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
 
             //============================================================================================
-            // PLUGIN
+            // PLUGIN BEGIN
             //============================================================================================
             if (_standaloneConfigDTO != null && !string.IsNullOrEmpty(_standaloneConfigDTO.enablePlugin)
                                              && string.Equals("1", _standaloneConfigDTO.enablePlugin.Trim(),
@@ -12911,7 +12984,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             }
             //============================================================================================
-            //  PLUGIN
+            //  PLUGIN END
             //============================================================================================
 
             var isPositioningEvent = false;

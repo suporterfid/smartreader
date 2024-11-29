@@ -3,6 +3,49 @@
 https://support.impinj.com/hc/en-us/articles/360000468370-Software-Tools-License-Disclaimer
 
 PLEASE READ THE FOLLOWING LICENSE & DISCLAIMER (“AGREEMENT”) CAREFULLY BEFORE USING ANY SOFTWARE TOOLS (AS DEFINED BELOW) MADE AVAILABLE TO YOU (“LICENSEE”) BY IMPINJ, INC. (“IMPINJ”). BY USING THE SOFTWARE TOOLS, YOU ACKNOWLEDGE THAT YOU HAVE READ AND UNDERSTOOD ALL THE TERMS AND CONDITIONS OF THE AGREEMENT, YOU WILL BE CONSENTING TO BE BOUND BY THEM, AND YOU ARE AUTHORIZED TO DO SO. IF YOU DO NOT ACCEPT THESE TERMS AND CONDITIONS, DO NOT USE THE SOFTWARE TOOLS.
+ =======
+ # SmartReader
+
+ ## Building the Project
+
+ To build the project and generate the .upgx file for the R700 reader:
+
+ ### Windows
+ Run the build script:
+ ```cmd
+ cd SmartReaderStandalone
+ build-upgx-docker.bat
+
+  =======
+ # SmartReader
+
+ ## Building the Project
+
+ To build the project and generate the .upgx file for the R700 reader:
+
+ ###  Linux
+ Run the build script:
+ ```bash
+ cd SmartReaderStandalone
+ chmod +x build-upgx-docker.sh
+ ./build-upgx-docker.sh
+
+ ## The scripts will:
+
+ 1 Clean up Docker system
+ 2 Build the Docker image using Dockerfile
+ 3 Run a container from the image
+ 4 Copy the generated .upgx file to cap_deploy/ directory
+ 5 Remove the temporary container
+
+ ## Requirements:
+
+ • Docker must be installed and running
+ • docker-compose.yml and Dockerfile must be present in the project directory
+
+The generated .upgx file will be available in the cap_deploy/ directory after successful build.
+
+# License 
 
 1. PURPOSE OF AGREEMENT. From time to time, Impinj technical personnel may make available to Licensee certain software, including code (in source and object form), tools, libraries, configuration files, translations, and related documentation (collectively, “Software Tools”), upon specific request or to assist with a specific deployment. This Agreement sets forth Licensee's limited rights and Impinj's limited obligations with respect to the Software Tools. Licensee acknowledges that Impinj provides the Software Tools free of charge. This Agreement does not grant any rights with respect to Impinj standalone software products (e.g., ItemSense, ItemEncode, SpeedwayConnect) or the firmware on Impinj hardware, all of which are subject to separate license terms.
 

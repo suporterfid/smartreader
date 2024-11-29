@@ -5579,12 +5579,28 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     StartTcpSocketServer();
                     if (_socketServer == null || !_socketServer.IsListening)
                     {
-                        _logger.LogError("Failed to restart socket server, messages will be queued");
+                        _logger.LogError("Failed to restart socket server");
+                        // Drop older messages if queue is too large
+                        while (_messageQueueTagSmartReaderTagEventSocketServer.Count > 1000)
+                        {
+                            if (_messageQueueTagSmartReaderTagEventSocketServer.TryDequeue(out var _))
+                            {
+                                _logger.LogWarning("Dropped oldest message from socket queue due to server unavailability");
+                            }
+                        }
                         return;
                     }
                 }
                 catch (Exception ex) {
                     _logger.LogError(ex, "Error restarting socket server");
+                    // Drop older messages if queue is too large
+                    while (_messageQueueTagSmartReaderTagEventSocketServer.Count > 1000)
+                    {
+                        if (_messageQueueTagSmartReaderTagEventSocketServer.TryDequeue(out var _))
+                        {
+                            _logger.LogWarning("Dropped oldest message from socket queue due to server unavailability");
+                        }
+                    }
                     return;
                 }
             }

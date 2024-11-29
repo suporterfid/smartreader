@@ -26,11 +26,11 @@ PLEASE READ THE FOLLOWING LICENSE & DISCLAIMER (“AGREEMENT”) CAREFULLY BEFOR
 
  ## The scripts will:
 
- 1 Clean up Docker system
- 2 Build the Docker image using Dockerfile
- 3 Run a container from the image
- 4 Copy the generated .upgx file to cap_deploy/ directory
- 5 Remove the temporary container
+ - 1 Clean up Docker system
+ - 2 Build the Docker image using Dockerfile
+ - 3 Run a container from the image
+ - 4 Copy the generated .upgx file to cap_deploy/ directory
+ - 5 Remove the temporary container
 
  ## Requirements:
 

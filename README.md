@@ -15,12 +15,6 @@ PLEASE READ THE FOLLOWING LICENSE & DISCLAIMER (“AGREEMENT”) CAREFULLY BEFOR
  cd SmartReaderStandalone
  build-upgx-docker.bat
 ```
-  =======
- # SmartReader
-
- ## Building the Project
-
- To build the project and generate the .upgx file for the R700 reader:
 
  ###  Linux
  Run the build script:

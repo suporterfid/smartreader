@@ -23,7 +23,7 @@ using NetworkInterface = Impinj.Atlas.NetworkInterface;
 
 namespace SmartReader.IotDeviceInterface;
 
-internal class R700IotReader : IR700IotReader
+public class R700IotReader : IR700IotReader
 {
     private readonly IotDeviceInterfaceEventProcessor _r700IotEventProcessor;
 
@@ -41,12 +41,18 @@ internal class R700IotReader : IR700IotReader
         if (string.IsNullOrWhiteSpace(hostname))
             throw new ArgumentNullException(nameof(hostname));
         _r700IotEventProcessor =
-            new IotDeviceInterfaceEventProcessor(hostname, useHttpAlways, useBasicAuthAlways, uname, pwd, hostPort, proxy, proxyPort);
+            new IotDeviceInterfaceEventProcessor(hostname, useHttpAlways, useBasicAuthAlways, uname, pwd, hostPort, proxy ?? "", proxyPort);
         Hostname = hostname;
         Nickname = nickname;
     }
 
-    public List<int> RxSensitivitiesInDbm { get; private set; }
+    public required List<int> RxSensitivitiesInDbm { get; set; }
+    public required string UniqueId { get; set; }
+    public required string MacAddress { get; set; }
+    public required string ProductModel { get; set; }
+    public required List<double> TxPowersInDbm { get; set; }
+    public required string ReaderOperatingRegion { get; set; }
+    public required List<string> IpAddresses { get; set; }
 
     public string Hostname { get; }
 
@@ -54,25 +60,13 @@ internal class R700IotReader : IR700IotReader
 
     public string DisplayName => !string.IsNullOrWhiteSpace(Nickname) ? Nickname : Hostname;
 
-    public string UniqueId { get; private set; }
-
-    public string MacAddress { get; private set; }
-
     public uint ModelNumber { get; }
 
-    public string ProductModel { get; private set; }
-
-    public List<double> TxPowersInDbm { get; private set; }
-
     public double MinPowerStepDbm { get; } = 0.25;
-
-    public string ReaderOperatingRegion { get; private set; }
 
     public bool IsAntennaHubEnabled { get; private set; }
 
     public bool IsNetworkConnected { get; private set; }
-
-    public List<string> IpAddresses { get; private set; }
 
 
     public async Task<ReaderStatus> GetStatusAsync()
@@ -90,7 +84,7 @@ internal class R700IotReader : IR700IotReader
                 if (selectedIfaces != null && selectedIfaces.Any())
                 {
                     var selectedIface = selectedIfaces.FirstOrDefault();
-                    MacAddress = selectedIface.HardwareAddress;
+                    MacAddress = selectedIface?.HardwareAddress ?? string.Empty;
                 }
             }
 
@@ -104,7 +98,7 @@ internal class R700IotReader : IR700IotReader
             }
 
             IsNetworkConnected = false;
-            foreach (var netInterface in iFaces)
+            foreach (var netInterface in iFaces ?? Enumerable.Empty<NetworkInterface>())
             {
                 if (netInterface != null
                     && netInterface.NetworkAddress != null
@@ -158,7 +152,8 @@ internal class R700IotReader : IR700IotReader
         IsAntennaHubEnabled = false;
         var antennaHubInfoAsync = await _r700IotEventProcessor.GetSystemAntennaHubInfoAsync();
         var antennaHubStatus = antennaHubInfoAsync.Status;
-        if (antennaHubStatus != null && antennaHubStatus == AntennaHubInfoStatus.Enabled) IsAntennaHubEnabled = true;
+        //if (antennaHubStatus != null && antennaHubStatus == AntennaHubInfoStatus.Enabled) IsAntennaHubEnabled = true;
+        IsAntennaHubEnabled = antennaHubStatus == AntennaHubInfoStatus.Enabled;
 
         return antennaHubInfoAsync;
     }
@@ -275,41 +270,38 @@ internal class R700IotReader : IR700IotReader
         return _r700IotEventProcessor.GetReaderProfilesAsync();
     }
 
-    public event EventHandler<TagInventoryEvent> TagInventoryEvent;
+    public event EventHandler<TagInventoryEvent>? TagInventoryEvent;
 
-    public event EventHandler<IotDeviceInterfaceException> StreamingErrorEvent;
+    public event EventHandler<IotDeviceInterfaceException>? StreamingErrorEvent;
 
-    public event EventHandler<Impinj.Atlas.GpiTransitionEvent> GpiTransitionEvent;
+    public event EventHandler<Impinj.Atlas.GpiTransitionEvent>? GpiTransitionEvent;
 
-    public event EventHandler<DiagnosticEvent> DiagnosticEvent;
+    public event EventHandler<DiagnosticEvent>? DiagnosticEvent;
 
-    public event EventHandler<InventoryStatusEvent> InventoryStatusEvent;
+    public event EventHandler<InventoryStatusEvent>? InventoryStatusEvent;
 
 
     public Task SendCustomInventoryPresetAsync(string presetId, string jsonInventoryRequest)
     {
-        Task task = null;
         try
         {
-            return task =
-                _r700IotEventProcessor.UpdateReaderInventoryPresetAsync(presetId, jsonInventoryRequest);
+            return _r700IotEventProcessor.UpdateReaderInventoryPresetAsync(presetId, jsonInventoryRequest);
         }
         catch (AtlasException ex) when (ex.StatusCode == 403 || ex.StatusCode == 204)
         {
+            return Task.CompletedTask;
         }
 
-        return task;
+
     }
 
     public Task PostTransientInventoryPresetAsync(string jsonInventoryRequest)
     {
-        Task task = null;
         try
         {
             _r700IotEventProcessor.TagInventoryEvent += R700IotEventProcessorOnTagInventoryEvent;
             _r700IotEventProcessor.StreamingErrorEvent += R700IotEventProcessorOnStreamingErrorEvent;
-            return task =
-                _r700IotEventProcessor.PostTransientInventoryPresetAsync(jsonInventoryRequest);
+            return _r700IotEventProcessor.PostTransientInventoryPresetAsync(jsonInventoryRequest);
         }
         catch (AtlasException ex) when (ex.StatusCode == 403 || ex.StatusCode == 204)
         {
@@ -321,14 +313,12 @@ internal class R700IotReader : IR700IotReader
             catch (Exception)
             {
             }
+            return Task.CompletedTask;
         }
-
-        return task;
     }
 
     public Task PostTransientInventoryStopPresetsAsync()
     {
-        Task task = null;
         try
         {
             try
@@ -340,8 +330,7 @@ internal class R700IotReader : IR700IotReader
             {
             }
 
-            return task =
-                _r700IotEventProcessor.PostStopInventoryPresetAsync();
+            return _r700IotEventProcessor.PostStopInventoryPresetAsync();
         }
         catch (AtlasException ex) when (ex.StatusCode == 403 || ex.StatusCode == 204)
         {
@@ -353,9 +342,8 @@ internal class R700IotReader : IR700IotReader
             catch (Exception)
             {
             }
+            return Task.CompletedTask;
         }
-
-        return task;
     }
 
     public Task<TimeInfo> DeviceReaderTimeGetAsync()
@@ -408,27 +396,27 @@ internal class R700IotReader : IR700IotReader
         return _r700IotEventProcessor.SystemImageUpgradePostAsync(file);
     }
 
-    private void R700IotEventProcessorOnStreamingErrorEvent(object sender, IotDeviceInterfaceException e)
+    private void R700IotEventProcessorOnStreamingErrorEvent(object? sender, IotDeviceInterfaceException e)
     {
         OnStreamingErrorEvent(e);
     }
 
-    private void R700IotEventProcessorOnTagInventoryEvent(object sender, TagInventoryEvent e)
+    private void R700IotEventProcessorOnTagInventoryEvent(object? sender, TagInventoryEvent e)
     {
         OnTagInventoryEvent(e);
     }
 
-    private void R700IotEventProcessorOnGpiTransitionEvent(object sender, Impinj.Atlas.GpiTransitionEvent e)
+    private void R700IotEventProcessorOnGpiTransitionEvent(object?sender, Impinj.Atlas.GpiTransitionEvent e)
     {
         OnGpiTransitionEvent(e);
     }
 
-    private void R700IotEventProcessorOnInventoryStatusEvent(object sender, InventoryStatusEvent e)
+    private void R700IotEventProcessorOnInventoryStatusEvent(object? sender, InventoryStatusEvent e)
     {
         OnInventoryStatusEvent(e);
     }
 
-    private void R700IotEventProcessorOnDiagnosticEvent(object sender, DiagnosticEvent e)
+    private void R700IotEventProcessorOnDiagnosticEvent(object? sender, DiagnosticEvent e)
     {
         OnDiagnosticEvent(e);
     }
@@ -465,6 +453,25 @@ internal class R700IotReader : IR700IotReader
         diagnosticEvent(this, e);
     }
 
+    public void Dispose()
+    {
+        if (_r700IotEventProcessor != null)
+        {
+            // Dispose the event processor since it contains HTTP clients and streams
+            _r700IotEventProcessor.Dispose();
+            
+            // Unsubscribe from events to prevent memory leaks
+            _r700IotEventProcessor.TagInventoryEvent -= R700IotEventProcessorOnTagInventoryEvent;
+            _r700IotEventProcessor.StreamingErrorEvent -= R700IotEventProcessorOnStreamingErrorEvent;
+            _r700IotEventProcessor.GpiTransitionEvent -= R700IotEventProcessorOnGpiTransitionEvent;
+            _r700IotEventProcessor.InventoryStatusEvent -= R700IotEventProcessorOnInventoryStatusEvent;
+            _r700IotEventProcessor.DiagnosticEvent -= R700IotEventProcessorOnDiagnosticEvent;
+        }
+        
+
+        GC.SuppressFinalize(this);
+    }
+
     private void OnInventoryStatusEvent(InventoryStatusEvent e)
     {
         var inventoryStatusEvent = InventoryStatusEvent;
@@ -473,12 +480,7 @@ internal class R700IotReader : IR700IotReader
         inventoryStatusEvent(this, e);
     }
 
-    void IDisposable.Dispose()
-    {
-        // Suppress finalization.
-        GC.SuppressFinalize(this);
-    }
-
+    
     private sealed class IotDeviceInterfaceEventProcessor
     {
         private readonly string _hostname;
@@ -488,9 +490,9 @@ internal class R700IotReader : IR700IotReader
         private readonly IAtlasClient _iotDeviceInterfaceClientSecure;
         private readonly bool _useBasicAuthAlways;
         private readonly bool _useHttpAlways;
-        private CancellationTokenSource _cancelSource;
-        private Stream _responseStream;
-        private Task _streamingTask;
+        private CancellationTokenSource? _cancelSource;
+        private Stream? _responseStream;
+        private Task? _streamingTask;
 
         internal IotDeviceInterfaceEventProcessor(
             string hostname,
@@ -518,11 +520,8 @@ internal class R700IotReader : IR700IotReader
 
             var httpClientHandler = new HttpClientHandler
             {
-
-
-                ServerCertificateCustomValidationCallback =
-                    (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
-                        chain, errors) => true)
+                ServerCertificateCustomValidationCallback = (HttpRequestMessage message, X509Certificate2? cert,
+                    X509Chain? chain, SslPolicyErrors errors) => true
             };
 
 
@@ -539,9 +538,8 @@ internal class R700IotReader : IR700IotReader
                 {
                     Proxy = webProxy,
                     UseProxy = true,
-                    ServerCertificateCustomValidationCallback =
-                    (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
-                        chain, errors) => true)
+                    ServerCertificateCustomValidationCallback = (HttpRequestMessage message, X509Certificate2? cert,
+    X509Chain? chain, SslPolicyErrors errors) => true
                 };
             }
 
@@ -627,14 +625,13 @@ internal class R700IotReader : IR700IotReader
         public Task<RegionInfo> GetSystemRegionInfoAsync()
         {
             var systemRegionCancellationToken = new CancellationToken();
-            bool? pending = null;
             return _iotDeviceInterfaceClientSecure.SystemRegionGetAsync(systemRegionCancellationToken);
         }
 
         public Task<PowerConfiguration> GetSystemPowerAsync()
         {
             var systemPowerCancellationToken = new CancellationToken();
-            bool? pending = null;
+            //bool? pending = null;
             return _iotDeviceInterfaceClientSecure.SystemPowerGetAsync(systemPowerCancellationToken);
         }
 
@@ -679,10 +676,10 @@ internal class R700IotReader : IR700IotReader
                 iotDeviceInterfaceEventProcessor._cancelSource = new CancellationTokenSource();
             }
 
-            _cancelSource.Cancel();
+            _cancelSource?.Cancel();
             try
             {
-                if (_responseStream != null) _responseStream.Dispose();
+                if (_responseStream != null) _responseStream?.Dispose();
 
                 await _iotDeviceInterfaceClient.ProfilesStopAsync();
                 try
@@ -699,8 +696,8 @@ internal class R700IotReader : IR700IotReader
             catch (Exception ex)
             {
                 OnStreamingErrorEvent(
-                    new IotDeviceInterfaceException(string.Format("Unexpected error - connection error ", _hostname),
-                        ex));
+                    new IotDeviceInterfaceException($"Unexpected error - connection error {_hostname}",
+    ex));
             }
         }
 
@@ -712,11 +709,16 @@ internal class R700IotReader : IR700IotReader
 
         private async Task StreamingAsync()
         {
-            while (!_cancelSource.IsCancellationRequested)
+            
+
+            while (!_cancelSource?.IsCancellationRequested ?? false)
             {
                 int retryCount = 0;
                 bool shouldRestart = true;
-
+                if (_cancelSource == null)
+                {
+                    _cancelSource = new CancellationTokenSource();
+                }
                 while (shouldRestart && !_cancelSource.IsCancellationRequested)
                 {
                     try
@@ -836,13 +838,13 @@ internal class R700IotReader : IR700IotReader
                         if (_responseStream != null)
                         {
                             await _responseStream.DisposeAsync();
-                            _responseStream = null;
+                            //_responseStream = null;
                         }
                     }
                 }
             }
 
-            if (_cancelSource.IsCancellationRequested)
+            if (_cancelSource != null && _cancelSource.IsCancellationRequested)
             {
                 _cancelSource.Dispose();
             }
@@ -865,23 +867,22 @@ internal class R700IotReader : IR700IotReader
 
         public Task UpdateReaderMqttAsync(MqttConfiguration mqttConfiguration)
         {
-            Task task = null;
 
             try
             {
-                task = _iotDeviceInterfaceClient.MqttPutAsync(mqttConfiguration);
+                return _iotDeviceInterfaceClient.MqttPutAsync(mqttConfiguration);
             }
             catch (AtlasException ex) when (ex.StatusCode == 403)
             {
                 Console.WriteLine("Unexpected error: " + ex.Message);
-                throw;
+                return Task.CompletedTask;
             }
             catch (Exception ex)
             {
                 Console.WriteLine("Unexpected error: " + ex.Message);
+                return Task.CompletedTask;
             }
 
-            return task;
         }
 
         public Task<GpoConfigurations> DeviceGposGetAsync()
@@ -891,11 +892,10 @@ internal class R700IotReader : IR700IotReader
 
         public Task UpdateReaderGpoAsync(GpoConfigurations gpoConfiguration)
         {
-            Task task = null;
 
             try
             {
-                task = _iotDeviceInterfaceClient.DeviceGposPutAsync(gpoConfiguration);
+                return _iotDeviceInterfaceClient.DeviceGposPutAsync(gpoConfiguration);
             }
             catch (AtlasException ex) when (ex.StatusCode == 403)
             {
@@ -905,9 +905,8 @@ internal class R700IotReader : IR700IotReader
             catch (Exception ex)
             {
                 Console.WriteLine("Unexpected error: " + ex.Message);
+                return Task.CompletedTask;
             }
-
-            return task;
         }
 
         public Task<TimeInfo> DeviceReaderTimeGetAsync()
@@ -933,11 +932,10 @@ internal class R700IotReader : IR700IotReader
 
         public Task UpdateReaderRfidInterface(RfidInterface rfidInterface)
         {
-            Task task = null;
 
             try
             {
-                task = _iotDeviceInterfaceClient.SystemRfidInterfacePutAsync(rfidInterface);
+                return _iotDeviceInterfaceClient.SystemRfidInterfacePutAsync(rfidInterface);
             }
             catch (AtlasException ex) when (ex.StatusCode == 403)
             {
@@ -947,9 +945,8 @@ internal class R700IotReader : IR700IotReader
             catch (Exception ex)
             {
                 Console.WriteLine("Unexpected error: " + ex.Message);
+                return Task.CompletedTask;
             }
-
-            return task;
         }
 
         public Task<ObservableCollection<string>> GetReaderProfilesAsync()
@@ -970,32 +967,30 @@ internal class R700IotReader : IR700IotReader
 
         public Task SaveInventoryPresetAsync(string presetId, InventoryRequest inventoryRequest)
         {
-            Task task = null;
             try
             {
-                task = _iotDeviceInterfaceClient.ProfilesInventoryPresetsPutAsync(presetId, inventoryRequest);
+                return _iotDeviceInterfaceClient.ProfilesInventoryPresetsPutAsync(presetId, inventoryRequest);
             }
             catch (AtlasException ex) when (ex.StatusCode == 403 || ex.StatusCode == 204)
             {
+                return Task.CompletedTask;
             }
-
-            return task;
         }
 
         public Task UpdateReaderInventoryPresetAsync(
             string presetId,
             InventoryRequest updatedInventoryRequest)
         {
-            Task task = null;
             try
             {
-                task = _iotDeviceInterfaceClient.ProfilesInventoryPresetsPutAsync(presetId, updatedInventoryRequest);
+                return _iotDeviceInterfaceClient.ProfilesInventoryPresetsPutAsync(presetId, updatedInventoryRequest);
             }
             catch (AtlasException ex) when (ex.StatusCode == 403 || ex.StatusCode == 204)
             {
+                return Task.CompletedTask;
             }
 
-            return task;
+            
         }
 
         public Task UpdateReaderInventoryPresetAsync(
@@ -1004,7 +999,6 @@ internal class R700IotReader : IR700IotReader
         {
             var endpoint = "profiles/inventory/presets/";
             var completeUri = _httpClient.BaseAddress + endpoint + presetId;
-            Task task = null;
             try
             {
                 var request_ = new HttpRequestMessage();
@@ -1015,15 +1009,14 @@ internal class R700IotReader : IR700IotReader
                 request_.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 //request_.RequestUri = new Uri(completeUri, UriKind.RelativeOrAbsolute);
                 //task = (Task)_httpClient.SendAsync(request_, HttpCompletionOption.ResponseHeadersRead);
-                task = _httpClient.PutAsync(completeUri, stringContent);
+                return _httpClient.PutAsync(completeUri, stringContent);
             }
             catch (Exception ex)
             {
                 Console.WriteLine("Unexpected error: " + ex.Message);
-                throw;
+                return Task.CompletedTask;
             }
 
-            return task;
         }
 
         public Task PostTransientInventoryPresetAsync(
@@ -1037,7 +1030,6 @@ internal class R700IotReader : IR700IotReader
 
             var endpoint = "profiles/inventory/start";
             var completeUri = _httpClient.BaseAddress + endpoint;
-            Task task = null;
             try
             {
                 var request_ = new HttpRequestMessage();
@@ -1048,24 +1040,21 @@ internal class R700IotReader : IR700IotReader
                 request_.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 //request_.RequestUri = new Uri(completeUri, UriKind.RelativeOrAbsolute);
                 //task = (Task)_httpClient.SendAsync(request_, HttpCompletionOption.ResponseHeadersRead);
-                task = _httpClient.PostAsync(completeUri, stringContent);
+                return _httpClient.PostAsync(completeUri, stringContent);
             }
             catch (Exception ex)
             {
                 Console.WriteLine("Unexpected error: " + ex.Message);
-                throw;
+                return Task.CompletedTask;
             }
-
-            return task;
         }
 
-        public Task? PostStopInventoryPresetAsync(
+        public Task PostStopInventoryPresetAsync(
             string json = "")
         {
             if (_cancelSource == null || _cancelSource.IsCancellationRequested)
-                return null;
+                return Task.CompletedTask;
 
-            Task task = null;
             if (_cancelSource != null)
             {
                 _cancelSource.Cancel();
@@ -1073,20 +1062,20 @@ internal class R700IotReader : IR700IotReader
                 {
                     _responseStream?.Dispose();
                     _iotDeviceInterfaceClient.ProfilesStopAsync();
-                    task = _streamingTask;
+                    return _streamingTask ?? Task.CompletedTask;
+                
+                }
+                catch (TaskCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    OnStreamingErrorEvent(
+                        new IotDeviceInterfaceException($"Unexpected error - connection error {_hostname}",
+    ex));
                 }
             }
-            catch (TaskCanceledException)
-            {
-            }
-            catch (Exception ex)
-            {
-                OnStreamingErrorEvent(
-                    new IotDeviceInterfaceException(string.Format("Unexpected error - connection error ", _hostname),
-                        ex));
-            }
-
-            return task;
+            return Task.CompletedTask;
         }
 
         public Task DeleteReaderInventoryPresetAsync(string presetId)
@@ -1110,7 +1099,34 @@ internal class R700IotReader : IR700IotReader
             }
         }
 
-        internal event EventHandler<TagInventoryEvent> TagInventoryEvent;
+        public void Dispose()
+        {
+            // Cancel any ongoing operations
+            _cancelSource?.Cancel();
+            _cancelSource?.Dispose();
+            
+            // Dispose stream
+            _responseStream?.Dispose();
+            
+            // Dispose HTTP clients
+            _httpClient?.Dispose();
+            _httpClientSecure?.Dispose();
+
+            // Wait for streaming task to complete if it exists
+            if (_streamingTask != null)
+            {
+                try 
+                {
+                    _streamingTask.Wait(TimeSpan.FromSeconds(5));
+                }
+                catch (Exception)
+                {
+                    // Log or handle timeout
+                }
+            }
+        }
+
+        internal event EventHandler<TagInventoryEvent>? TagInventoryEvent;
 
         private void OnTagInventoryEvent(TagInventoryEvent e)
         {
@@ -1120,7 +1136,7 @@ internal class R700IotReader : IR700IotReader
             tagInventoryEvent(this, e);
         }
 
-        internal event EventHandler<IotDeviceInterfaceException> StreamingErrorEvent;
+        internal event EventHandler<IotDeviceInterfaceException>? StreamingErrorEvent;
 
         private void OnStreamingErrorEvent(IotDeviceInterfaceException e)
         {
@@ -1130,7 +1146,7 @@ internal class R700IotReader : IR700IotReader
             streamingErrorEvent(this, e);
         }
 
-        internal event EventHandler<Impinj.Atlas.GpiTransitionEvent> GpiTransitionEvent;
+        internal event EventHandler<Impinj.Atlas.GpiTransitionEvent>? GpiTransitionEvent;
 
         private void OnGpiTransitionEvent(Impinj.Atlas.GpiTransitionEvent e)
         {
@@ -1140,7 +1156,7 @@ internal class R700IotReader : IR700IotReader
             gpiTransitionEvent(this, e);
         }
 
-        internal event EventHandler<DiagnosticEvent> DiagnosticEvent;
+        internal event EventHandler<DiagnosticEvent>? DiagnosticEvent;
 
         private void OnDiagnosticEvent(DiagnosticEvent e)
         {
@@ -1150,7 +1166,7 @@ internal class R700IotReader : IR700IotReader
             diagnosticEvent(this, e);
         }
 
-        internal event EventHandler<InventoryStatusEvent> InventoryStatusEvent;
+        internal event EventHandler<InventoryStatusEvent>? InventoryStatusEvent;
 
         private void OnInventoryStatusEvent(InventoryStatusEvent e)
         {

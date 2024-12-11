@@ -737,9 +737,9 @@ internal class R700IotReader : IR700IotReader
                                             var str = await streamReader.ReadLineAsync();
                                             if (!string.IsNullOrWhiteSpace(str))
                                             {
-                                                ReaderEvent readerEvent = null;
+                                                ReaderEvent? readerEvent = null;
                                                 if (!str.Contains("GpiTransitionEvent"))
-                                                    readerEvent = JsonConvert.DeserializeObject<ReaderEvent>(str);
+                                                    readerEvent = JsonConvert.DeserializeObject<ReaderEvent>(str) ?? null;
                                                 if (readerEvent != null && readerEvent.TagInventoryEvent != null)
                                                     OnTagInventoryEvent(readerEvent.TagInventoryEvent);
                                                 if (readerEvent != null && readerEvent.InventoryStatusEvent != null)

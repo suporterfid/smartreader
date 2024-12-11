@@ -707,105 +707,144 @@ internal class R700IotReader : IR700IotReader
 
         private const int MaxRetryAttempts = 3;
         private const int InitialRetryDelayMs = 1000;
+        private const int MaxRetryDelayMs = 30000; // Maximum delay between retries (30 seconds)
+        private const int StreamRestartDelayMs = 5000; // Delay before restarting stream after max retries
 
         private async Task StreamingAsync()
         {
-            int retryCount = 0;
             while (!_cancelSource.IsCancellationRequested)
             {
-                try
+                int retryCount = 0;
+                bool shouldRestart = true;
+
+                while (shouldRestart && !_cancelSource.IsCancellationRequested)
                 {
-                    using (var responseMessage = await _httpClient.GetAsync(new Uri("data/stream", UriKind.Relative),
-                               HttpCompletionOption.ResponseHeadersRead))
-                {
-                    if (responseMessage.IsSuccessStatusCode)
+                    try
                     {
-                        _responseStream = await responseMessage.Content.ReadAsStreamAsync();
-                        using (var streamReader = new StreamReader(_responseStream))
+                        using (var responseMessage = await _httpClient.GetAsync(new Uri("data/stream", UriKind.Relative),
+                                   HttpCompletionOption.ResponseHeadersRead))
                         {
-                            while (!_cancelSource.IsCancellationRequested)
-                                if (!streamReader.EndOfStream)
+                            if (responseMessage.IsSuccessStatusCode)
+                            {
+                                retryCount = 0; // Reset retry count on successful connection
+                                _responseStream = await responseMessage.Content.ReadAsStreamAsync();
+                                using (var streamReader = new StreamReader(_responseStream))
                                 {
-                                    var str = await streamReader.ReadLineAsync();
-                                    if (!string.IsNullOrWhiteSpace(str))
+                                    while (!_cancelSource.IsCancellationRequested)
                                     {
-                                        ReaderEvent readerEvent = null;
-                                        if (!str.Contains("GpiTransitionEvent"))
-                                            readerEvent = JsonConvert.DeserializeObject<ReaderEvent>(str);
-                                        if (readerEvent != null && readerEvent.TagInventoryEvent != null)
-                                            OnTagInventoryEvent(readerEvent.TagInventoryEvent);
-                                        if (readerEvent != null && readerEvent.InventoryStatusEvent != null)
+                                        if (!streamReader.EndOfStream)
                                         {
-                                            if (str.Contains("running"))
-                                                readerEvent.InventoryStatusEvent.Status =
-                                                    InventoryStatusEventStatus.Running;
-                                            else if (str.Contains("idle"))
-                                                readerEvent.InventoryStatusEvent.Status =
-                                                    InventoryStatusEventStatus.Idle;
-                                            OnInventoryStatusEvent(readerEvent.InventoryStatusEvent);
+                                            var str = await streamReader.ReadLineAsync();
+                                            if (!string.IsNullOrWhiteSpace(str))
+                                            {
+                                                ReaderEvent readerEvent = null;
+                                                if (!str.Contains("GpiTransitionEvent"))
+                                                    readerEvent = JsonConvert.DeserializeObject<ReaderEvent>(str);
+                                                if (readerEvent != null && readerEvent.TagInventoryEvent != null)
+                                                    OnTagInventoryEvent(readerEvent.TagInventoryEvent);
+                                                if (readerEvent != null && readerEvent.InventoryStatusEvent != null)
+                                                {
+                                                    if (str.Contains("running"))
+                                                        readerEvent.InventoryStatusEvent.Status =
+                                                            InventoryStatusEventStatus.Running;
+                                                    else if (str.Contains("idle"))
+                                                        readerEvent.InventoryStatusEvent.Status =
+                                                            InventoryStatusEventStatus.Idle;
+                                                    OnInventoryStatusEvent(readerEvent.InventoryStatusEvent);
+                                                }
+                                            }
+                                        }
+                                        else
+                                        {
+                                            throw new IOException("End of stream reached unexpectedly");
                                         }
                                     }
                                 }
-                                else
-                                {
-                                    break;
-                                }
+                            }
+                            else
+                            {
+                                var error = JsonConvert.DeserializeObject<ErrorResponse>(
+                                    await responseMessage.Content.ReadAsStringAsync());
+                                var headersDictionary = responseMessage.Headers.ToDictionary(
+                                    h => h.Key,
+                                    h => h.Value);
+                                var response = await responseMessage.Content.ReadAsStringAsync();
+                                throw new AtlasException(
+                                    $"HTTP {(int)responseMessage.StatusCode} - {error?.Message ?? "Unknown error"}",
+                                    (int)responseMessage.StatusCode, response, headersDictionary, null);
+                            }
                         }
                     }
-                    else
+                    catch (TaskCanceledException)
                     {
-                        var error = JsonConvert.DeserializeObject<ErrorResponse>(
-                            await responseMessage.Content.ReadAsStringAsync());
-                        var headersDictionary = responseMessage.Headers.ToDictionary(
-                            (Func<KeyValuePair<string, IEnumerable<string>>, string>)(h => h.Key),
-                            (Func<KeyValuePair<string, IEnumerable<string>>, IEnumerable<string>>)(h => h.Value));
-                        var response = await responseMessage.Content.ReadAsStringAsync();
-                        throw new AtlasException(
-                            string.Format("Unexpected error ", error.Message, error.InvalidPropertyId),
-                            (int)responseMessage.StatusCode, response, headersDictionary, null);
+                        shouldRestart = false;
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        if (_cancelSource.IsCancellationRequested)
+                        {
+                            shouldRestart = false;
+                            break;
+                        }
+
+                        var isTransient = ex is IOException || ex is HttpRequestException || 
+                                        (ex is AtlasException atlasEx && atlasEx.StatusCode >= 500);
+
+                        if (isTransient && retryCount < MaxRetryAttempts)
+                        {
+                            retryCount++;
+                            var delayMs = Math.Min(
+                                InitialRetryDelayMs * Math.Pow(2, retryCount - 1),
+                                MaxRetryDelayMs
+                            );
+
+                            OnStreamingErrorEvent(
+                                new IotDeviceInterfaceException(
+                                    $"Connection error (attempt {retryCount}/{MaxRetryAttempts}), retrying in {delayMs/1000:F1}s: {_hostname}",
+                                    ex));
+
+                            try
+                            {
+                                await Task.Delay((int)delayMs, _cancelSource.Token);
+                                continue;
+                            }
+                            catch (TaskCanceledException)
+                            {
+                                shouldRestart = false;
+                                break;
+                            }
+                        }
+
+                        OnStreamingErrorEvent(
+                            new IotDeviceInterfaceException(
+                                $"Error after {retryCount} retries, restarting stream in {StreamRestartDelayMs/1000}s: {_hostname}",
+                                ex));
+
+                        try
+                        {
+                            await Task.Delay(StreamRestartDelayMs, _cancelSource.Token);
+                        }
+                        catch (TaskCanceledException)
+                        {
+                            shouldRestart = false;
+                            break;
+                        }
+                    }
+                    finally
+                    {
+                        if (_responseStream != null)
+                        {
+                            await _responseStream.DisposeAsync();
+                            _responseStream = null;
+                        }
                     }
                 }
             }
-            catch (TaskCanceledException)
+
+            if (_cancelSource.IsCancellationRequested)
             {
-                // Exit on cancellation
-                break;
-            }
-            catch (IOException ex)
-            {
-                if (ex.InnerException != null && ex.InnerException.GetType() == typeof(SocketException))
-                {
-                    if (retryCount < MaxRetryAttempts)
-                    {
-                        retryCount++;
-                        var delayMs = InitialRetryDelayMs * Math.Pow(2, retryCount - 1);
-                        await Task.Delay((int)delayMs, _cancelSource.Token);
-                        continue;
-                    }
-                }
-                OnStreamingErrorEvent(
-                    new IotDeviceInterfaceException($"Connection error after {retryCount} retries: {_hostname}", ex));
-                break;
-            }
-            catch (Exception ex)
-            {
-                if (retryCount < MaxRetryAttempts)
-                {
-                    retryCount++;
-                    var delayMs = InitialRetryDelayMs * Math.Pow(2, retryCount - 1);
-                    await Task.Delay((int)delayMs, _cancelSource.Token);
-                    continue;
-                }
-                OnStreamingErrorEvent(
-                    new IotDeviceInterfaceException($"Unexpected error after {retryCount} retries: {_hostname}", ex));
-                break;
-            }
-            finally
-            {
-                if (_cancelSource.IsCancellationRequested)
-                {
-                    _cancelSource.Dispose();
-                }
+                _cancelSource.Dispose();
             }
         }
 

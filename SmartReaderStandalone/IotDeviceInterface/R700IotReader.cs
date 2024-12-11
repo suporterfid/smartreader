@@ -1059,7 +1059,7 @@ internal class R700IotReader : IR700IotReader
             return task;
         }
 
-        public Task PostStopInventoryPresetAsync(
+        public Task? PostStopInventoryPresetAsync(
             string json = "")
         {
             if (_cancelSource == null || _cancelSource.IsCancellationRequested)

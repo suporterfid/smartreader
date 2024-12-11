@@ -705,12 +705,18 @@ internal class R700IotReader : IR700IotReader
         }
 
 
+        private const int MaxRetryAttempts = 3;
+        private const int InitialRetryDelayMs = 1000;
+
         private async Task StreamingAsync()
         {
-            try
+            int retryCount = 0;
+            while (!_cancelSource.IsCancellationRequested)
             {
-                using (var responseMessage = await _httpClient.GetAsync(new Uri("data/stream", UriKind.Relative),
-                           HttpCompletionOption.ResponseHeadersRead))
+                try
+                {
+                    using (var responseMessage = await _httpClient.GetAsync(new Uri("data/stream", UriKind.Relative),
+                               HttpCompletionOption.ResponseHeadersRead))
                 {
                     if (responseMessage.IsSuccessStatusCode)
                     {
@@ -762,21 +768,44 @@ internal class R700IotReader : IR700IotReader
             }
             catch (TaskCanceledException)
             {
+                // Exit on cancellation
+                break;
             }
             catch (IOException ex)
             {
                 if (ex.InnerException != null && ex.InnerException.GetType() == typeof(SocketException))
-                    return;
-                throw;
+                {
+                    if (retryCount < MaxRetryAttempts)
+                    {
+                        retryCount++;
+                        var delayMs = InitialRetryDelayMs * Math.Pow(2, retryCount - 1);
+                        await Task.Delay((int)delayMs, _cancelSource.Token);
+                        continue;
+                    }
+                }
+                OnStreamingErrorEvent(
+                    new IotDeviceInterfaceException($"Connection error after {retryCount} retries: {_hostname}", ex));
+                break;
             }
             catch (Exception ex)
             {
+                if (retryCount < MaxRetryAttempts)
+                {
+                    retryCount++;
+                    var delayMs = InitialRetryDelayMs * Math.Pow(2, retryCount - 1);
+                    await Task.Delay((int)delayMs, _cancelSource.Token);
+                    continue;
+                }
                 OnStreamingErrorEvent(
-                    new IotDeviceInterfaceException(string.Format("Unexpected error ", _hostname), ex));
+                    new IotDeviceInterfaceException($"Unexpected error after {retryCount} retries: {_hostname}", ex));
+                break;
             }
             finally
             {
-                _cancelSource.Dispose();
+                if (_cancelSource.IsCancellationRequested)
+                {
+                    _cancelSource.Dispose();
+                }
             }
         }
 

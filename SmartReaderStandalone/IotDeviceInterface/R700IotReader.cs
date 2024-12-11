@@ -1068,7 +1068,7 @@ internal class R700IotReader : IR700IotReader
             }
         }
 
-        public event EventHandler<TagInventoryEvent> TagInventoryEvent;
+        internal event EventHandler<TagInventoryEvent> TagInventoryEvent;
 
         private void OnTagInventoryEvent(TagInventoryEvent e)
         {
@@ -1078,7 +1078,7 @@ internal class R700IotReader : IR700IotReader
             tagInventoryEvent(this, e);
         }
 
-        public event EventHandler<IotDeviceInterfaceException> StreamingErrorEvent;
+        internal event EventHandler<IotDeviceInterfaceException> StreamingErrorEvent;
 
         private void OnStreamingErrorEvent(IotDeviceInterfaceException e)
         {
@@ -1088,7 +1088,7 @@ internal class R700IotReader : IR700IotReader
             streamingErrorEvent(this, e);
         }
 
-        public event EventHandler<Impinj.Atlas.GpiTransitionEvent> GpiTransitionEvent;
+        internal event EventHandler<Impinj.Atlas.GpiTransitionEvent> GpiTransitionEvent;
 
         private void OnGpiTransitionEvent(Impinj.Atlas.GpiTransitionEvent e)
         {
@@ -1098,7 +1098,7 @@ internal class R700IotReader : IR700IotReader
             gpiTransitionEvent(this, e);
         }
 
-        public event EventHandler<DiagnosticEvent> DiagnosticEvent;
+        internal event EventHandler<DiagnosticEvent> DiagnosticEvent;
 
         private void OnDiagnosticEvent(DiagnosticEvent e)
         {
@@ -1108,7 +1108,7 @@ internal class R700IotReader : IR700IotReader
             diagnosticEvent(this, e);
         }
 
-        public event EventHandler<InventoryStatusEvent> InventoryStatusEvent;
+        internal event EventHandler<InventoryStatusEvent> InventoryStatusEvent;
 
         private void OnInventoryStatusEvent(InventoryStatusEvent e)
         {

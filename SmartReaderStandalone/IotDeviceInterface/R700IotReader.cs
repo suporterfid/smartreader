@@ -1066,12 +1066,15 @@ internal class R700IotReader : IR700IotReader
                 return null;
 
             Task task = null;
-            _cancelSource.Cancel();
-            try
+            if (_cancelSource != null)
             {
-                _responseStream.Dispose();
-                _iotDeviceInterfaceClient.ProfilesStopAsync();
-                task = _streamingTask;
+                _cancelSource.Cancel();
+                try
+                {
+                    _responseStream?.Dispose();
+                    _iotDeviceInterfaceClient.ProfilesStopAsync();
+                    task = _streamingTask;
+                }
             }
             catch (TaskCanceledException)
             {

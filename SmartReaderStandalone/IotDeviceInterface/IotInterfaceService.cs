@@ -5571,15 +5571,29 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             _isSocketProcessing = true;
             _timerTagPublisherSocket.Enabled = false;
-
-            if (_socketServer == null || !_socketServer.IsListening)
+            if (string.Equals("1", _standaloneConfigDTO?.socketServer, StringComparison.OrdinalIgnoreCase))
             {
-                _logger.LogWarning("Socket server not available, attempting restart...");
-                try {
-                    StartTcpSocketServer();
-                    if (_socketServer == null || !_socketServer.IsListening)
-                    {
-                        _logger.LogError("Failed to restart socket server");
+                if (_socketServer == null || !_socketServer.IsListening)
+                {
+                    _logger.LogWarning("Socket server not available, attempting restart...");
+                    try {
+                        StartTcpSocketServer();
+                        if (_socketServer == null || !_socketServer.IsListening)
+                        {
+                            _logger.LogError("Failed to restart socket server");
+                            // Drop older messages if queue is too large
+                            while (_messageQueueTagSmartReaderTagEventSocketServer.Count > 1000)
+                            {
+                                if (_messageQueueTagSmartReaderTagEventSocketServer.TryDequeue(out var _))
+                                {
+                                    _logger.LogWarning("Dropped oldest message from socket queue due to server unavailability");
+                                }
+                            }
+                            return;
+                        }
+                    }
+                    catch (Exception ex) {
+                        _logger.LogError(ex, "Error restarting socket server");
                         // Drop older messages if queue is too large
                         while (_messageQueueTagSmartReaderTagEventSocketServer.Count > 1000)
                         {
@@ -5591,50 +5605,40 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         return;
                     }
                 }
-                catch (Exception ex) {
-                    _logger.LogError(ex, "Error restarting socket server");
-                    // Drop older messages if queue is too large
-                    while (_messageQueueTagSmartReaderTagEventSocketServer.Count > 1000)
+
+                // Process in smaller batches to avoid overwhelming the socket
+                const int batchSize = 100;
+                int processedCount = 0;
+
+                while (processedCount < batchSize && _messageQueueTagSmartReaderTagEventSocketServer.TryDequeue(out var smartReaderTagReadEvent))
+                {
+                    try
                     {
-                        if (_messageQueueTagSmartReaderTagEventSocketServer.TryDequeue(out var _))
+                        await ProcessSocketJsonTagEventDataAsync(smartReaderTagReadEvent);
+                        processedCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error processing socket message, requeueing");
+                        // Requeue failed message
+                        if (_messageQueueTagSmartReaderTagEventSocketServer.Count < 1000)
                         {
-                            _logger.LogWarning("Dropped oldest message from socket queue due to server unavailability");
+                            _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(smartReaderTagReadEvent);
+                        }
+                        else
+                        {
+                            _logger.LogError("Socket queue full, dropping message");
                         }
                     }
-                    return;
                 }
-            }
 
-            // Process in smaller batches to avoid overwhelming the socket
-            const int batchSize = 100;
-            int processedCount = 0;
-
-            while (processedCount < batchSize && _messageQueueTagSmartReaderTagEventSocketServer.TryDequeue(out var smartReaderTagReadEvent))
-            {
-                try
+                if (processedCount > 0)
                 {
-                    await ProcessSocketJsonTagEventDataAsync(smartReaderTagReadEvent);
-                    processedCount++;
+                    _logger.LogInformation($"Processed {processedCount} socket messages");
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error processing socket message, requeueing");
-                    // Requeue failed message
-                    if (_messageQueueTagSmartReaderTagEventSocketServer.Count < 1000)
-                    {
-                        _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(smartReaderTagReadEvent);
-                    }
-                    else
-                    {
-                        _logger.LogError("Socket queue full, dropping message");
-                    }
-                }
-            }
 
-            if (processedCount > 0)
-            {
-                _logger.LogInformation($"Processed {processedCount} socket messages");
             }
+            
         }
         catch (Exception ex)
         {

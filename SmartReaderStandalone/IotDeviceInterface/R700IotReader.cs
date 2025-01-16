@@ -46,13 +46,13 @@ public class R700IotReader : IR700IotReader
         Nickname = nickname;
     }
 
-    public required List<int> RxSensitivitiesInDbm { get; set; }
-    public required string UniqueId { get; set; }
-    public required string MacAddress { get; set; }
-    public required string ProductModel { get; set; }
-    public required List<double> TxPowersInDbm { get; set; }
-    public required string ReaderOperatingRegion { get; set; }
-    public required List<string> IpAddresses { get; set; }
+    public List<int> RxSensitivitiesInDbm { get; set; }
+    public string UniqueId { get; set; }
+    public string MacAddress { get; set; }
+    public string ProductModel { get; set; }
+    public List<double> TxPowersInDbm { get; set; }
+    public string ReaderOperatingRegion { get; set; }
+    public List<string> IpAddresses { get; set; }
 
     public string Hostname { get; }
 

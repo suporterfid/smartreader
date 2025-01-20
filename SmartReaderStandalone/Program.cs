@@ -11,11 +11,13 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Logging;
 using MQTTnet;
 using MQTTnet.Server;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Serilog;
+using Serilog.Core;
 using Serilog.Events;
 using SmartReader.Infrastructure.Database;
 using SmartReader.Infrastructure.ViewModel;
@@ -75,6 +77,8 @@ builder.Services.AddLogging(loggingBuilder =>
 {
     loggingBuilder.AddSerilog();
 });
+
+
 
 builder.Services.AddControllers();
 // Add services to the container.
@@ -136,7 +140,7 @@ catch (Exception)
 
 var app = builder.Build();
 
-var logger = app.Services.GetRequiredService<ILogger<Program>>();
+var eventProcessorLogger = app.Services.GetRequiredService<ILogger<Program>>();
 
 var readerAddress = app.Configuration["ReaderInfo:Address"] ?? "127.0.0.1";
 // Get the current build configuration
@@ -276,7 +280,7 @@ app.MapGet("/api/stream/tags", async (RuntimeDb db, HttpContext context) =>
             {
 
                 var json = dataModel.Value;
-                logger.LogInformation("Publishing data: " + json);
+                eventProcessorLogger.LogInformation("Publishing data: " + json);
 
                 var jsonOject = JsonDocument.Parse(json);
 
@@ -479,7 +483,7 @@ app.MapPost("/api/settings", [AuthorizeBasicAuth] async ([FromBody] StandaloneCo
             db.SaveChangesAsync();
             Console.WriteLine(config.licenseKey);
             Console.WriteLine(config.session);
-            logger.LogInformation("Settings saved.");
+            eventProcessorLogger.LogInformation("Settings saved.");
         }
         catch (Exception exDb1)
         {
@@ -494,7 +498,7 @@ app.MapPost("/api/settings", [AuthorizeBasicAuth] async ([FromBody] StandaloneCo
                     if (!File.Exists("/customer/disable-fallback"))
                     {
                         File.WriteAllText("/customer/disable-fallback", "ok");
-                        logger.LogInformation("Requesting image fallback to be disabled. ");
+                        eventProcessorLogger.LogInformation("Requesting image fallback to be disabled. ");
                         var rshell = new RShellUtil(readerAddress, rshellAuthUserName, rshellAuthPassword);
                         try
                         {
@@ -502,7 +506,7 @@ app.MapPost("/api/settings", [AuthorizeBasicAuth] async ([FromBody] StandaloneCo
                             var lines = resultDisableImageFallback.Split("\n");
                             foreach (var line in lines)
                             {
-                                logger.LogInformation(line);
+                                eventProcessorLogger.LogInformation(line);
                             }
                             var resultDisableImageFallbackReboot = rshell.SendCommand("reboot");
                         }
@@ -522,7 +526,7 @@ app.MapPost("/api/settings", [AuthorizeBasicAuth] async ([FromBody] StandaloneCo
         }
         catch (Exception exFallback)
         {
-            logger.LogError(exFallback, "unexpected error disabling fallback.");
+            eventProcessorLogger.LogError(exFallback, "unexpected error disabling fallback.");
         }
 
 
@@ -673,13 +677,13 @@ async (HttpRequest readerRequest, string gtin, RuntimeDb db) =>
                     .Accept
                     .Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-                logger.LogInformation(url);
+                eventProcessorLogger.LogInformation(url);
 
                 var response = await httpClient.SendAsync(request).ConfigureAwait(false);
                 var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-                logger.LogInformation(content);
-                logger.LogInformation(content);
+                eventProcessorLogger.LogInformation(content);
+                eventProcessorLogger.LogInformation(content);
 
                 if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
                 {
@@ -714,18 +718,18 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
                 jsonDocumentStr = Encoding.UTF8.GetString(stream.ToArray());
             }
 
-            if (logger != null)
+            if (eventProcessorLogger != null)
             {
-                logger.LogInformation("jsonDocumentStr -> ");
-                logger.LogInformation(jsonDocumentStr);
+                eventProcessorLogger.LogInformation("jsonDocumentStr -> ");
+                eventProcessorLogger.LogInformation(jsonDocumentStr);
             }
 
             var configDto = ConfigFileHelper.ReadFile();
             if (configDto != null && !string.IsNullOrEmpty(configDto.enableExternalApiVerification)
                                   && "1".Equals(configDto.enableExternalApiVerification))
             {
-                if (logger != null)
-                    logger.LogInformation("enableExternalApiVerification -> " +
+                if (eventProcessorLogger != null)
+                    eventProcessorLogger.LogInformation("enableExternalApiVerification -> " +
                                           configDto.enableExternalApiVerification);
                 var url = configDto.externalApiVerificationSearchOrderUrl;
                 var fullUriData = new Uri(url);
@@ -788,10 +792,10 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
                     .Accept
                     .Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-                if (logger != null)
+                if (eventProcessorLogger != null)
                 {
-                    logger.LogInformation(url);
-                    logger.LogInformation(jsonDocumentStr);
+                    eventProcessorLogger.LogInformation(url);
+                    eventProcessorLogger.LogInformation(jsonDocumentStr);
                 }
                 //Console.WriteLine(jsonDocument);
 
@@ -799,28 +803,28 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
                 var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
                 //Log.Debug(content);
-                if (logger != null) logger.LogInformation(content);
-                logger.LogInformation(content);
+                if (eventProcessorLogger != null) eventProcessorLogger.LogInformation(content);
+                eventProcessorLogger.LogInformation(content);
 
                 if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
                 {
                     requestResult = response.Content.ReadAsStringAsync().Result;
                     //Log.Debug(requestResult);
-                    if (logger != null) logger.LogInformation(requestResult);
+                    if (eventProcessorLogger != null) eventProcessorLogger.LogInformation(requestResult);
 
                     return Results.Ok(JsonDocument.Parse(requestResult));
                 }
             }
             else
             {
-                if (logger != null) logger.LogError("enableExternalApiVerification disabled or null ");
+                if (eventProcessorLogger != null) eventProcessorLogger.LogError("enableExternalApiVerification disabled or null ");
             }
 
             return Results.Ok(requestResult);
         }
         catch (Exception exDb)
         {
-            if (logger != null) logger.LogError(exDb, "Error processing order request.");
+            if (eventProcessorLogger != null) eventProcessorLogger.LogError(exDb, "Error processing order request.");
             File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
             return Results.BadRequest(requestResult);
         }
@@ -839,8 +843,8 @@ async (HttpRequest readerRequest, string order, RuntimeDb db) =>
         if (configDto != null && !string.IsNullOrEmpty(configDto.enableExternalApiVerification)
                               && "1".Equals(configDto.enableExternalApiVerification))
         {
-            if (logger != null)
-                logger.LogInformation("enableExternalApiVerification -> " +
+            if (eventProcessorLogger != null)
+                eventProcessorLogger.LogInformation("enableExternalApiVerification -> " +
                                       configDto.enableExternalApiVerification);
             var url = configDto.externalApiVerificationSearchOrderUrl + order;
             var fullUriData = new Uri(url);
@@ -902,9 +906,9 @@ async (HttpRequest readerRequest, string order, RuntimeDb db) =>
                 .Accept
                 .Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            if (logger != null)
+            if (eventProcessorLogger != null)
             {
-                logger.LogInformation(url);
+                eventProcessorLogger.LogInformation(url);
                 //logger.LogInformation(jsonDocumentStr);
             }
             //Console.WriteLine(jsonDocument);
@@ -913,28 +917,28 @@ async (HttpRequest readerRequest, string order, RuntimeDb db) =>
             var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
             //Log.Debug(content);
-            if (logger != null) logger.LogInformation(content);
+            if (eventProcessorLogger != null) eventProcessorLogger.LogInformation(content);
             Console.WriteLine(content);
 
             if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
             {
                 requestResult = response.Content.ReadAsStringAsync().Result;
                 //Log.Debug(requestResult);
-                if (logger != null) logger.LogInformation(requestResult);
+                if (eventProcessorLogger != null) eventProcessorLogger.LogInformation(requestResult);
 
                 return Results.Ok(JsonDocument.Parse(requestResult));
             }
         }
         else
         {
-            if (logger != null) logger.LogError("enableExternalApiVerification disabled or null ");
+            if (eventProcessorLogger != null) eventProcessorLogger.LogError("enableExternalApiVerification disabled or null ");
         }
 
         return Results.Ok(requestResult);
     }
     catch (Exception exDb)
     {
-        if (logger != null) logger.LogError(exDb, "Error processing order request.");
+        if (eventProcessorLogger != null) eventProcessorLogger.LogError(exDb, "Error processing order request.");
         File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
         return Results.BadRequest(requestResult);
     }
@@ -1131,19 +1135,19 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
                 .Accept
                 .Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            logger.LogDebug(url);
-            logger.LogDebug(jsonDocumentStr);
+            eventProcessorLogger.LogDebug(url);
+            eventProcessorLogger.LogDebug(jsonDocumentStr);
 
             var response = await httpClient.SendAsync(request).ConfigureAwait(false);
             var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-            logger.LogDebug(content);
+            eventProcessorLogger.LogDebug(content);
             Console.WriteLine(content);
 
             if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
             {
                 requestResult = response.Content.ReadAsStringAsync().Result;
-                logger.LogDebug(requestResult);
+                eventProcessorLogger.LogDebug(requestResult);
                 return Results.Ok(JsonDocument.Parse(requestResult));
             }
         }
@@ -1359,7 +1363,7 @@ app.MapGet("/api/reload", [AuthorizeBasicAuth] async (RuntimeDb db) =>
 
         // exits the app
         //await Task.Delay(TimeSpan.FromSeconds(2));
-        logger.LogInformation("Restarting process");
+        eventProcessorLogger.LogInformation("Restarting process");
         //// Restart the application by spawning a new process with the same arguments
         //var process = Process.GetCurrentProcess();
         //process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
@@ -1374,25 +1378,52 @@ app.MapGet("/api/reload", [AuthorizeBasicAuth] async (RuntimeDb db) =>
     }
 });
 
-app.MapGet("/api/getcapabilities", async (RuntimeDb db) =>
+app.MapGet("/api/getcapabilities", async (
+RuntimeDb db,
+ILogger < Program > logger,  // For general logging
+    ILoggerFactory loggerFactory  // For creating specialized loggers
+                                  ) =>
 {
     List<SmartReaderCapabilities> capabilities = new List<SmartReaderCapabilities>();
+    // Create a dedicated logger for the R700IotReader
+    var readerLogger = loggerFactory.CreateLogger<R700IotReader>();
 
 
-
-    using (IR700IotReader _iotDeviceInterfaceClient = new R700IotReader(readerAddress, "", true, true, rshellAuthUserName, rshellAuthPassword))
+    using (IR700IotReader _iotDeviceInterfaceClient = new R700IotReader(
+            readerAddress,  // Reader address
+            "",            // Empty bearer token
+            true,          // Enable heartbeat
+            true,          // Enable monitoring
+            rshellAuthUserName,
+            rshellAuthPassword,
+            0,            // Default keepalive period
+            "",           // No proxy address
+            0,            // No proxy port
+            eventProcessorLogger: readerLogger,  // Logger for event processing
+            loggerFactory: loggerFactory        // Factory for internal logging
+        ))
     {
-        //IR700IotReader _iotDeviceInterfaceClient = new R700IotReader(readerAddress, "", true, true, rshellAuthUserName, rshellAuthUserName);
-        var systemInfo = _iotDeviceInterfaceClient.GetSystemInfoAsync().Result;
-        var systemRegion = _iotDeviceInterfaceClient.GetSystemRegionInfoAsync().Result;
-        var systemPower = _iotDeviceInterfaceClient.GetSystemPowerAsync().Result;
+        logger.LogInformation("Retrieving reader capabilities...");
+
+        // Get system information with proper error handling
+        var systemInfo = await _iotDeviceInterfaceClient.GetSystemInfoAsync();
+        logger.LogDebug("Retrieved system info: Model {Model}", systemInfo.ProductModel);
+
+        var systemRegion = await _iotDeviceInterfaceClient.GetSystemRegionInfoAsync();
+        logger.LogDebug("Retrieved region info: Region {Region}", systemRegion.OperatingRegion);
+
+        var systemPower = await _iotDeviceInterfaceClient.GetSystemPowerAsync();
+        logger.LogDebug("Retrieved power info: Source {Source}", systemPower.PowerSource);
+
         bool isPoePlus = false;
         if (systemPower.PowerSource.Equals(Impinj.Atlas.PowerSource.Poeplus))
         {
             isPoePlus = true;
+            logger.LogInformation("Detected PoE+ power source");
         }
         else
         {
+            logger.LogInformation("Checking power source via RShell...");
             var rshell = new RShellUtil(readerAddress, rshellAuthUserName, rshellAuthPassword);
             try
             {
@@ -1403,37 +1434,39 @@ app.MapGet("/api/getcapabilities", async (RuntimeDb db) =>
                 {
                     if (line.StartsWith("PowerSource"))
                     {
-                        if (line.Contains("PoE+") || line.Contains("poe+"))
-                        {
-                            isPoePlus = true;
-                        }
-                        else
-                        {
-                            isPoePlus = false;
-                        }
+                        isPoePlus = line.Contains("PoE+") || line.Contains("poe+");
+                        logger.LogDebug("Power source from RShell: {Line}, isPoePlus: {IsPoePlus}",
+                            line, isPoePlus);
                         break;
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                logger.LogError(ex, "Error checking power source via RShell");
             }
         }
 
-        var capability = new SmartReaderCapabilities();
-        capability.RxTable = Utils.GetDefaultRxTable();
-        capability.TxTable = Utils.GetDefaultTxTable(systemInfo.ProductModel, isPoePlus, systemRegion.OperatingRegion);
-        capability.RfModeTable = Utils.GetDefaultRfModeTable();
-        capability.MaxAntennas = 4;
-        capability.SearchModeTable = Utils.GetDefaultSearchModeTable();
-        capability.LicenseValid = 1;
-        capability.ValidAntennas = "1,2,3,4";
-        capability.ModelName = "R700";
+        // Create capabilities response
+        var capability = new SmartReaderCapabilities
+        {
+            RxTable = Utils.GetDefaultRxTable(),
+            TxTable = Utils.GetDefaultTxTable(systemInfo.ProductModel, isPoePlus, systemRegion.OperatingRegion),
+            RfModeTable = Utils.GetDefaultRfModeTable(),
+            MaxAntennas = 4,
+            SearchModeTable = Utils.GetDefaultSearchModeTable(),
+            LicenseValid = 1,
+            ValidAntennas = "1,2,3,4",
+            ModelName = "R700"
+        };
+
+        // Load stored configuration
         try
         {
-            var configModel = db.ReaderConfigs.FindAsync("READER_CONFIG").Result;
+            var configModel = await db.ReaderConfigs.FindAsync("READER_CONFIG");
             if (configModel != null && !string.IsNullOrEmpty(configModel.Value))
             {
+                logger.LogDebug("Found stored configuration");
                 var storedSettingsDto = JsonConvert.DeserializeObject<StandaloneConfigDTO>(configModel.Value);
                 if (storedSettingsDto != null)
                 {
@@ -1441,14 +1474,18 @@ app.MapGet("/api/getcapabilities", async (RuntimeDb db) =>
                     var currentAntennas = storedSettingsDto.antennaPorts.Split(",");
                     capability.MaxAntennas = currentAntennas.Length;
                     capability.ValidAntennas = storedSettingsDto.antennaPorts;
+                    logger.LogInformation("Updated antenna configuration from stored settings: {Antennas}",
+                        capability.ValidAntennas);
                 }
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            logger.LogError(ex, "Error loading stored configuration");
         }
 
         capabilities.Add(capability);
+        logger.LogInformation("Successfully retrieved reader capabilities");
     }
 
 
@@ -1456,7 +1493,11 @@ app.MapGet("/api/getcapabilities", async (RuntimeDb db) =>
     return Results.Ok(capabilities);
 });
 
-app.MapGet("/api/getrfidstatus", [AuthorizeBasicAuth] async (RuntimeDb db) =>
+app.MapGet("/api/getrfidstatus", [AuthorizeBasicAuth] async (
+    RuntimeDb db,
+ILogger<Program> logger,  // For general logging
+    ILoggerFactory loggerFactory  // For creating specialized loggers
+                                  ) =>
 {
     var rfidStatus = new List<object>();
     var statusEvent = new Dictionary<string, string>();
@@ -1546,7 +1587,7 @@ app.MapGet("/api/verify_key/{key}", [AuthorizeBasicAuth] async (RuntimeDb db, [F
 app.MapGet("/api/image", [AuthorizeBasicAuth] async (RuntimeDb db) =>
 {
     var imageStatus = new Dictionary<object, object>();
-    logger.LogInformation("Requesting image status. ");
+    eventProcessorLogger.LogInformation("Requesting image status. ");
     var rshell = new RShellUtil(readerAddress, rshellAuthUserName, rshellAuthPassword);
     try
     {
@@ -1554,7 +1595,7 @@ app.MapGet("/api/image", [AuthorizeBasicAuth] async (RuntimeDb db) =>
         var lines = resultImageStatus.Split("\n");
         foreach (var line in lines)
         {
-            logger.LogInformation(line);
+            eventProcessorLogger.LogInformation(line);
             if (line.ToUpper().Contains("STATUS"))
             {
                 continue;
@@ -1569,7 +1610,7 @@ app.MapGet("/api/image", [AuthorizeBasicAuth] async (RuntimeDb db) =>
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "error loading image status");
+        eventProcessorLogger.LogError(ex, "error loading image status");
     }
 
     return Results.Ok(imageStatus);
@@ -1586,7 +1627,7 @@ app.MapGet("/api/restore", [AuthorizeBasicAuth] async (RuntimeDb db) =>
             Arguments = "/customer/config/smartreader_backup.json /customer/config/smartreader.json"
         };
         await Task.Delay(TimeSpan.FromSeconds(2));
-        logger.LogInformation("Restarting process");
+        eventProcessorLogger.LogInformation("Restarting process");
         // Restart the application by spawning a new process with the same arguments
         var process = Process.GetCurrentProcess();
         process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
@@ -1949,7 +1990,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "error processing control command");
+        eventProcessorLogger.LogError(ex, "error processing control command");
         File.WriteAllText(Path.Combine("/tmp", "error-mqtt-command.txt"), ex.Message);
         return Results.BadRequest(requestResult);
     }
@@ -1978,7 +2019,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "error processing control command");
+        eventProcessorLogger.LogError(ex, "error processing control command");
         File.WriteAllText(Path.Combine("/tmp", "error-mqtt-command.txt"), ex.Message);
         return Results.BadRequest(requestResult);
     }
@@ -2008,7 +2049,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "error processing control command");
+        eventProcessorLogger.LogError(ex, "error processing control command");
         File.WriteAllText(Path.Combine("/tmp", "error-mqtt-command.txt"), ex.Message);
         return Results.BadRequest(requestResult);
     }
@@ -2038,7 +2079,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "error processing control command");
+        eventProcessorLogger.LogError(ex, "error processing control command");
         File.WriteAllText(Path.Combine("/tmp", "error-mqtt-command.txt"), ex.Message);
         return Results.BadRequest(requestResult);
     }
@@ -2094,7 +2135,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "error processing control command");
+        eventProcessorLogger.LogError(ex, "error processing control command");
         File.WriteAllText(Path.Combine("/tmp", "error-mqtt-command.txt"), ex.Message);
         return Results.BadRequest(commandStatus);
     }
@@ -2150,7 +2191,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "error processing control command");
+        eventProcessorLogger.LogError(ex, "error processing control command");
         File.WriteAllText(Path.Combine("/tmp", "error-mqtt-command.txt"), ex.Message);
         return Results.BadRequest(commandStatus);
     }
@@ -2177,7 +2218,7 @@ async (HttpRequest request, RuntimeDb db) =>
             catch (Exception ex)
             {
 
-                logger.LogError(ex, "Error creating CA directory.");
+                eventProcessorLogger.LogError(ex, "Error creating CA directory.");
             }
         }
 
@@ -2220,7 +2261,7 @@ async (HttpRequest request, RuntimeDb db) =>
             catch (Exception ex)
             {
 
-                logger.LogError(ex, "Error creating CA directory.");
+                eventProcessorLogger.LogError(ex, "Error creating CA directory.");
             }
         }
 

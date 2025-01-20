@@ -11,11 +11,14 @@
 using Impinj.Atlas;
 using Newtonsoft.Json;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Net;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Reflection.PortableExecutable;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -27,6 +30,10 @@ public class R700IotReader : IR700IotReader
 {
     private readonly IotDeviceInterfaceEventProcessor _r700IotEventProcessor;
 
+    private readonly ILogger<R700IotReader> _logger;
+
+    private readonly ILoggerFactory _loggerFactory;
+
     internal R700IotReader(
         string hostname,
         string nickname = "",
@@ -36,12 +43,31 @@ public class R700IotReader : IR700IotReader
         string pwd = "impinj",
         int hostPort = 0,
         string? proxy = "",
-        int proxyPort = 8080)
+        int proxyPort = 8080,
+        ILogger<R700IotReader>? eventProcessorLogger = null,
+        ILoggerFactory loggerFactory = null
+        )
     {
+        _logger = (eventProcessorLogger ?? throw new ArgumentNullException(nameof(eventProcessorLogger)));
+        _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+
         if (string.IsNullOrWhiteSpace(hostname))
             throw new ArgumentNullException(nameof(hostname));
-        _r700IotEventProcessor =
-            new IotDeviceInterfaceEventProcessor(hostname, useHttpAlways, useBasicAuthAlways, uname, pwd, hostPort, proxy ?? "", proxyPort);
+
+        _r700IotEventProcessor = new IotDeviceInterfaceEventProcessor(
+                hostname,
+                useHttpAlways,
+                useBasicAuthAlways,
+                uname,
+                pwd,
+                hostPort,
+                proxy ?? "",
+                proxyPort,
+                _loggerFactory.CreateLogger<IotDeviceInterfaceEventProcessor>(),
+                _loggerFactory,
+                () => IsNetworkConnected // Pass delegate
+            );
+
         Hostname = hostname;
         Nickname = nickname;
     }
@@ -68,6 +94,24 @@ public class R700IotReader : IR700IotReader
 
     public bool IsNetworkConnected { get; private set; }
 
+    public void Dispose()
+    {
+        if (_r700IotEventProcessor != null)
+        {
+            // Dispose the event processor since it contains HTTP clients and streams
+            _r700IotEventProcessor.Dispose();
+
+            // Unsubscribe from events to prevent memory leaks
+            _r700IotEventProcessor.TagInventoryEvent -= R700IotEventProcessorOnTagInventoryEvent;
+            _r700IotEventProcessor.StreamingErrorEvent -= R700IotEventProcessorOnStreamingErrorEvent;
+            _r700IotEventProcessor.GpiTransitionEvent -= R700IotEventProcessorOnGpiTransitionEvent;
+            _r700IotEventProcessor.InventoryStatusEvent -= R700IotEventProcessorOnInventoryStatusEvent;
+            _r700IotEventProcessor.DiagnosticEvent -= R700IotEventProcessorOnDiagnosticEvent;
+        }
+
+
+        GC.SuppressFinalize(this);
+    }
 
     public async Task<ReaderStatus> GetStatusAsync()
     {
@@ -280,6 +324,8 @@ public class R700IotReader : IR700IotReader
 
     public event EventHandler<InventoryStatusEvent>? InventoryStatusEvent;
 
+    private readonly object _eventLock = new();
+
 
     public Task SendCustomInventoryPresetAsync(string presetId, string jsonInventoryRequest)
     {
@@ -307,8 +353,14 @@ public class R700IotReader : IR700IotReader
         {
             try
             {
-                _r700IotEventProcessor.TagInventoryEvent -= R700IotEventProcessorOnTagInventoryEvent;
-                _r700IotEventProcessor.StreamingErrorEvent -= R700IotEventProcessorOnStreamingErrorEvent;
+                lock (_eventLock)
+                {
+                    _r700IotEventProcessor.TagInventoryEvent -= R700IotEventProcessorOnTagInventoryEvent;
+                    _r700IotEventProcessor.StreamingErrorEvent -= R700IotEventProcessorOnStreamingErrorEvent;
+                    _r700IotEventProcessor.GpiTransitionEvent -= R700IotEventProcessorOnGpiTransitionEvent;
+                    _r700IotEventProcessor.InventoryStatusEvent -= R700IotEventProcessorOnInventoryStatusEvent;
+                    _r700IotEventProcessor.DiagnosticEvent -= R700IotEventProcessorOnDiagnosticEvent;
+                }
             }
             catch (Exception)
             {
@@ -323,8 +375,14 @@ public class R700IotReader : IR700IotReader
         {
             try
             {
-                _r700IotEventProcessor.TagInventoryEvent -= R700IotEventProcessorOnTagInventoryEvent;
-                _r700IotEventProcessor.StreamingErrorEvent -= R700IotEventProcessorOnStreamingErrorEvent;
+                lock (_eventLock)
+                {
+                    _r700IotEventProcessor.TagInventoryEvent -= R700IotEventProcessorOnTagInventoryEvent;
+                    _r700IotEventProcessor.StreamingErrorEvent -= R700IotEventProcessorOnStreamingErrorEvent;
+                    _r700IotEventProcessor.GpiTransitionEvent -= R700IotEventProcessorOnGpiTransitionEvent;
+                    _r700IotEventProcessor.InventoryStatusEvent -= R700IotEventProcessorOnInventoryStatusEvent;
+                    _r700IotEventProcessor.DiagnosticEvent -= R700IotEventProcessorOnDiagnosticEvent;
+                }
             }
             catch (Exception)
             {
@@ -336,8 +394,16 @@ public class R700IotReader : IR700IotReader
         {
             try
             {
-                _r700IotEventProcessor.TagInventoryEvent -= R700IotEventProcessorOnTagInventoryEvent;
-                _r700IotEventProcessor.StreamingErrorEvent -= R700IotEventProcessorOnStreamingErrorEvent;
+                //_r700IotEventProcessor.TagInventoryEvent -= R700IotEventProcessorOnTagInventoryEvent;
+                //_r700IotEventProcessor.StreamingErrorEvent -= R700IotEventProcessorOnStreamingErrorEvent;
+                lock (_eventLock)
+                {
+                    _r700IotEventProcessor.TagInventoryEvent -= R700IotEventProcessorOnTagInventoryEvent;
+                    _r700IotEventProcessor.StreamingErrorEvent -= R700IotEventProcessorOnStreamingErrorEvent;
+                    _r700IotEventProcessor.GpiTransitionEvent -= R700IotEventProcessorOnGpiTransitionEvent;
+                    _r700IotEventProcessor.InventoryStatusEvent -= R700IotEventProcessorOnInventoryStatusEvent;
+                    _r700IotEventProcessor.DiagnosticEvent -= R700IotEventProcessorOnDiagnosticEvent;
+                }
             }
             catch (Exception)
             {
@@ -403,8 +469,38 @@ public class R700IotReader : IR700IotReader
 
     private void R700IotEventProcessorOnTagInventoryEvent(object? sender, TagInventoryEvent e)
     {
-        OnTagInventoryEvent(e);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            _logger.LogInformation("TagInventoryEvent received: {@Event}", e);
+
+            if (e == null)
+            {
+                _logger.LogWarning("Received null TagInventoryEvent.");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(e.Epc))
+            {
+                _logger.LogWarning("TagInventoryEvent received with invalid TagId: {@Event}", e);
+                return;
+            }
+
+            // Invoke the event handler
+            OnTagInventoryEvent(e);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error occurred while processing TagInventoryEvent: {Message}", ex.Message);
+        }
+        finally
+        {
+            stopwatch.Stop();
+            _logger.LogInformation("Processed TagInventoryEvent in {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
+        }
     }
+
+
 
     private void R700IotEventProcessorOnGpiTransitionEvent(object?sender, Impinj.Atlas.GpiTransitionEvent e)
     {
@@ -413,74 +509,198 @@ public class R700IotReader : IR700IotReader
 
     private void R700IotEventProcessorOnInventoryStatusEvent(object? sender, InventoryStatusEvent e)
     {
-        OnInventoryStatusEvent(e);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            _logger.LogInformation("InventoryStatusEvent received: {@Event}", e);
+
+            // Validate the event
+            if (e == null)
+            {
+                _logger.LogWarning("Received null InventoryStatusEvent.");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(e.Status.ToString()))
+            {
+                _logger.LogWarning("InventoryStatusEvent received with invalid status: {@Event}", e);
+                return;
+            }
+
+            // Process the event
+            OnInventoryStatusEvent(e);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error occurred while processing InventoryStatusEvent: {Message}", ex.Message);
+        }
+        finally
+        {
+            stopwatch.Stop();
+            _logger.LogInformation("Processed InventoryStatusEvent in {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
+        }
     }
+
 
     private void R700IotEventProcessorOnDiagnosticEvent(object? sender, DiagnosticEvent e)
     {
-        OnDiagnosticEvent(e);
+        if (e == null)
+        {
+            _logger.LogWarning("R700IotEventProcessorOnDiagnosticEvent was invoked with a null DiagnosticEvent.");
+            return;
+        }
+
+        try
+        {
+            _logger.LogInformation("Processing DiagnosticEvent: {@Event}", e);
+
+            // Invoke the OnDiagnosticEvent handler
+            OnDiagnosticEvent(e);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred while processing the DiagnosticEvent: {Message}", ex.Message);
+        }
     }
+
 
     protected virtual void OnTagInventoryEvent(TagInventoryEvent e)
     {
-        var tagInventoryEvent = TagInventoryEvent;
-        if (tagInventoryEvent == null)
-            return;
-        tagInventoryEvent(this, e);
+        var handler = TagInventoryEvent; // Copy to avoid race conditions
+        if (handler != null)
+        {
+            handler(this, e);
+        }
+        else
+        {
+            _logger.LogWarning("No subscribers for TagInventoryEvent.");
+        }
     }
 
     protected virtual void OnStreamingErrorEvent(IotDeviceInterfaceException e)
     {
-        var streamingErrorEvent = StreamingErrorEvent;
-        if (streamingErrorEvent == null)
+        if (e == null)
+        {
+            _logger.LogWarning("OnStreamingErrorEvent invoked with a null exception.");
             return;
-        streamingErrorEvent(this, e);
+        }
+
+        try
+        {
+            var handler = StreamingErrorEvent; // Copy delegate to avoid race conditions
+            if (handler != null)
+            {
+                _logger.LogInformation("Raising StreamingErrorEvent: {@Exception}", e);
+                handler(this, e);
+            }
+            else
+            {
+                _logger.LogWarning("No subscribers for StreamingErrorEvent.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred while invoking the StreamingErrorEvent handler: {Message}", ex.Message);
+        }
     }
+
 
     private void OnGpiTransitionEvent(Impinj.Atlas.GpiTransitionEvent e)
     {
-        var gpiTransitionEvent = GpiTransitionEvent;
-        if (gpiTransitionEvent == null)
+        if (e == null)
+        {
+            _logger.LogWarning("OnGpiTransitionEvent was invoked with a null event.");
             return;
-        gpiTransitionEvent(this, e);
+        }
+
+        try
+        {
+            var handler = GpiTransitionEvent; // Copy delegate to avoid race conditions
+            if (handler != null)
+            {
+                _logger.LogInformation("Raising GpiTransitionEvent: {@Event}", e);
+                handler(this, e);
+            }
+            else
+            {
+                _logger.LogWarning("No subscribers for GpiTransitionEvent.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred while invoking the GpiTransitionEvent handler: {Message}", ex.Message);
+        }
     }
+
 
     private void OnDiagnosticEvent(DiagnosticEvent e)
     {
-        var diagnosticEvent = DiagnosticEvent;
-        if (diagnosticEvent == null)
-            return;
-        diagnosticEvent(this, e);
-    }
-
-    public void Dispose()
-    {
-        if (_r700IotEventProcessor != null)
+        if (e == null)
         {
-            // Dispose the event processor since it contains HTTP clients and streams
-            _r700IotEventProcessor.Dispose();
-            
-            // Unsubscribe from events to prevent memory leaks
-            _r700IotEventProcessor.TagInventoryEvent -= R700IotEventProcessorOnTagInventoryEvent;
-            _r700IotEventProcessor.StreamingErrorEvent -= R700IotEventProcessorOnStreamingErrorEvent;
-            _r700IotEventProcessor.GpiTransitionEvent -= R700IotEventProcessorOnGpiTransitionEvent;
-            _r700IotEventProcessor.InventoryStatusEvent -= R700IotEventProcessorOnInventoryStatusEvent;
-            _r700IotEventProcessor.DiagnosticEvent -= R700IotEventProcessorOnDiagnosticEvent;
-        }
-        
-
-        GC.SuppressFinalize(this);
-    }
-
-    private void OnInventoryStatusEvent(InventoryStatusEvent e)
-    {
-        var inventoryStatusEvent = InventoryStatusEvent;
-        if (inventoryStatusEvent == null)
+            _logger.LogWarning("OnDiagnosticEvent was invoked with a null event.");
             return;
-        inventoryStatusEvent(this, e);
+        }
+
+        try
+        {
+            var handler = DiagnosticEvent; // Copy delegate to avoid race conditions
+            if (handler != null)
+            {
+                _logger.LogInformation("Raising DiagnosticEvent: {@Event}", e);
+                handler(this, e);
+            }
+            else
+            {
+                _logger.LogWarning("No subscribers for DiagnosticEvent.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred while invoking the DiagnosticEvent handler: {Message}", ex.Message);
+        }
     }
 
     
+
+    private void OnInventoryStatusEvent(InventoryStatusEvent e)
+    {
+        if (e == null)
+        {
+            _logger.LogWarning("OnInventoryStatusEvent was invoked with a null event.");
+            return;
+        }
+
+        try
+        {
+            // Log that the event is being processed
+            _logger.LogInformation("Processing InventoryStatusEvent: {@Event}", e);
+
+            // Thread-safe event invocation
+            var handler = InventoryStatusEvent; // Copy delegate to avoid race conditions
+            if (handler != null)
+            {
+                _logger.LogInformation("Raising InventoryStatusEvent to subscribers.");
+                handler(this, e);
+            }
+            else
+            {
+                _logger.LogWarning("No subscribers for InventoryStatusEvent.");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Handle and log any exceptions from the subscribers
+            _logger.LogError(ex, "An error occurred while invoking InventoryStatusEvent: {Message}", ex.Message);
+        }
+        finally
+        {
+            // Log completion of event processing
+            _logger.LogInformation("Completed processing InventoryStatusEvent.");
+        }
+    }
+
+
+
     private sealed class IotDeviceInterfaceEventProcessor
     {
         private readonly string _hostname;
@@ -493,6 +713,9 @@ public class R700IotReader : IR700IotReader
         private CancellationTokenSource? _cancelSource;
         private Stream? _responseStream;
         private Task? _streamingTask;
+        private readonly ILogger<IotDeviceInterfaceEventProcessor> _logger;
+
+        private readonly Func<bool> _isNetworkConnectedDelegate;
 
         internal IotDeviceInterfaceEventProcessor(
             string hostname,
@@ -502,8 +725,15 @@ public class R700IotReader : IR700IotReader
             string pwd,
             int hostPort = 0,
             string proxy = "",
-            int proxyPort = 8080)
+            int proxyPort = 8080,
+            ILogger<IotDeviceInterfaceEventProcessor> logger = null,
+            ILoggerFactory loggerFactory = null,
+            Func<bool> isNetworkConnectedDelegate = null)
         {
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _isNetworkConnectedDelegate = isNetworkConnectedDelegate ?? throw new ArgumentNullException(nameof(isNetworkConnectedDelegate));
+
+
             _hostname = Regex.Replace(hostname, "^https*\\://", "");
             var num = (uint)hostPort > 0U ? 1 : 0;
             _useHttpAlways = useHttpAlways;
@@ -577,8 +807,24 @@ public class R700IotReader : IR700IotReader
             _httpClientSecure.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Basic", Convert.ToBase64String(bytes));
             _iotDeviceInterfaceClientSecure = new AtlasClient(baseUrl2 ?? "", _httpClientSecure);
+            _logger = logger;
         }
 
+        private async Task<T> ExecuteWithTimeout<T>(Task<T> task, int timeoutMs)
+        {
+            if (await Task.WhenAny(task, Task.Delay(timeoutMs)) == task)
+            {
+                return await task;
+            }
+            throw new TimeoutException("Operation timed out");
+        }
+
+        private void ResetCancellationToken()
+        {
+            _cancelSource?.Cancel();
+            _cancelSource?.Dispose();
+            _cancelSource = new CancellationTokenSource();
+        }
         public Task<ReaderStatus> GetStatusAsync()
         {
             var readerStatus = new ReaderStatus();
@@ -613,7 +859,22 @@ public class R700IotReader : IR700IotReader
 
         public Task<SystemInfo> GetSystemInfoAsync()
         {
-            return _iotDeviceInterfaceClientSecure.SystemAsync();
+            //return _iotDeviceInterfaceClientSecure.SystemAsync();
+            try
+            {
+                return Task.FromResult(ExecuteWithTimeout(_iotDeviceInterfaceClientSecure.SystemAsync(), 5000)
+                       .GetAwaiter().GetResult());
+            }
+            catch (TimeoutException ex)
+            {
+                _logger.LogError($"Timeout while getting system info: {ex.Message}");
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error while getting system info: {ex.Message}");
+                throw;
+            }
         }
 
         public Task<AntennaHubInfo> GetSystemAntennaHubInfoAsync()
@@ -701,153 +962,278 @@ public class R700IotReader : IR700IotReader
             }
         }
 
-
         private const int MaxRetryAttempts = 3;
-        private const int InitialRetryDelayMs = 1000;
-        private const int MaxRetryDelayMs = 30000; // Maximum delay between retries (30 seconds)
-        private const int StreamRestartDelayMs = 5000; // Delay before restarting stream after max retries
 
         private async Task StreamingAsync()
         {
-            
+            ResetCancellationToken();
 
             while (!_cancelSource?.IsCancellationRequested ?? false)
             {
                 int retryCount = 0;
                 bool shouldRestart = true;
-                if (_cancelSource == null)
-                {
-                    _cancelSource = new CancellationTokenSource();
-                }
+
                 while (shouldRestart && !_cancelSource.IsCancellationRequested)
                 {
                     try
                     {
-                        using (var responseMessage = await _httpClient.GetAsync(new Uri("data/stream", UriKind.Relative),
-                                   HttpCompletionOption.ResponseHeadersRead))
+                        // Establish the stream
+                        using (var responseMessage = await _httpClient.GetAsync(
+                            new Uri("data/stream", UriKind.Relative),
+                            HttpCompletionOption.ResponseHeadersRead))
                         {
-                            if (responseMessage.IsSuccessStatusCode)
+                            if (!responseMessage.IsSuccessStatusCode)
                             {
-                                retryCount = 0; // Reset retry count on successful connection
-                                _responseStream = await responseMessage.Content.ReadAsStreamAsync();
-                                using (var streamReader = new StreamReader(_responseStream))
-                                {
-                                    while (!_cancelSource.IsCancellationRequested)
-                                    {
-                                        if (!streamReader.EndOfStream)
-                                        {
-                                            var str = await streamReader.ReadLineAsync();
-                                            if (!string.IsNullOrWhiteSpace(str))
-                                            {
-                                                ReaderEvent? readerEvent = null;
-                                                if (!str.Contains("GpiTransitionEvent"))
-                                                    readerEvent = JsonConvert.DeserializeObject<ReaderEvent>(str) ?? null;
-                                                if (readerEvent != null && readerEvent.TagInventoryEvent != null)
-                                                    OnTagInventoryEvent(readerEvent.TagInventoryEvent);
-                                                if (readerEvent != null && readerEvent.InventoryStatusEvent != null)
-                                                {
-                                                    if (str.Contains("running"))
-                                                        readerEvent.InventoryStatusEvent.Status =
-                                                            InventoryStatusEventStatus.Running;
-                                                    else if (str.Contains("idle"))
-                                                        readerEvent.InventoryStatusEvent.Status =
-                                                            InventoryStatusEventStatus.Idle;
-                                                    OnInventoryStatusEvent(readerEvent.InventoryStatusEvent);
-                                                }
-                                            }
-                                        }
-                                        else
-                                        {
-                                            throw new IOException("End of stream reached unexpectedly");
-                                        }
-                                    }
-                                }
+                                HandleHttpError(responseMessage);
+                                break;
                             }
-                            else
+
+                            _responseStream = await responseMessage.Content.ReadAsStreamAsync();
+
+                            // Process the stream
+                            using (var streamReader = new StreamReader(_responseStream))
                             {
-                                var error = JsonConvert.DeserializeObject<ErrorResponse>(
-                                    await responseMessage.Content.ReadAsStringAsync());
-                                var headersDictionary = responseMessage.Headers.ToDictionary(
-                                    h => h.Key,
-                                    h => h.Value);
-                                var response = await responseMessage.Content.ReadAsStringAsync();
-                                throw new AtlasException(
-                                    $"HTTP {(int)responseMessage.StatusCode} - {error?.Message ?? "Unknown error"}",
-                                    (int)responseMessage.StatusCode, response, headersDictionary, null);
+                                await ProcessStream(streamReader);
                             }
+
+                            shouldRestart = false; // Successfully completed
                         }
                     }
                     catch (TaskCanceledException)
                     {
+                        _logger.LogInformation("Streaming operation was canceled.");
                         shouldRestart = false;
-                        break;
                     }
                     catch (Exception ex)
                     {
-                        if (_cancelSource.IsCancellationRequested)
-                        {
-                            shouldRestart = false;
-                            break;
-                        }
-
-                        var isTransient = ex is IOException || ex is HttpRequestException || 
-                                        (ex is AtlasException atlasEx && atlasEx.StatusCode >= 500);
-
-                        if (isTransient && retryCount < MaxRetryAttempts)
+                        if (!_cancelSource.IsCancellationRequested && retryCount < MaxRetryAttempts)
                         {
                             retryCount++;
-                            var delayMs = Math.Min(
-                                InitialRetryDelayMs * Math.Pow(2, retryCount - 1),
-                                MaxRetryDelayMs
-                            );
-
-                            OnStreamingErrorEvent(
-                                new IotDeviceInterfaceException(
-                                    $"Connection error (attempt {retryCount}/{MaxRetryAttempts}), retrying in {delayMs/1000:F1}s: {_hostname}",
-                                    ex));
-
-                            try
-                            {
-                                await Task.Delay((int)delayMs, _cancelSource.Token);
-                                continue;
-                            }
-                            catch (TaskCanceledException)
-                            {
-                                shouldRestart = false;
-                                break;
-                            }
+                            await RetryAfterDelay(retryCount, ex);
                         }
-
-                        OnStreamingErrorEvent(
-                            new IotDeviceInterfaceException(
-                                $"Error after {retryCount} retries, restarting stream in {StreamRestartDelayMs/1000}s: {_hostname}",
-                                ex));
-
-                        try
+                        else
                         {
-                            await Task.Delay(StreamRestartDelayMs, _cancelSource.Token);
-                        }
-                        catch (TaskCanceledException)
-                        {
+                            HandleStreamingError(ex);
                             shouldRestart = false;
-                            break;
                         }
                     }
                     finally
                     {
-                        if (_responseStream != null)
-                        {
-                            await _responseStream.DisposeAsync();
-                            //_responseStream = null;
-                        }
+                        CleanupStream();
                     }
                 }
             }
 
+            CleanupAfterStreaming();
+        }
+
+        private async Task ProcessStream(StreamReader streamReader)
+        {
+            while (!_cancelSource.IsCancellationRequested)
+            {
+                try
+                {
+                    if (streamReader.EndOfStream)
+                    {
+                        throw new IOException("IoT Interface Processor: End of stream reached unexpectedly.");
+                    }
+
+                    var str = await streamReader.ReadLineAsync();
+                    if (string.IsNullOrWhiteSpace(str))
+                    {
+                        _logger.LogWarning("IoT Interface Processor: Received an empty or whitespace-only line.");
+                        continue;
+                    }
+
+                    _logger.LogDebug("IoT Interface Processor: Processing received line: {Line}", str);
+
+                    await ProcessStreamedData(str);
+                }
+                catch (IOException ioEx)
+                {
+                    _logger.LogError(ioEx, "IoT Interface Processor: I/O error while reading the stream.");
+                    throw;
+                }
+                catch (JsonException jsonEx)
+                {
+                    _logger.LogError(jsonEx, "IoT Interface Processor: Failed to deserialize a line from the stream.");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "IoT Interface Processor: Unexpected error while processing the stream.");
+                    throw;
+                }
+            }
+        }
+
+        private async Task ProcessStreamedData(string str)
+        {
+            try
+            {
+                ReaderEvent? readerEvent = null;
+
+                // Determine the type of event
+                if (!str.Contains("GpiTransitionEvent"))
+                {
+                    readerEvent = JsonConvert.DeserializeObject<ReaderEvent>(str);
+                }
+
+                if (readerEvent == null)
+                {
+                    _logger.LogWarning("IoT Interface Processor: Unrecognized or null event: {Line}", str);
+                    return;
+                }
+
+                // Handle specific events
+                if (readerEvent.TagInventoryEvent != null)
+                {
+                    _logger.LogDebug("IoT Interface Processor - TagInventoryEvent detected: {@TagInventoryEvent}", readerEvent.TagInventoryEvent);
+                    OnTagInventoryEvent(readerEvent.TagInventoryEvent);
+                }
+
+                if (readerEvent.InventoryStatusEvent != null)
+                {
+                    UpdateInventoryStatus(readerEvent, str);
+                    OnInventoryStatusEvent(readerEvent.InventoryStatusEvent);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "IoT Interface Processor - Error processing streamed data: {Line}", str);
+            }
+        }
+
+        private void UpdateInventoryStatus(ReaderEvent readerEvent, string str)
+        {
+            if (str.Contains("running"))
+            {
+                readerEvent.InventoryStatusEvent.Status = InventoryStatusEventStatus.Running;
+            }
+            else if (str.Contains("idle"))
+            {
+                readerEvent.InventoryStatusEvent.Status = InventoryStatusEventStatus.Idle;
+            }
+        }
+
+        private async Task RetryAfterDelay(int retryCount, Exception ex)
+        {
+            int delayMs = Math.Min(1000 * (int)Math.Pow(2, retryCount - 1), 30000);
+            _logger.LogWarning("IoT Interface Processor - Retrying operation after failure (Attempt: {RetryCount}, Delay: {DelayMs} ms): {ErrorMessage}",
+                retryCount, delayMs, ex.Message);
+
+            try
+            {
+                await Task.Delay(delayMs, _cancelSource.Token);
+            }
+            catch (TaskCanceledException)
+            {
+                _logger.LogInformation("IoT Interface Processor - Retry attempt {RetryCount} was canceled.", retryCount);
+            }
+        }
+
+
+        //private async Task RetryAfterDelay(int retryCount, Exception ex)
+        //{
+        //    // Calculate exponential backoff with a maximum delay
+        //    const int BaseRetryDelayMs = 1000; // Base delay in milliseconds
+        //    const int MaxRetryDelayMs = 30000; // Maximum delay in milliseconds
+
+        //    int delayMs = Math.Min(BaseRetryDelayMs * (int)Math.Pow(2, retryCount - 1), MaxRetryDelayMs);
+
+        //    // Log retry details
+        //    _logger.LogWarning(
+        //        "Retrying operation after failure. Attempt: {RetryCount}, Delay: {DelayMs} ms, Error: {ErrorMessage}",
+        //        retryCount, delayMs, ex.Message);
+
+        //    // Wait for the calculated delay
+        //    try
+        //    {
+        //        await Task.Delay(delayMs, _cancelSource.Token);
+        //    }
+        //    catch (TaskCanceledException)
+        //    {
+        //        // Log if the retry was interrupted by cancellation
+        //        _logger.LogInformation("Retry attempt {RetryCount} was canceled.", retryCount);
+        //        throw;
+        //    }
+        //}
+
+
+        private void HandleHttpError(HttpResponseMessage responseMessage)
+        {
+            if (responseMessage == null)
+            {
+                _logger.LogError("IoT Interface Processor - Received a null HttpResponseMessage.");
+                return;
+            }
+
+            try
+            {
+                // Log basic HTTP response details
+                _logger.LogError(
+                    "HTTP error occurred. Status Code: {StatusCode}, Reason: {ReasonPhrase}, Request URI: {RequestUri}",
+                    responseMessage.StatusCode,
+                    responseMessage.ReasonPhrase,
+                    responseMessage.RequestMessage?.RequestUri);
+
+                // Attempt to read the response content for additional details
+                var content = responseMessage.Content?.ReadAsStringAsync().Result;
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    _logger.LogError("Response Content: {Content}", content);
+                }
+
+                // Trigger a custom error event if applicable
+                OnStreamingErrorEvent(new IotDeviceInterfaceException(
+                    $"HTTP error: {responseMessage.StatusCode} - {responseMessage.ReasonPhrase}",
+                    null));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "IoT Interface Processor - An unexpected error occurred while handling the HTTP response.");
+            }
+        }
+
+
+        private void CleanupStream()
+        {
+            if (_responseStream != null)
+            {
+                _responseStream.Dispose();
+                _responseStream = null;
+            }
+        }
+
+        private void CleanupAfterStreaming()
+        {
             if (_cancelSource != null && _cancelSource.IsCancellationRequested)
             {
                 _cancelSource.Dispose();
             }
+        }
+
+        private void HandleStreamingError(Exception ex)
+        {
+            _logger.LogError(ex, "Critical error in streaming: {Message}", ex.Message);
+            OnStreamingErrorEvent(new IotDeviceInterfaceException("Streaming error detected", ex));
+        }
+
+        public bool IsHealthy()
+        {
+            return _isNetworkConnectedDelegate() && (_responseStream != null) && !_cancelSource.IsCancellationRequested;
+        }
+
+        public void Dispose()
+        {
+            _cancelSource?.Cancel();
+            _cancelSource?.Dispose();
+            _responseStream?.Dispose();
+            _httpClient?.Dispose();
+            _httpClientSecure?.Dispose();
+
+            
+
+            GC.SuppressFinalize(this);
         }
 
         public Task<IpConfiguration> GetReaderSystemNetworkInterfaceByIdAsync(int interfaceId, NetworkProtocol2 proto)
@@ -1099,81 +1485,189 @@ public class R700IotReader : IR700IotReader
             }
         }
 
-        public void Dispose()
-        {
-            // Cancel any ongoing operations
-            _cancelSource?.Cancel();
-            _cancelSource?.Dispose();
-            
-            // Dispose stream
-            _responseStream?.Dispose();
-            
-            // Dispose HTTP clients
-            _httpClient?.Dispose();
-            _httpClientSecure?.Dispose();
-
-            // Wait for streaming task to complete if it exists
-            if (_streamingTask != null)
-            {
-                try 
-                {
-                    _streamingTask.Wait(TimeSpan.FromSeconds(5));
-                }
-                catch (Exception)
-                {
-                    // Log or handle timeout
-                }
-            }
-        }
-
         internal event EventHandler<TagInventoryEvent>? TagInventoryEvent;
 
         private void OnTagInventoryEvent(TagInventoryEvent e)
         {
-            var tagInventoryEvent = TagInventoryEvent;
-            if (tagInventoryEvent == null)
+            if (e == null)
+            {
+                _logger.LogWarning("OnTagInventoryEvent invoked with a null event.");
                 return;
-            tagInventoryEvent(this, e);
+            }
+
+            try
+            {
+                // Thread-safe delegate invocation
+                var handler = TagInventoryEvent;
+                if (handler != null)
+                {
+                    _logger.LogInformation("Raising TagInventoryEvent: {@Event}", e);
+                    handler(this, e);
+                }
+                else
+                {
+                    _logger.LogWarning("No subscribers for TagInventoryEvent.");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Handle and log exceptions
+                _logger.LogError(ex, "An error occurred while invoking TagInventoryEvent: {Message}", ex.Message);
+            }
+            finally
+            {
+                // Log completion of the event
+                _logger.LogInformation("Completed processing TagInventoryEvent.");
+            }
         }
+
 
         internal event EventHandler<IotDeviceInterfaceException>? StreamingErrorEvent;
 
         private void OnStreamingErrorEvent(IotDeviceInterfaceException e)
         {
-            var streamingErrorEvent = StreamingErrorEvent;
-            if (streamingErrorEvent == null)
+            if (e == null)
+            {
+                _logger.LogWarning("OnStreamingErrorEvent was invoked with a null exception.");
                 return;
-            streamingErrorEvent(this, e);
+            }
+
+            try
+            {
+                // Thread-safe event invocation
+                var handler = StreamingErrorEvent; // Copy the delegate to a local variable
+                if (handler != null)
+                {
+                    _logger.LogInformation("Raising StreamingErrorEvent: {@Exception}", e);
+                    handler(this, e);
+                }
+                else
+                {
+                    _logger.LogWarning("No subscribers for StreamingErrorEvent.");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log exceptions from the event invocation
+                _logger.LogError(ex, "An error occurred while invoking StreamingErrorEvent: {Message}", ex.Message);
+            }
+            finally
+            {
+                // Log completion of the event
+                _logger.LogInformation("Completed processing StreamingErrorEvent.");
+            }
         }
+
 
         internal event EventHandler<Impinj.Atlas.GpiTransitionEvent>? GpiTransitionEvent;
 
         private void OnGpiTransitionEvent(Impinj.Atlas.GpiTransitionEvent e)
         {
-            var gpiTransitionEvent = GpiTransitionEvent;
-            if (gpiTransitionEvent == null)
+            if (e == null)
+            {
+                _logger.LogWarning("OnGpiTransitionEvent was invoked with a null event.");
                 return;
-            gpiTransitionEvent(this, e);
+            }
+
+            try
+            {
+                // Thread-safe delegate invocation
+                var handler = GpiTransitionEvent; // Copy delegate to avoid race conditions
+                if (handler != null)
+                {
+                    _logger.LogInformation("Raising GpiTransitionEvent: {@Event}", e);
+                    handler(this, e);
+                }
+                else
+                {
+                    _logger.LogWarning("No subscribers for GpiTransitionEvent.");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Handle and log exceptions from subscribers
+                _logger.LogError(ex, "An error occurred while invoking GpiTransitionEvent: {Message}", ex.Message);
+            }
+            finally
+            {
+                // Log that processing is complete
+                _logger.LogInformation("Completed processing GpiTransitionEvent.");
+            }
         }
+
 
         internal event EventHandler<DiagnosticEvent>? DiagnosticEvent;
 
         private void OnDiagnosticEvent(DiagnosticEvent e)
         {
-            var diagnosticEvent = DiagnosticEvent;
-            if (diagnosticEvent == null)
+            if (e == null)
+            {
+                _logger.LogWarning("OnDiagnosticEvent was invoked with a null event.");
                 return;
-            diagnosticEvent(this, e);
+            }
+
+            try
+            {
+                // Thread-safe delegate invocation
+                var handler = DiagnosticEvent; // Copy the delegate to avoid race conditions
+                if (handler != null)
+                {
+                    _logger.LogInformation("Raising DiagnosticEvent: {@Event}", e);
+                    handler(this, e);
+                }
+                else
+                {
+                    _logger.LogWarning("No subscribers for DiagnosticEvent.");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Handle and log exceptions thrown by subscribers
+                _logger.LogError(ex, "An error occurred while invoking DiagnosticEvent: {Message}", ex.Message);
+            }
+            finally
+            {
+                // Log that event processing is complete
+                _logger.LogInformation("Completed processing DiagnosticEvent.");
+            }
         }
+
 
         internal event EventHandler<InventoryStatusEvent>? InventoryStatusEvent;
 
         private void OnInventoryStatusEvent(InventoryStatusEvent e)
         {
-            var inventoryStatusEvent = InventoryStatusEvent;
-            if (inventoryStatusEvent == null)
+            if (e == null)
+            {
+                _logger.LogWarning("OnInventoryStatusEvent was invoked with a null event.");
                 return;
-            inventoryStatusEvent(this, e);
+            }
+
+            try
+            {
+                // Thread-safe delegate invocation
+                var handler = InventoryStatusEvent; // Copy the delegate to avoid race conditions
+                if (handler != null)
+                {
+                    _logger.LogInformation("Raising InventoryStatusEvent: {@Event}", e);
+                    handler(this, e);
+                }
+                else
+                {
+                    _logger.LogWarning("No subscribers for InventoryStatusEvent.");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Handle and log exceptions thrown by subscribers
+                _logger.LogError(ex, "An error occurred while invoking InventoryStatusEvent: {Message}", ex.Message);
+            }
+            finally
+            {
+                // Log that processing is complete
+                _logger.LogInformation("Completed processing InventoryStatusEvent.");
+            }
         }
+
     }
 }

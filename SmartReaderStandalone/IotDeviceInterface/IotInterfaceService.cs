@@ -11,6 +11,8 @@
 using Impinj.Atlas;
 using Impinj.Utils.DebugLogger;
 using McMaster.NETCore.Plugins;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using MQTTnet;
 using MQTTnet.Client;
 using MQTTnet.Extensions.ManagedClient;
@@ -60,6 +62,100 @@ namespace SmartReader.IotDeviceInterface;
 
 public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 {
+    private class ThreadSafeCollections
+    {
+        private readonly Microsoft.Extensions.Logging.ILogger _logger;
+        private readonly ConcurrentDictionary<string, long> _readEpcs;
+        private readonly ConcurrentDictionary<string, int> _currentSkus;
+        private readonly ConcurrentBag<string> _currentSkuReadEpcs;
+
+        public ThreadSafeCollections(
+            Microsoft.Extensions.Logging.ILogger logger,
+            ConcurrentDictionary<string, long> readEpcs,
+            ConcurrentDictionary<string, int> currentSkus,
+            ConcurrentBag<string> currentSkuReadEpcs)
+        {
+            _logger = logger;
+            _readEpcs = readEpcs;
+            _currentSkus = currentSkus;
+            _currentSkuReadEpcs = currentSkuReadEpcs;
+        }
+
+        public bool TryAddEpc(string epc, long timestamp)
+        {
+            try
+            {
+                return _readEpcs.TryAdd(epc, timestamp);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding EPC to _readEpcs");
+                return false;
+            }
+        }
+
+        public bool TryUpdateEpc(string epc, long timestamp)
+        {
+            try
+            {
+                return _readEpcs.TryUpdate(epc, timestamp, _readEpcs[epc]);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating EPC in _readEpcs");
+                return false;
+            }
+        }
+
+        public void AddSkuReadEpc(string epc)
+        {
+            try
+            {
+                _currentSkuReadEpcs.Add(epc);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding EPC to _currentSkuReadEpcs");
+            }
+        }
+
+        public bool UpdateSkuCount(string sku, int increment = 1)
+        {
+            try
+            {
+                _currentSkus.AddOrUpdate(
+                    sku,
+                    increment,
+                    (key, oldValue) => oldValue + increment
+                );
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating SKU count");
+                return false;
+            }
+        }
+
+        public bool ContainsEpc(string epc)
+        {
+            return _currentSkuReadEpcs.Contains(epc);
+        }
+
+        public void Clear()
+        {
+            try
+            {
+                _readEpcs.Clear();
+                _currentSkus.Clear();
+                while (_currentSkuReadEpcs.TryTake(out _)) { }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error clearing collections");
+            }
+        }
+    }
     private static string? _readerAddress = null; // Nullable with default null value
 
     private static readonly string? _bearerToken = null; // Nullable with default null value
@@ -148,10 +244,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     public static string R700UsbDrivePath = @"/run/mount/external/";
 
     private readonly IConfiguration _configuration;
-
-    public readonly ConcurrentDictionary<string, int> _currentSkus = new();
-
-    private readonly List<string> _currentSkuReadEpcs = new();
 
     private readonly CancellationTokenSource _gpiCts;
 
@@ -268,7 +360,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     //private static string? currentBarcode;
     //private static SmartReaderSetupData _mqttClientSmartReaderSetupDataSmartReaderSetupData;
 
-    private ConcurrentDictionary<string, long> _readEpcs = new();
+    private static readonly ConcurrentDictionary<string, long> _readEpcs = new();
+    private readonly ConcurrentDictionary<string, int> _currentSkus = new();
+    private readonly ConcurrentBag<string> _currentSkuReadEpcs = new();
 
     private SerialPort? _serialTty = null;
 
@@ -288,16 +382,31 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private string? ExternalApiToken = null;
 
+    private readonly ValidationService _validationService;
+
     public static Dictionary<string, IPlugin> _plugins = new();
+
+    private readonly SemaphoreSlim _socketLock = new SemaphoreSlim(1, 1);
+    //private readonly CircularBuffer<JObject> _failedMessages = new CircularBuffer<JObject>(1000);
+    private volatile bool _isSocketProcessing = false;
+
+    private readonly ILoggerFactory _loggerFactory;
 
 
     public IotInterfaceService(IServiceProvider services, IConfiguration configuration,
-        ILogger<IotInterfaceService> logger, IHttpClientFactory httpClientFactory)
+        ILogger<IotInterfaceService> logger, ILoggerFactory loggerFactory, IHttpClientFactory httpClientFactory)
     {
         _configuration = configuration;
-        _logger = logger;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         Services = services;
         HttpClientFactory = httpClientFactory;
+
+        _validationService = new ValidationService(
+            logger,
+            _currentSkus,
+            _currentSkuReadEpcs
+        );
 
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
         var filePath = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
@@ -1106,6 +1215,37 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         return messageData;
     }
 
+    // Add health check method
+    public bool IsSocketServerHealthy()
+    {
+        return _socketServer != null && 
+            _socketServer.IsListening && 
+            _socketServer.GetClients()?.Any() == true;
+    }
+
+    private async Task EnsureSocketServerConnectionAsync()
+    {
+        if (!IsSocketServerHealthy())
+        {
+            await _socketLock.WaitAsync();
+            try
+            {
+                // Double check after acquiring lock
+                if (!IsSocketServerHealthy())
+                {
+                    _logger.LogWarning("Reloading Socket Server based on Stop/Start.");
+                    StopTcpSocketServer();
+                    await Task.Delay(1000); // Cool down
+                    StartTcpSocketServer();
+                }
+            }
+            finally
+            {
+                _socketLock.Release();
+            }
+        }
+    }
+
     private void StartTcpSocketServer()
     {
         if (_standaloneConfigDTO != null && !string.IsNullOrEmpty(_standaloneConfigDTO.socketServer)
@@ -1233,7 +1373,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 var length = new FileInfo(fileName).Length;
                 if (length > 0)
                 {
-                    _standaloneConfigDTO = ConfigFileHelper.ReadFile();
+                    _standaloneConfigDTO = StandaloneConfigDTO.CleanupUrlEncoding(ConfigFileHelper.ReadFile());
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
                     Console.WriteLine("Config loaded. " + _standaloneConfigDTO.antennaPorts);
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
@@ -1441,7 +1581,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 if (_readerAddress != null)
                 {
-                    _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                    _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
                 }
                 else
                 {
@@ -1493,7 +1633,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     _proxyAddress = "";
                 }
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
             }
             else
             {
@@ -1504,8 +1644,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         var readerStatus = await _iotDeviceInterfaceClient.GetStatusAsync();
         if (!_iotDeviceInterfaceClient.IsNetworkConnected)
         {
-            Task.Run(() => ProcessGpoErrorPortAsync());
-            Task.Run(() => ProcessGpoErrorNetworkPortAsync(true));
+            await ProcessGpoErrorPortAsync();
+            await ProcessGpoErrorNetworkPortAsync(true);
         }
         else
         {
@@ -1532,7 +1672,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (_readerAddress != null)
             {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
             }
             else
             {
@@ -1619,7 +1759,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (_readerAddress != null)
             {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
             }
             else
             {
@@ -1682,7 +1822,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (_readerAddress != null)
             {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
             }
             else
             {
@@ -1757,6 +1897,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 _logger.LogError(ex, "Error starting SmartReader preset, scheduling start command to background worker. " + ex.Message);
                 //if (_standaloneConfigDTO.isEnabled == "1" && _isStarted) SaveStartCommandToDb();
                 if (_standaloneConfigDTO.isEnabled == "1") SaveStartCommandToDb();
+                try
+                {
+                    await ApplySettingsAsync();
+                    //_ = ProcessGpoErrorPortRecoveryAsync();
+                }
+                catch (Exception exPreset)
+                {
+                    _logger.LogInformation("Error applying settings. " + exPreset.Message);
+                    await ProcessGpoErrorPortAsync();
+                }
             }
         }
 
@@ -1825,7 +1975,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (_readerAddress != null)
             {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
             }
             else
             {
@@ -1889,7 +2039,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (_readerAddress != null)
             {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
             }
             else
             {
@@ -1904,6 +2054,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             //_standaloneConfigDTO = configHelper.LoadDtoFromFile();
             if (_standaloneConfigDTO == null) _standaloneConfigDTO = ConfigFileHelper.ReadFile();
 
+            if (_standaloneConfigDTO != null)
+            {
+                _validationService.UpdateConfig(_standaloneConfigDTO);
+            }
 
             var mapper = new IoTInterfaceMapper();
             var presetRequest = mapper.CreateStandaloneInventoryRequest(_standaloneConfigDTO);
@@ -1934,6 +2088,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
 #pragma warning restore CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
     }
+
     public async Task ProcessGpoBlinkAnyTagGpoPortAsync()
     {
         try
@@ -2082,7 +2237,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (_readerAddress != null)
             {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
             }
             else
             {
@@ -2119,7 +2274,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (_readerAddress != null)
             {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
             }
             else
             {
@@ -2335,7 +2490,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (_readerAddress != null)
             {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
             }
             else
             {
@@ -2362,7 +2517,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 if (_readerAddress != null)
                 {
-                    _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                    _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
                 }
                 else
                 {
@@ -3509,7 +3664,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     }
 
-    private async void ProcessKeepalive()
+    private async 
+    Task
+ProcessKeepalive()
     {
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
         if (string.Equals("0", _standaloneConfigDTO.heartbeatEnabled, StringComparison.OrdinalIgnoreCase)) return;
@@ -4041,6 +4198,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     {
         try
         {
+            // Validate input
+            if (tagEvent == null)
+            {
+                _logger.LogError("Received null tag event");
+                return;
+            }
+
             if (!_isStarted)
             {
                 _isStarted = true;
@@ -4063,13 +4227,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         var updatedCurrentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now) * 1000;
                         _smartReaderTagEventsListBatch[tagEvent.EpcHex]["firstSeenTimestamp"] = updatedCurrentEventTimestamp;
                     }
-                    catch (KeyNotFoundException)
+                    catch (KeyNotFoundException ex)
                     {
-                        // epc already expired
+                        _logger.LogDebug(ex, $"EPC {tagEvent.EpcHex} expired from batch list");
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "error updating last seen time for the tag presence timeout.");
+                        _logger.LogError(ex, $"Error updating timestamp for EPC {tagEvent.EpcHex} in batch list");
                     }
 
                 }
@@ -4100,9 +4264,20 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     StringComparison.OrdinalIgnoreCase))
                 try
                 {
+                    const int MaxTimeoutDictionarySize = 1000;
+
                     long timeoutInSec = 0;
                     var seenCountThreshold = 1;
                     var currentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
+                    // Parse configuration values with validation
+                    if (!long.TryParse(_standaloneConfigDTO.softwareFilterReadCountTimeoutIntervalInSec, out timeoutInSec))
+                    {
+                        _logger.LogWarning("Invalid timeout value in configuration");
+                    }
+                    if (!int.TryParse(_standaloneConfigDTO.softwareFilterReadCountTimeoutSeenCount, out seenCountThreshold))
+                    {
+                        _logger.LogWarning("Invalid seen count threshold in configuration");
+                    }
                     if (!string.Equals("0", _standaloneConfigDTO.softwareFilterReadCountTimeoutIntervalInSec,
                             StringComparison.OrdinalIgnoreCase))
                         long.TryParse(_standaloneConfigDTO.softwareFilterReadCountTimeoutIntervalInSec,
@@ -4115,6 +4290,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                     if (!_softwareFilterReadCountTimeoutDictionary.ContainsKey(tagEvent.EpcHex))
                     {
+                         // Add size check
+                        if (_softwareFilterReadCountTimeoutDictionary.Count >= MaxTimeoutDictionarySize)
+                        {
+                            _logger.LogWarning($"_softwareFilterReadCountTimeoutDictionary reached max size {MaxTimeoutDictionarySize}");
+                            // Optionally remove oldest entries
+                            RemoveOldestEntries(_softwareFilterReadCountTimeoutDictionary, MaxTimeoutDictionarySize * 0.2);
+                        }
                         var readCountTimeoutEvent = new ReadCountTimeoutEvent();
                         readCountTimeoutEvent.Epc = tagEvent.EpcHex;
                         readCountTimeoutEvent.EventTimestamp = currentEventTimestamp;
@@ -4171,20 +4353,48 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         }
                     }
                 }
-                catch (Exception)
+                catch (ArgumentException ex)
                 {
+                    _logger.LogError(ex, "Invalid argument in software filter configuration");
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"Error processing software filter for EPC {tagEvent.EpcHex}");
+                    return;
                 }
 
-            if (_readEpcs == null) _readEpcs = new ConcurrentDictionary<string, long>();
+                var tagCollections = new ThreadSafeCollections(
+                _logger,
+                _readEpcs,
+                _currentSkus,
+                _currentSkuReadEpcs);
 
 
             if (!string.Equals("0", _standaloneConfigDTO.softwareFilterEnabled, StringComparison.OrdinalIgnoreCase))
             {
+                const int MaxReadEpcsSize = 1000; // Define a reasonable maximum size
                 var currentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
+                // Dictionary operations with validation
+                if (_readEpcs == null)
+                {
+                    _logger.LogWarning("Read EPCs dictionary not initialized");
+                }
+
                 if (!_readEpcs.ContainsKey(tagEvent.EpcHex))
                 {
-                    _readEpcs.TryAdd(tagEvent.EpcHex, currentEventTimestamp);
-                    Task.Run(() => ProcessGpoBlinkNewTagStatusGpoPortAsync(2));
+                     // Add size check before adding new entries
+                    if (_readEpcs.Count >= MaxReadEpcsSize)
+                    {
+                        _logger.LogWarning($"_readEpcs collection reached max size {MaxReadEpcsSize}, skipping new entries");
+                        return;
+                    }
+                    if (!tagCollections.TryAddEpc(tagEvent.EpcHex, currentEventTimestamp))
+                    {
+                        _logger.LogWarning($"Failed to add EPC {tagEvent.EpcHex}");
+                        return;
+                    }
+                    await ProcessGpoBlinkNewTagStatusGpoPortAsync(2);
                     shouldProcess = true;
                 }
                 else
@@ -4198,14 +4408,21 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
                     if (timeDiff.TotalSeconds > expiration)
                     {
-                        _readEpcs[tagEvent.EpcHex] = currentEventTimestamp;
-                        Task.Run(() => ProcessGpoBlinkNewTagStatusGpoPortAsync(2));
+                        if (!tagCollections.TryUpdateEpc(tagEvent.EpcHex, currentEventTimestamp))
+                        {
+                            _logger.LogWarning($"Failed to update EPC timestamp");
+                            return;
+                        }
+                        await ProcessGpoBlinkNewTagStatusGpoPortAsync(2);
                         shouldProcess = true;
                     }
                     else
                     {
                         shouldProcess = false;
-                        _readEpcs[tagEvent.EpcHex] = currentEventTimestamp;
+                        if (!tagCollections.TryUpdateEpc(tagEvent.EpcHex, currentEventTimestamp))
+                        {
+                            _logger.LogWarning($"Failed to update EPC {tagEvent.EpcHex} timestamp");
+                        }
                         _logger.LogInformation(message: "Ignoring tag event due to softwareFilterWindowSec on OnTagInventoryEvent ");
                         return;
                     }
@@ -4218,6 +4435,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 if (_lastTagRead == null)
                 {
                     _lastTagRead = new TagRead();
+                    if (tagEvent == null)
+                    {
+                        throw new ArgumentNullException(nameof(tagEvent), "Tag event cannot be null");
+                    }
                     _lastTagRead.Epc = tagEvent.EpcHex;
                     _lastTagRead.AntennaPort = tagEvent.AntennaPort;
                     //var currentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
@@ -4254,80 +4475,30 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
 
             //_messageQueueTagInventoryEvent.Enqueue(tagEvent);
-            if (shouldProcess)
+            try
             {
-
-                //if (string.Equals("1", _standaloneConfigDTO.softwareFilterEnabled, StringComparison.OrdinalIgnoreCase))
-                //{
-                //    try
-                //    {
-                //        int intervalInSec = 1;
-                //        if (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterWindowSec))
-                //        {
-                //            int.TryParse(_standaloneConfigDTO.softwareFilterWindowSec, out intervalInSec);
-
-                //            var currentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
-                //            var seenTime = DateTimeOffset.FromUnixTimeMilliseconds(currentEventTimestamp);
-                //            //var seenTime = DateTimeOffset.FromUnixTimeMilliseconds(tagEvent.LastSeenTime.Value.ToFileTimeUtc());
-                //            if (_knowTagsForSoftwareFilterWindowSec.ContainsKey(tagEvent.EpcHex))
-                //            {
-                //                if (seenTime.Subtract(_knowTagsForSoftwareFilterWindowSec[tagEvent.Epc]).TotalSeconds < intervalInSec)
-                //                {
-                //                    MqttLog("INFO", "Ignoring EPC  [" + tagEvent.EpcHex + "] due to Software filter by interval [" + intervalInSec + "].  ");
-                //                    _logger.LogInformation("Ignoring EPC  [" + tagEvent.EpcHex + "] due to Software filter by interval [" + intervalInSec + "].  ", SeverityType.Debug);
-                //                    return;
-                //                }
-                //                else
-                //                {
-                //                    _knowTagsForSoftwareFilterWindowSec[tagEvent.EpcHex] = seenTime;
-                //                }
-                //            }
-                //            else
-                //            {
-                //                _knowTagsForSoftwareFilterWindowSec.TryAdd(tagEvent.EpcHex, seenTime);
-                //            }
-                //        }
-
-                //    }
-                //    catch (Exception exSoftwareFilter)
-                //    {
-                //        MqttLog("ERROR", "Error processing software filter. " + exSoftwareFilter.Message);
-                //    }
-                //}
-                //if (!_oldReadEpcList.Contains(tagEvent.EpcHex))
-                //{
-                //    _oldReadEpcList.Add(tagEvent.EpcHex);
-                //    try
-                //    {
-                //        //await Task.Run(async () => { await BlinkTagStatusGpoPortAsync(1); });
-                //        Task.Run(() => ProcessGpoBlinkNewTagStatusGpoPortAsync(1));
-
-                //    }
-                //    catch (Exception)
-                //    {
-                //    }
-
-                //}
-
-
-
-                //else
-                //{
-                //    try
-                //    {
-                //        await ProcessGpoNoNewTagPortAsync(false, 500);
-                //    }
-                //    catch (Exception)
-                //    {
-                //    }
-                //}
-
                 await ProcessTagInventoryEventAsync(tagEvent);
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Failed to process tag inventory event for EPC {tagEvent.EpcHex}");
+                await ProcessGpoErrorPortAsync();
+            }
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogError(ex, "Invalid argument while processing last tag read");
+            return;
+        }
+        catch (OverflowException ex)
+        {
+            _logger.LogError(ex, "Timestamp conversion error");
+            return;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error on OnTagInventoryEvent " + ex.Message);
+            _logger.LogError(ex, $"Critical error processing tag event for EPC: {tagEvent?.EpcHex ?? "unknown"}");
+            await ProcessGpoErrorPortAsync();
         }
     }
 
@@ -4343,7 +4514,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 while (_messageQueueTagSmartReaderTagEventHttpPostRetry.TryDequeue(out smartReaderTagReadEvent))
                     try
                     {
-                        Task.Run(() => ProcessHttpJsonPostTagEventDataAsync(smartReaderTagReadEvent));
+                        await ProcessHttpJsonPostTagEventDataAsync(smartReaderTagReadEvent);
                     }
                     catch (Exception ex)
                     {
@@ -4971,12 +5142,35 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private async void OnRunPeriodicTagFilterListsEvent(object sender, ElapsedEventArgs e)
     {
+        const int WarningThreshold = 800; // 80% of max size
 #pragma warning disable CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
         _timerTagFilterLists.Enabled = false;
         _timerTagFilterLists.Stop();
 
         try
         {
+            try
+            {
+                if (_readEpcs.Count > WarningThreshold)
+                {
+                    _logger.LogWarning($"_readEpcs size ({_readEpcs.Count}) approaching limit");
+                }
+                
+                if (_softwareFilterReadCountTimeoutDictionary.Count > WarningThreshold)
+                {
+                    _logger.LogWarning($"_softwareFilterReadCountTimeoutDictionary size ({_softwareFilterReadCountTimeoutDictionary.Count}) approaching limit");
+                }
+                
+                if (_smartReaderTagEventsListBatch.Count > WarningThreshold)
+                {
+                    _logger.LogWarning($"_smartReaderTagEventsListBatch size ({_smartReaderTagEventsListBatch.Count}) approaching limit");
+                }
+            }
+            catch (System.Exception)
+            {
+
+            }
+            
 
             if (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterEnabled)
                 && !"0".Equals(_standaloneConfigDTO.softwareFilterEnabled))
@@ -5034,32 +5228,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     _logger.LogError(ex, "Unexpected error on remove _readEpcs" + ex.Message);
                 }
             }
-
-
-
-
-
-
-
-            //if (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterEnabled)
-            //    && !"0".Equals(_standaloneConfigDTO.softwareFilterEnabled))
-            //{
-            //    try
-            //    {
-            //        var oldTimestamp = DateTime.Now.AddHours(-1);
-            //        var oldTimestampToCheck = Utils.CSharpMillisToJavaLong(oldTimestamp);
-            //        DateTimeOffset oldDateTimeOffset = DateTimeOffset.FromUnixTimeMilliseconds(oldTimestampToCheck);
-            //        foreach (var kvp in _knowTagsForSoftwareFilterWindowSec.Where(x => x.Value > oldDateTimeOffset).ToList())
-            //        {
-            //            var val = kvp.Value;
-            //            _knowTagsForSoftwareFilterWindowSec.TryRemove(kvp.Key, out val);
-            //        }
-            //    }
-            //    catch (Exception)
-            //    {
-
-            //    }
-            //}
 
             if (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled)
                 && !"0".Equals(_standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled))
@@ -5307,7 +5475,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     //_stopwatchKeepalive.Reset();
                     _stopwatchKeepalive.Restart();
                     //ProcessKeepalive();
-                    Task.Run(() => { ProcessKeepalive(); });
+                    await ProcessKeepalive();
                 }
             }
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
@@ -5363,7 +5531,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 //_ = Task.Run(() => ProcessValidationTagQueue());
                                 try
                                 {
-                                    StopPresetAsync();
+                                    await StopPresetAsync();
                                 }
                                 catch (Exception)
                                 {
@@ -5446,45 +5614,62 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
                             StringComparison.OrdinalIgnoreCase))
                 {
+                    const int MaxBatchSize = 1000;
+
                     while (httpPostTimer.Elapsed.TotalSeconds < httpPostIntervalInSec)
                     {
                         await Task.Delay(10);
                     }
-                    if (_smartReaderTagEventsListBatch.Count > 0)
+                    try
                     {
-                        foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
+                        if (_smartReaderTagEventsListBatch.Count >= MaxBatchSize)
                         {
-                            smartReaderTagReadEvent = smartReaderTagReadEventBatch;
-                            try
+                            _logger.LogWarning($"_smartReaderTagEventsListBatch reached max size {MaxBatchSize}");
+                            // Remove oldest entries to make room for new ones
+                            RemoveOldestBatchEntries(_smartReaderTagEventsListBatch, MaxBatchSize * 0.2);
+                        }
+                        
+                        if (_smartReaderTagEventsListBatch.Count > 0)
+                        {
+                            foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
                             {
-                                if (smartReaderTagReadEvent == null)
-                                    continue;
-                                if (smartReaderTagReadEventAggregated == null)
+                                smartReaderTagReadEvent = smartReaderTagReadEventBatch;
+                                try
                                 {
-                                    smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
-                                    smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                        .FirstOrDefault().FirstOrDefault());
-                                }
-                                else
-                                {
-                                    try
+                                    if (smartReaderTagReadEvent == null)
+                                        continue;
+                                    if (smartReaderTagReadEventAggregated == null)
                                     {
+                                        smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
                                         smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
                                             .FirstOrDefault().FirstOrDefault());
                                     }
-                                    catch (Exception ex)
+                                    else
                                     {
-                                        _logger.LogInformation(ex,
-                                            "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                        try
+                                        {
+                                            smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+                                                .FirstOrDefault().FirstOrDefault());
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            _logger.LogInformation(ex,
+                                                "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                        }
                                     }
                                 }
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                catch (Exception ex)
+                                {
+                                    _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                }
                             }
                         }
                     }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error managing batch size");
+                    }
+                    
 
                 }
                 else
@@ -5557,88 +5742,115 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     }
 
     private readonly object _socketQueueLock = new object();
-    private volatile bool _isSocketProcessing = false;
+    //private volatile bool _isSocketProcessing = false;
+
 
     private async void OnRunPeriodicTagPublisherSocketTasksEvent(object sender, ElapsedEventArgs e)
     {
+        // Constants for configuration
+        const int TimeoutMilliseconds = 5000;
+        const int BatchSize = 100;
+        const int MaxQueueSize = 1000;
+        const int ReconnectDelayMs = 30000; // Wait 30 seconds before attempting reconnect
+
+        // Don't process if another operation is in progress
         if (_isSocketProcessing)
         {
-            _logger.LogWarning("Socket publisher still processing previous batch, skipping this iteration");
+            _logger.LogDebug("Socket publisher still processing previous batch");
+            return;
+        }
+
+        // Try to acquire processing lock
+        if (!await TrySetSocketProcessingFlagAsync(TimeoutMilliseconds))
+        {
+            _logger.LogWarning("Timeout while waiting to acquire socket processing lock");
             return;
         }
 
         try
         {
-            _isSocketProcessing = true;
             _timerTagPublisherSocket.Enabled = false;
-            if (string.Equals("1", _standaloneConfigDTO?.socketServer, StringComparison.OrdinalIgnoreCase))
+
+            // Verify socket server is enabled in configuration
+            if (!string.Equals("1", _standaloneConfigDTO?.socketServer, StringComparison.OrdinalIgnoreCase))
             {
-                if (_socketServer == null || !_socketServer.IsListening)
+                return;
+            }
+
+            // Check server health and handle reconnection if needed
+            if (!IsSocketServerHealthy())
+            {
+                // Only attempt restart if we have messages to send or connected clients
+                if (_messageQueueTagSmartReaderTagEventSocketServer.Count > 0 ||
+                    (_socketServer?.GetClients()?.Any() ?? false))
                 {
-                    _logger.LogWarning("Socket server not available, attempting restart...");
-                    try {
-                        StartTcpSocketServer();
-                        if (_socketServer == null || !_socketServer.IsListening)
+                    // Use static timestamp to track last reconnect attempt
+                    if (!_lastReconnectAttempt.HasValue ||
+                        (DateTime.UtcNow - _lastReconnectAttempt.Value).TotalMilliseconds > ReconnectDelayMs)
+                    {
+                        _logger.LogInformation("Socket server requires restart, attempting reconnection...");
+                        _lastReconnectAttempt = DateTime.UtcNow;
+
+                        if (!TryRestartSocketServer())
                         {
-                            _logger.LogError("Failed to restart socket server");
-                            // Drop older messages if queue is too large
-                            while (_messageQueueTagSmartReaderTagEventSocketServer.Count > 1000)
-                            {
-                                if (_messageQueueTagSmartReaderTagEventSocketServer.TryDequeue(out var _))
-                                {
-                                    _logger.LogWarning("Dropped oldest message from socket queue due to server unavailability");
-                                }
-                            }
+                            HandleQueueOverflow();
                             return;
                         }
                     }
-                    catch (Exception ex) {
-                        _logger.LogError(ex, "Error restarting socket server");
-                        // Drop older messages if queue is too large
-                        while (_messageQueueTagSmartReaderTagEventSocketServer.Count > 1000)
-                        {
-                            if (_messageQueueTagSmartReaderTagEventSocketServer.TryDequeue(out var _))
-                            {
-                                _logger.LogWarning("Dropped oldest message from socket queue due to server unavailability");
-                            }
-                        }
+                    else
+                    {
+                        _logger.LogDebug("Waiting for reconnect delay before next attempt");
                         return;
                     }
                 }
-
-                // Process in smaller batches to avoid overwhelming the socket
-                const int batchSize = 100;
-                int processedCount = 0;
-
-                while (processedCount < batchSize && _messageQueueTagSmartReaderTagEventSocketServer.TryDequeue(out var smartReaderTagReadEvent))
+                else
                 {
-                    try
+                    // No messages or clients, no need to restart
+                    return;
+                }
+            }
+
+            // Process message batch
+            int processedCount = 0;
+            while (processedCount < BatchSize &&
+                   _messageQueueTagSmartReaderTagEventSocketServer.TryDequeue(out var message))
+            {
+                try
+                {
+                    // Only process if we have connected clients
+                    if (_socketServer?.GetClients()?.Any() ?? false)
                     {
-                        await ProcessSocketJsonTagEventDataAsync(smartReaderTagReadEvent);
+                        await ProcessSocketJsonTagEventDataAsync(message);
                         processedCount++;
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        _logger.LogError(ex, "Error processing socket message, requeueing");
-                        // Requeue failed message
-                        if (_messageQueueTagSmartReaderTagEventSocketServer.Count < 1000)
+                        // No clients connected, put message back in queue
+                        if (_messageQueueTagSmartReaderTagEventSocketServer.Count < MaxQueueSize)
                         {
-                            _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(smartReaderTagReadEvent);
+                            _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(message);
                         }
-                        else
-                        {
-                            _logger.LogError("Socket queue full, dropping message");
-                        }
+                        break;
                     }
                 }
-
-                if (processedCount > 0)
+                catch (Exception ex)
                 {
-                    _logger.LogInformation($"Processed {processedCount} socket messages");
+                    _logger.LogError(ex, "Error processing socket message");
+                    if (_messageQueueTagSmartReaderTagEventSocketServer.Count < MaxQueueSize)
+                    {
+                        _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(message);
+                    }
+                    else
+                    {
+                        _logger.LogError("Socket queue full, dropping message");
+                    }
                 }
-
             }
-            
+
+            if (processedCount > 0)
+            {
+                _logger.LogInformation($"Processed {processedCount} socket messages");
+            }
         }
         catch (Exception ex)
         {
@@ -5648,6 +5860,54 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             _isSocketProcessing = false;
             _timerTagPublisherSocket.Enabled = true;
+        }
+    }
+
+    // Add this field to track reconnection attempts
+    private static DateTime? _lastReconnectAttempt;
+    private async Task<bool> TrySetSocketProcessingFlagAsync(int timeoutMilliseconds)
+    {
+        var start = DateTime.UtcNow;
+        while (_isSocketProcessing)
+        {
+            if ((DateTime.UtcNow - start).TotalMilliseconds > timeoutMilliseconds)
+            {
+                return false; // Timeout reached
+            }
+            await Task.Delay(100); // Poll every 100ms
+        }
+        _isSocketProcessing = true;
+        return true;
+    }
+
+    private bool TryRestartSocketServer()
+    {
+        try
+        {
+            _logger.LogWarning("Trying to restart the Socket Server.");
+            StartTcpSocketServer();
+            if (_socketServer == null || !_socketServer.IsListening)
+            {
+                _logger.LogError("Failed to restart socket server");
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error restarting socket server");
+            return false;
+        }
+    }
+
+    private void HandleQueueOverflow()
+    {
+        while (_messageQueueTagSmartReaderTagEventSocketServer.Count > 1000)
+        {
+            if (_messageQueueTagSmartReaderTagEventSocketServer.TryDequeue(out var _))
+            {
+                _logger.LogWarning("Dropped oldest message from socket queue due to server unavailability");
+            }
         }
     }
 
@@ -6487,7 +6747,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         _logger.LogError(ex,
                             "Unexpected error on ProcessUdpDataTagEventDataAsync for UDP " + udpClient.Key + " " +
                             ex.Message);
-                        ProcessGpoErrorPortAsync();
+                        await ProcessGpoErrorPortAsync();
                         //_messageQueueTagSmartReaderTagEventSocketServerRetry.Enqueue(smartReaderTagEventData);
                     }
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
@@ -6496,7 +6756,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error on ProcessUdpDataTagEventDataAsync for UDP " + ex.Message);
-                ProcessGpoErrorPortAsync();
+                await ProcessGpoErrorPortAsync();
             }
             //foreach (KeyValuePair<string, int> udpClient in _udpClients)
             //{
@@ -6535,7 +6795,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             //    _logger.LogError(exception, "Unexpected error on ProcessSocketJsonTagEventDataAsync");
             //}
             _logger.LogError(ex, "Unexpected error on ProcessUdpDataTagEventDataAsync");
-            ProcessGpoErrorPortAsync();
+            await ProcessGpoErrorPortAsync();
             //_logger.LogInformation("Unexpected error on ProcessUdpDataTagEventDataAsync " + ex.Message, SeverityType.Error);
         }
 #pragma warning restore CS8600, CS8602, CS8604 // Dereference of a possibly null reference.    
@@ -6647,7 +6907,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
 
             _logger.LogError(ex, "Unexpected error on ProcessTagEventData " + ex.Message);
-            ProcessGpoErrorPortAsync();
+            await ProcessGpoErrorPortAsync();
         }
 
         try
@@ -6658,53 +6918,136 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             Console.WriteLine("Unexpected error on ProcessTagEventData restarting _timerStopwatch" + ex.Message);
             _logger.LogError(ex, "Unexpected error on ProcessTagEventData restarting _timerStopwatch" + ex.Message);
-            ProcessGpoErrorPortAsync();
+            await ProcessGpoErrorPortAsync();
         }
 #pragma warning restore CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.
     }
 
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
     private async Task ProcessSocketJsonTagEventDataAsync(JObject smartReaderTagEventData)
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
     {
+        // Validate input early to fail fast
+        if (smartReaderTagEventData == null)
+        {
+            _logger.LogWarning("Received null event data for socket processing");
+            return;
+        }
+
+        // Configure timeouts and retry parameters
+        const int SendTimeoutMs = 5000; // 5 second timeout for sends
+        const int MaxRetries = 3;
+        const int RetryDelayMs = 1000; // 1 second between retries
+
         try
         {
-            if (smartReaderTagEventData == null)
-                return;
-
-            var line = ExtractLineFromJsonObject(smartReaderTagEventData);
-            if (_socketServer != null)
+            // Extract data once to avoid repeated processing
+            var line = ExtractLineFromJsonObject(smartReaderTagEventData, _standaloneConfigDTO, _logger);
+            if (string.IsNullOrEmpty(line))
             {
-                var clients = _socketServer.GetClients();
-                if (clients != null)
-                    //string jsonParam = JsonConvert.SerializeObject(smartReaderTagEventData);
-                    foreach (var client in clients)
-                        try
+                _logger.LogWarning("Empty line extracted from event data");
+                return;
+            }
+            
+            byte[] messageBytes = Encoding.UTF8.GetBytes(line);
+
+            // Validate socket server state
+            if (_socketServer == null || !_socketServer.IsListening)
+            {
+                _logger.LogWarning("Socket server not available, attempting restart...");
+                try {
+                    TryRestartSocketServer();
+                    if (_socketServer == null || !_socketServer.IsListening)
+                    {
+                        _logger.LogError("Failed to restart socket server");
+                        // Requeue message rather than dropping it
+                        if (_messageQueueTagSmartReaderTagEventSocketServer.Count < 1000)
                         {
-                            _socketServer.Send(client, Encoding.UTF8.GetBytes(line));
-                            //_ = ProcessGpoErrorPortRecoveryAsync();
+                            _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(smartReaderTagEventData);
+                            _logger.LogInformation("Requeued message due to server unavailability");
                         }
-                        catch (Exception ex)
+                        return;
+                    }
+                }
+                catch (Exception ex) {
+                    _logger.LogError(ex, "Error restarting socket server");
+                    return;
+                }
+            }
+
+            // Get current clients
+            var clients = _socketServer.GetClients();
+            if (clients == null || !clients.Any())
+            {
+                _logger.LogInformation("No connected clients to receive message");
+                return;
+            }
+
+            // Process each client with retries
+            foreach (var client in clients)
+            {
+                int retryCount = 0;
+                bool sendSuccess = false;
+
+                while (!sendSuccess && retryCount < MaxRetries)
+                {
+                    try
+                    {
+                        using var cts = new CancellationTokenSource(SendTimeoutMs);
+                        
+                        // Wrap the sync Send in a task to support timeout
+                        await Task.Run(() => {
+                            _socketServer.Send(client, messageBytes);
+                        }, cts.Token);
+                        
+                        sendSuccess = true;
+                        _logger.LogDebug($"Successfully sent message to client after {retryCount} retries");
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        _logger.LogWarning($"Send operation timed out for client after {SendTimeoutMs}ms");
+                        retryCount++;
+                        if (retryCount < MaxRetries)
                         {
-                            _logger.LogError(ex,
-                                "Unexpected error on ProcessSocketJsonTagEventDataAsync " + ex.Message);
-                            ProcessGpoErrorPortAsync();
-                            //_messageQueueTagSmartReaderTagEventSocketServerRetry.Enqueue(smartReaderTagEventData);
+                            await Task.Delay(RetryDelayMs);
                         }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, $"Error sending to client (attempt {retryCount + 1}/{MaxRetries})");
+                        retryCount++;
+                        if (retryCount < MaxRetries)
+                        {
+                            await Task.Delay(RetryDelayMs);
+                        }
+                    }
+                }
+
+                if (!sendSuccess)
+                {
+                    _logger.LogError($"Failed to send message to client after {MaxRetries} attempts");
+                    await ProcessGpoErrorPortAsync();
+                    
+                    // Consider removing failed client
+                    try {
+                        _socketServer.DisconnectClient(client);
+                        _logger.LogInformation("Disconnected failed client");
+                    }
+                    catch (Exception ex) {
+                        _logger.LogError(ex, "Error disconnecting failed client");
+                    }
+                }
             }
         }
         catch (Exception ex)
         {
-            //try
-            //{
-            //    _messageQueueTagSmartReaderTagEventSocketServerRetry.Enqueue(smartReaderTagEventData);
-            //}
-            //catch (Exception)
-            //{
-            //    _logger.LogError(exception, "Unexpected error on ProcessSocketJsonTagEventDataAsync");
-            //}
-            _logger.LogError(ex, "Unexpected error on ProcessSocketJsonTagEventDataAsync " + ex.Message);
-            ProcessGpoErrorPortAsync();
+            _logger.LogError(ex, "Fatal error in socket processing");
+            await ProcessGpoErrorPortAsync();
+            
+            // Requeue message if possible
+            if (_messageQueueTagSmartReaderTagEventSocketServer.Count < 1000)
+            {
+                _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(smartReaderTagEventData);
+                _logger.LogInformation("Requeued message after processing error");
+            }
         }
     }
 
@@ -6717,7 +7060,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             if (smartReaderTagEventData == null)
                 return;
 
-            var line = ExtractLineFromJsonObject(smartReaderTagEventData);
+            var line = ExtractLineFromJsonObject(smartReaderTagEventData, _standaloneConfigDTO, _logger);
             try
             {
                 // If directory does not exist, don't even try   
@@ -6737,13 +7080,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 else
                 {
                     _logger.LogWarning("### Publisher USB Drive >>> path " + R700UsbDrivePath + " not found.");
-                    ProcessGpoErrorPortAsync();
+                    await ProcessGpoErrorPortAsync();
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error on ProcessUsbDriveJsonTagEventDataAsync " + ex.Message);
-                ProcessGpoErrorPortAsync();
+                await ProcessGpoErrorPortAsync();
 
                 //_messageQueueTagSmartReaderTagEventSocketServerRetry.Enqueue(smartReaderTagEventData);
             }
@@ -6760,1015 +7103,681 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             //}
             _logger.LogError(ex, "Unexpected error on ProcessUsbDriveJsonTagEventDataAsync " + ex.Message,
                 SeverityType.Error);
-            ProcessGpoErrorPortAsync();
+            await ProcessGpoErrorPortAsync();
         }
     }
 
-    private static string ExtractLineFromJsonObject(JObject smartReaderTagEventData)
+
+    private static string ExtractLineFromJsonObject(
+    JObject smartReaderTagEventData,
+    StandaloneConfigDTO config,
+    Microsoft.Extensions.Logging.ILogger logger)
     {
-#pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.
+        if (smartReaderTagEventData == null)
+            throw new ArgumentNullException(nameof(smartReaderTagEventData));
+
+        if (config == null)
+            throw new ArgumentNullException(nameof(config));
+
         var sb = new StringBuilder();
-        var fieldDelim = ",";
-        var lineEnd = "\r\n";
-        if (string.Equals("0", _standaloneConfigDTO.fieldDelim, StringComparison.OrdinalIgnoreCase)) fieldDelim = "";
-        if (string.Equals("1", _standaloneConfigDTO.fieldDelim, StringComparison.OrdinalIgnoreCase)) fieldDelim = ",";
-        if (string.Equals("2", _standaloneConfigDTO.fieldDelim, StringComparison.OrdinalIgnoreCase)) fieldDelim = " ";
-        if (string.Equals("3", _standaloneConfigDTO.fieldDelim, StringComparison.OrdinalIgnoreCase)) fieldDelim = "\t";
-        if (string.Equals("4", _standaloneConfigDTO.fieldDelim, StringComparison.OrdinalIgnoreCase)) fieldDelim = ";";
+        string fieldDelim = GetFieldDelimiter(config.fieldDelim);
+        string lineEnd = GetLineEnd(config.lineEnd);
 
-
-        if (string.Equals("0", _standaloneConfigDTO.lineEnd, StringComparison.OrdinalIgnoreCase)) lineEnd = "";
-        if (string.Equals("1", _standaloneConfigDTO.lineEnd, StringComparison.OrdinalIgnoreCase)) lineEnd = "\n";
-        if (string.Equals("2", _standaloneConfigDTO.lineEnd, StringComparison.OrdinalIgnoreCase)) lineEnd = "\r\n";
-        if (string.Equals("3", _standaloneConfigDTO.lineEnd, StringComparison.OrdinalIgnoreCase)) lineEnd = "\r";
-
-        if (smartReaderTagEventData.ContainsKey("tag_reads"))
+        try
         {
-            var receivedBarcode = "";
+            if (!smartReaderTagEventData.ContainsKey("tag_reads")) return string.Empty;
 
-            //var tagReads = smartReaderTagEventData.GetValue("tag_reads").FirstOrDefault();
-            foreach (var tagReads in smartReaderTagEventData.GetValue("tag_reads").ToList())
+            foreach (var tagRead in smartReaderTagEventData["tag_reads"]?.ToList() ?? new List<JToken>())
             {
-                var antennaPort = (string)tagReads["antennaPort"];
-                if (string.Equals("1", _standaloneConfigDTO.includeAntennaPort, StringComparison.OrdinalIgnoreCase))
+                AppendField(sb, tagRead["antennaPort"], config.includeAntennaPort, fieldDelim);
+                AppendField(sb, tagRead["antennaZone"], config.includeAntennaZone, fieldDelim);
+                AppendField(sb, tagRead["epc"], "1", fieldDelim); // Always include EPC if present
+                AppendField(sb, tagRead["firstSeenTimestamp"], config.includeFirstSeenTimestamp, fieldDelim);
+                AppendField(sb, tagRead["peakRssi"], config.includePeakRssi, fieldDelim);
+                AppendField(sb, tagRead["tid"], config.includeTid, fieldDelim);
+                AppendField(sb, tagRead["rfPhase"], config.includeRFPhaseAngle, fieldDelim);
+                AppendField(sb, tagRead["rfDoppler"], config.includeRFDopplerFrequency, fieldDelim);
+                AppendField(sb, tagRead["frequency"], config.includeRFChannelIndex, fieldDelim);
+
+                if (string.Equals("1", config.includeGpiEvent, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (!string.IsNullOrEmpty(antennaPort))
-                    {
-                        sb.Append(antennaPort);
-                        sb.Append(fieldDelim);
-                    }
-                    else
-                    {
-                        sb.Append("");
-                        sb.Append(fieldDelim);
-                    }
+                    AppendGpiStatus(sb, tagRead, fieldDelim);
                 }
 
+                AppendSgtinFields(sb, tagRead, fieldDelim);
+            }
 
-                var antennaZone = (string)tagReads["antennaZone"];
-                if (string.Equals("1", _standaloneConfigDTO.includeAntennaZone, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!string.IsNullOrEmpty(antennaZone))
-                    {
-                        sb.Append(antennaZone);
-                        sb.Append(fieldDelim);
-                    }
-                    else
-                    {
-                        sb.Append("");
-                        sb.Append(fieldDelim);
-                    }
-                }
+            AppendField(sb, smartReaderTagEventData["readerName"], "1", fieldDelim);
+            AppendField(sb, smartReaderTagEventData["site"], "1", fieldDelim);
+            AppendCustomFields(sb, smartReaderTagEventData, config, fieldDelim);
+            AppendBarcode(sb, smartReaderTagEventData, config, fieldDelim);
 
-                var epc = (string)tagReads["epc"];
-                if (!string.IsNullOrEmpty(epc))
-                {
-                    sb.Append(epc);
-                    sb.Append(fieldDelim);
-                }
+            sb.Append(lineEnd);
+        }
+        catch (Exception ex)
+        {
+            logger?.LogError(ex, "Error processing JSON object for line extraction.");
+            throw;
+        }
 
-                var firstSeenTimestamp = (string)tagReads["firstSeenTimestamp"];
-                if (string.Equals("1", _standaloneConfigDTO.includeFirstSeenTimestamp,
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!string.IsNullOrEmpty(firstSeenTimestamp))
-                    {
-                        sb.Append(firstSeenTimestamp);
-                        sb.Append(fieldDelim);
-                    }
-                    else
-                    {
-                        sb.Append("");
-                        sb.Append(fieldDelim);
-                    }
-                }
-
-                var peakRssi = (string)tagReads["peakRssi"];
-                if (string.Equals("1", _standaloneConfigDTO.includePeakRssi, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!string.IsNullOrEmpty(peakRssi))
-                    {
-                        sb.Append(peakRssi);
-                        sb.Append(fieldDelim);
-                    }
-                    else
-                    {
-                        sb.Append("");
-                        sb.Append(fieldDelim);
-                    }
-                }
+        return sb.ToString().Replace(fieldDelim + lineEnd, lineEnd);
+    }
 
 
-                var tid = (string)tagReads["tid"];
-                if (string.Equals("1", _standaloneConfigDTO.includeTid, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!string.IsNullOrEmpty(tid))
-                    {
-                        sb.Append(tid);
-                        sb.Append(fieldDelim);
-                    }
-                    else
-                    {
-                        sb.Append("");
-                        sb.Append(fieldDelim);
-                    }
-                }
+    private static string GetFieldDelimiter(string fieldDelimConfig)
+    {
+        return fieldDelimConfig switch
+        {
+            "1" => ",",
+            "2" => " ",
+            "3" => "\t",
+            "4" => ";",
+            _ => ""
+        };
+    }
 
+    private static string GetLineEnd(string lineEndConfig)
+    {
+        return lineEndConfig switch
+        {
+            "1" => "\n",
+            "2" => "\r\n",
+            "3" => "\r",
+            _ => ""
+        };
+    }
 
-                var rfPhase = (string)tagReads["rfPhase"];
-                if (string.Equals("1", _standaloneConfigDTO.includeRFPhaseAngle, StringComparison.OrdinalIgnoreCase) &&
-                    !string.IsNullOrEmpty(rfPhase))
-                {
-                    sb.Append(rfPhase);
-                    sb.Append(fieldDelim);
-                }
+    private static void AppendField(StringBuilder sb, JToken field, string condition, string fieldDelim)
+    {
+        if (string.Equals("1", condition, StringComparison.OrdinalIgnoreCase))
+        {
+            sb.Append(field?.ToString() ?? string.Empty);
+            sb.Append(fieldDelim);
+        }
+    }
 
-                var rfDoppler = (string)tagReads["rfDoppler"];
-                if (string.Equals("1", _standaloneConfigDTO.includeRFDopplerFrequency,
-                        StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(rfDoppler))
-                {
-                    sb.Append(rfDoppler);
-                    sb.Append(fieldDelim);
-                }
+    private static void AppendGpiStatus(StringBuilder sb, JToken tagRead, string fieldDelim)
+    {
+        for (int i = 1; i <= 4; i++)
+        {
+            var gpiStatus = tagRead?[$"gpi{i}Status"]?.ToString();
+            sb.Append(string.IsNullOrEmpty(gpiStatus) ? "0" : gpiStatus);
+            sb.Append(fieldDelim);
+        }
+    }
 
-                var rfChannel = (string)tagReads["frequency"];
-                if (string.Equals("1", _standaloneConfigDTO.includeRFChannelIndex,
-                        StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(rfChannel))
-                {
-                    sb.Append(rfChannel);
-                    sb.Append(fieldDelim);
-                }
+    private static void AppendSgtinFields(StringBuilder sb, JToken tagRead, string fieldDelim)
+    {
+        if (string.Equals("1", _standaloneConfigDTO?.parseSgtinEnabled, StringComparison.OrdinalIgnoreCase))
+        {
+            AppendField(sb, tagRead["tagDataKeyName"], _standaloneConfigDTO?.parseSgtinIncludeKeyType, fieldDelim);
+            AppendField(sb, tagRead["tagDataKey"], "1", fieldDelim); // Always include tagDataKey
+            AppendField(sb, tagRead["tagDataSerial"], _standaloneConfigDTO?.parseSgtinIncludeSerial, fieldDelim);
+            AppendField(sb, tagRead["tagDataPureIdentity"], _standaloneConfigDTO?.parseSgtinIncludePureIdentity, fieldDelim);
+        }
+    }
 
-
-                if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent, StringComparison.OrdinalIgnoreCase))
-                {
-                    var gpi1Status = (string)tagReads["gpi1Status"];
-                    if (!string.IsNullOrEmpty(gpi1Status))
-                    {
-                        sb.Append(gpi1Status);
-                        sb.Append(fieldDelim);
-                    }
-                    else
-                    {
-                        sb.Append("0");
-                        sb.Append(fieldDelim);
-                    }
-
-                    var gpi2Status = (string)tagReads["gpi2Status"];
-                    if (!string.IsNullOrEmpty(gpi2Status))
-                    {
-                        sb.Append(gpi2Status);
-                        sb.Append(fieldDelim);
-                    }
-                    else
-                    {
-                        sb.Append("0");
-                        sb.Append(fieldDelim);
-                    }
-
-                    var gpi3Status = (string)tagReads["gpi3Status"];
-                    if (!string.IsNullOrEmpty(gpi3Status))
-                    {
-                        sb.Append(gpi3Status);
-                        sb.Append(fieldDelim);
-                    }
-                    else
-                    {
-                        sb.Append("0");
-                        sb.Append(fieldDelim);
-                    }
-
-                    var gpi4Status = (string)tagReads["gpi4Status"];
-                    if (!string.IsNullOrEmpty(gpi4Status))
-                    {
-                        sb.Append(gpi4Status);
-                        sb.Append(fieldDelim);
-                    }
-                    else
-                    {
-                        sb.Append("0");
-                        sb.Append(fieldDelim);
-                    }
-                }
-
-                var tagDataKeyName = (string)tagReads["tagDataKeyName"];
-                if (string.Equals("1", _standaloneConfigDTO.parseSgtinEnabled, StringComparison.OrdinalIgnoreCase) &&
-                    !string.IsNullOrEmpty(tagDataKeyName))
-                    if (string.Equals("1", _standaloneConfigDTO.parseSgtinIncludeKeyType,
-                            StringComparison.OrdinalIgnoreCase))
-                    {
-                        sb.Append(tagDataKeyName);
-                        sb.Append(fieldDelim);
-                    }
-
-                var tagDataKey = (string)tagReads["tagDataKey"];
-                if (string.Equals("1", _standaloneConfigDTO.parseSgtinEnabled, StringComparison.OrdinalIgnoreCase) &&
-                    !string.IsNullOrEmpty(tagDataKey))
-                {
-                    sb.Append(tagDataKey);
-                    sb.Append(fieldDelim);
-                }
-
-                var tagDataSerial = (string)tagReads["tagDataSerial"];
-                if (string.Equals("1", _standaloneConfigDTO.parseSgtinEnabled, StringComparison.OrdinalIgnoreCase) &&
-                    !string.IsNullOrEmpty(tagDataSerial))
-                    if (string.Equals("1", _standaloneConfigDTO.parseSgtinIncludeSerial,
-                            StringComparison.OrdinalIgnoreCase))
-                    {
-                        sb.Append(tagDataSerial);
-                        sb.Append(fieldDelim);
-                    }
-
-                var tagDataPureIdentity = (string)tagReads["tagDataPureIdentity"];
-                if (string.Equals("1", _standaloneConfigDTO.parseSgtinEnabled, StringComparison.OrdinalIgnoreCase) &&
-                    !string.IsNullOrEmpty(tagDataPureIdentity))
-                    if (string.Equals("1", _standaloneConfigDTO.parseSgtinIncludePureIdentity,
-                            StringComparison.OrdinalIgnoreCase))
-                    {
-                        sb.Append(tagDataPureIdentity);
-                        sb.Append(fieldDelim);
-                    }
-
-                var readerName = (string)smartReaderTagEventData["readerName"];
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.readerName))
-                {
-                    if (!string.IsNullOrEmpty(readerName))
-                    {
-                        sb.Append(readerName);
-                        sb.Append(fieldDelim);
-                    }
-                    else
-                    {
-                        sb.Append("");
-                        sb.Append(fieldDelim);
-                    }
-                }
-
-                var site = (string)smartReaderTagEventData["site"];
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.site))
-                {
-                    if (string.IsNullOrEmpty(site))
-                    {
-                        sb.Append(site);
-                        sb.Append(fieldDelim);
-                    }
-                    else
-                    {
-                        sb.Append("");
-                        sb.Append(fieldDelim);
-                    }
-                }
-
-                if (string.Equals("1", _standaloneConfigDTO.customField1Enabled, StringComparison.OrdinalIgnoreCase) &&
-                    !string.IsNullOrEmpty(_standaloneConfigDTO.customField1Name))
-                {
-                    var customField1Value = (string)smartReaderTagEventData[_standaloneConfigDTO.customField1Name];
-                    if (!string.IsNullOrEmpty(customField1Value))
-                    {
-                        sb.Append(customField1Value);
-                        sb.Append(fieldDelim);
-                    }
-                }
-
-
-                if (string.Equals("1", _standaloneConfigDTO.customField2Enabled, StringComparison.OrdinalIgnoreCase) &&
-                    !string.IsNullOrEmpty(_standaloneConfigDTO.customField2Name))
-                {
-                    var customField2Value = (string)smartReaderTagEventData[_standaloneConfigDTO.customField2Name];
-                    if (!string.IsNullOrEmpty(customField2Value))
-                    {
-                        sb.Append(customField2Value);
-                        sb.Append(fieldDelim);
-                    }
-                }
-
-                if (string.Equals("1", _standaloneConfigDTO.customField3Enabled, StringComparison.OrdinalIgnoreCase) &&
-                    !string.IsNullOrEmpty(_standaloneConfigDTO.customField3Name))
-                {
-                    var customField3Value = (string)smartReaderTagEventData[_standaloneConfigDTO.customField3Name];
-                    if (!string.IsNullOrEmpty(customField3Value))
-                    {
-                        sb.Append(customField3Value);
-                        sb.Append(fieldDelim);
-                    }
-                }
-
-                if (string.Equals("1", _standaloneConfigDTO.customField4Enabled, StringComparison.OrdinalIgnoreCase) &&
-                    !string.IsNullOrEmpty(_standaloneConfigDTO.customField4Name))
-                {
-                    var customField4Value = (string)smartReaderTagEventData[_standaloneConfigDTO.customField4Name];
-                    if (!string.IsNullOrEmpty(customField4Value))
-                    {
-                        sb.Append(customField4Value);
-                        sb.Append(fieldDelim);
-                    }
-                }
-
-                try
-                {
-                    if (smartReaderTagEventData.ContainsKey("barcode"))
-                        receivedBarcode = (string)smartReaderTagEventData["barcode"];
-                    else if (((JObject)tagReads).ContainsKey("barcode"))
-                        receivedBarcode = ((JObject)tagReads)["barcode"].Value<string>();
-                    if ((string.Equals("1", _standaloneConfigDTO.enableBarcodeSerial,
-                             StringComparison.OrdinalIgnoreCase)
-                         || string.Equals("1", _standaloneConfigDTO.enableBarcodeHid,
-                             StringComparison.OrdinalIgnoreCase)
-                         || string.Equals("1", _standaloneConfigDTO.enableBarcodeTcp,
-                             StringComparison.OrdinalIgnoreCase)))
-                    {
-
-                        if (!string.IsNullOrEmpty(receivedBarcode))
-                        {
-                            sb.Append(receivedBarcode);
-                            sb.Append(fieldDelim);
-                        }
-                        else
-                        {
-                            sb.Append("");
-                            sb.Append(fieldDelim);
-                        }
-                    }
-                }
-                catch (Exception)
-                {
-                }
-
-                sb.Append(lineEnd);
+    private static void AppendCustomFields(StringBuilder sb, JObject data, StandaloneConfigDTO config, string fieldDelim)
+    {
+        for (int i = 1; i <= 4; i++)
+        {
+            var customFieldEnabled = (string)data[$"customField{i}Enabled"];
+            var customFieldName = (string)data[$"customField{i}Name"];
+            if (string.Equals("1", customFieldEnabled, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(customFieldName))
+            {
+                AppendField(sb, data[customFieldName], "1", fieldDelim);
             }
         }
-
-        var line = sb.ToString();
-        line = line.Replace(fieldDelim + lineEnd, lineEnd);
-        return line;
-#pragma warning restore CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.
     }
+
+    private static void AppendBarcode(StringBuilder sb, JObject data, StandaloneConfigDTO config, string fieldDelim)
+    {
+        var barcode = data["barcode"]?.ToString() ?? data.SelectToken("tag_reads[0].barcode")?.ToString();
+        if (!string.IsNullOrEmpty(barcode) && (
+            string.Equals("1", config?.enableBarcodeSerial, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals("1", config?.enableBarcodeHid, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals("1", config?.enableBarcodeTcp, StringComparison.OrdinalIgnoreCase)))
+        {
+            sb.Append(barcode);
+            sb.Append(fieldDelim);
+        }
+    }
+
 
     private async void OnRunPeriodicTasksJobManagerEvent(object sender, ElapsedEventArgs e)
     {
+        DisablePeriodicTasks();
+
+        try
+        {
+            if (!ValidateConfig()) return;
+
+            await HandleHttpPostTimeoutAsync();
+            await RefreshBearerTokenAsync();
+            await UpdateReaderSerialAsync();
+            await UpdateLicenseAndConfigAsync();
+            await UpdateReaderStatusAsync();
+            await ProcessReaderCommandsAsync();
+            await SendHeartbeatAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Critical error in OnRunPeriodicTasksJobManagerEvent: {Message}", ex.Message);
+        }
+        finally
+        {
+            EnablePeriodicTasks();
+        }
+    }
+
+    private void DisablePeriodicTasks()
+    {
         PeriodicTasksTimerInventoryData.Enabled = false;
         PeriodicTasksTimerInventoryData.Stop();
-        //await periodicJobTaskLock.WaitAsync();
-        //if (Monitor.TryEnter(_timerPeriodicTasksJobManagerLock))
-        //{
+    }
 
-
-        try
-        {
-            if (_standaloneConfigDTO != null
-                && !string.IsNullOrEmpty(_standaloneConfigDTO.httpPostEnabled)
-                && string.Equals("1", _standaloneConfigDTO.httpPostEnabled, StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrEmpty(_standaloneConfigDTO.enablePlugin)
-                && string.Equals("0", _standaloneConfigDTO.enablePlugin, StringComparison.OrdinalIgnoreCase))
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                if (_messageQueueTagSmartReaderTagEventHttpPost.Count > 0 && _httpTimerStopwatch.Elapsed.Minutes > 10)
-                {
-                    _logger.LogInformation(
-                        "OnRunPeriodicTasksJobManagerEvent - Exit due to POST timeout (600 seconds) ");
-
-                    await Task.Delay(TimeSpan.FromSeconds(2));
-                    _logger.LogInformation("Restarting process - Exit due to POST timeout (600 seconds) ");
-                    // Restart the application by spawning a new process with the same arguments
-                    var process = Process.GetCurrentProcess();
-                    process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                    Process.Start(process.MainModule.FileName);
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-                    Environment.Exit(1);
-                }
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-        }
-        catch (Exception)
-        {
-        }
-
-        try
-        {
-            if (_standaloneConfigDTO != null && !string.IsNullOrEmpty(_standaloneConfigDTO.httpAuthenticationType)
-                                             && string.Equals("BEARER", _standaloneConfigDTO.httpAuthenticationType,
-                                                 StringComparison.OrdinalIgnoreCase)
-                                             && string.Equals("1",
-                                                 _standaloneConfigDTO.httpAuthenticationTokenApiEnabled,
-                                                 StringComparison.OrdinalIgnoreCase))
-                if (_stopwatchBearerToken.IsRunning && _stopwatchBearerToken.Elapsed.Minutes > 30)
-                {
-                    _stopwatchBearerToken.Stop();
-                    _stopwatchBearerToken.Reset();
-                    try
-                    {
-                        var updatedBearerToken = _httpUtil
-                            .GetBearerTokenUsingJsonBodyAsync(_standaloneConfigDTO.httpAuthenticationTokenApiUrl,
-                                _standaloneConfigDTO.httpAuthenticationTokenApiBody).Result;
-                        if (!string.IsNullOrEmpty(updatedBearerToken) && updatedBearerToken.Length > 10)
-                            _standaloneConfigDTO.httpAuthenticationTokenApiValue = updatedBearerToken;
-                    }
-                    catch (Exception)
-                    {
-                    }
-
-                    _stopwatchBearerToken.Start();
-                }
-            //var hasLock = false;
-            //try
-            //{
-            //    Monitor.TryEnter(_locker, ref hasLock);
-            //    if (!hasLock)
-            //    {
-            //        return;
-            //    }
-
-
-            try
-            {
-                var licenseToSet = "";
-                if (_plugins != null
-                       && _plugins.Count > 0
-                       && !_plugins.ContainsKey("LICENSE"))
-                {
-                    try
-                    {
-                        licenseToSet = GetLicenseFromDb().Result;
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-
-
-                try
-                {
-                    //
-                    var configModel = GetConfigDtoFromDb().Result;
-                    //if (configModel != null && File.Exists("/customer/config/config-changed.txt"))
-                    if (configModel != null)
-                        //File.Delete("/customer/config/config-changed.txt");
-                        //var configHelper = new IniConfigHelper();
-                        //var currentDtoFile = configHelper.LoadDtoFromFile();
-                        //Utils.CalculateMD5(configModel.Value);
-                        if (configModel != null)
-                        {
-                            //var compareLogic = new CompareLogic();
-                            //var newConfigDataToCompare = configHelper.CleanupUrlEncoding(configModel);
-                            var newConfigDataToCompare = StandaloneConfigDTO.CleanupUrlEncoding(configModel);
-                            if (newConfigDataToCompare != null)
-                                //ComparisonResult result = compareLogic.Compare(newConfigDataToCompare, currentDtoFile);
-                                //These will be different, write out the differences
-                                //if (!result.AreEqual)
-                                if (_standaloneConfigDTO != null &&
-                                    !_standaloneConfigDTO.Equals(newConfigDataToCompare))
-                                {
-                                    _logger.LogInformation("Saving new config: ");
-                                    _logger.LogInformation("Serial: " + configModel.readerSerial);
-                                    _logger.LogInformation("Name: " + configModel.readerName);
-                                    _logger.LogInformation("Antenna Ports: " + configModel.antennaPorts);
-                                    _logger.LogInformation("TxPower: " + configModel.transmitPower);
-                                    _logger.LogInformation("Reader Mode: " + configModel.readerMode);
-                                    _logger.LogInformation("Session: " + configModel.session);
-                                    if (!string.IsNullOrEmpty(newConfigDataToCompare.antennaPorts.Trim()))
-                                    {
-                                        //_standaloneConfigDTO = newConfigDataToCompare;
-                                        if (!string.IsNullOrEmpty(licenseToSet)) configModel.licenseKey = licenseToSet;
-
-                                        //SaveConfigDtoToDb(_standaloneConfigDTO);
-                                        ConfigFileHelper.SaveFile(configModel);
-
-                                        //configHelper.SaveDtoToFile(configModel);
-                                        LoadConfig();
-                                        //if (_standaloneConfigDTO != null)
-                                        //{
-                                        //    SaveConfigDtoToDb(_standaloneConfigDTO);
-                                        //}
-                                        //dbContext.ReaderConfigs.Remove(configModel);
-                                        //await dbContext.SaveChangesAsync();
-                                    }
-                                }
-                        }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogInformation(
-                        "[OnRunPeriodicTasksJobManagerEvent] READER_CONFIG - Unexpected error. " + ex.Message,
-                        SeverityType.Error);
-                }
-
-                using var scope = Services.CreateScope();
-                var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDb>();
-                try
-                {
-                    try
-                    {
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                        var currentTime = await _iotDeviceInterfaceClient.DeviceReaderTimeGetAsync();
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogInformation(
-                        "[OnRunPeriodicTasksJobManagerEvent] GET READER TIME - Unexpected error. ");
-                        // exits the app
-                        //await Task.Delay(TimeSpan.FromSeconds(2));
-                        //_logger.LogInformation("Restarting process");
-                        //// Restart the application by spawning a new process with the same arguments
-                        //var process = Process.GetCurrentProcess();
-                        //process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
-                        //Process.Start(process.MainModule.FileName);
-                        //Environment.Exit(1);
-                        //Environment.Exit(0);
-                    }
-
-
-                    var statusData = await GetReaderStatusAsync();
-
-                    var existingStatusData = await dbContext.ReaderStatus.FindAsync("READER_STATUS");
-                    if (existingStatusData != null)
-                    {
-                        existingStatusData.Value = JsonConvert.SerializeObject(statusData);
-                        dbContext.ReaderStatus.Update(existingStatusData);
-                        await dbContext.SaveChangesAsync();
-                    }
-                    else
-                    {
-                        var statusDatadb = new ReaderStatus();
-                        statusDatadb.Id = "READER_STATUS";
-                        statusDatadb.Value = JsonConvert.SerializeObject(statusData);
-                        dbContext.ReaderStatus.Add(statusDatadb);
-                        await dbContext.SaveChangesAsync();
-                    }
-
-                    try
-                    {
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                        if (string.Equals("1", _standaloneConfigDTO.isEnabled, StringComparison.OrdinalIgnoreCase) &&
-                            _isStarted)
-                            try
-                            {
-                                var pauseRequest = Path.Combine("/customer", "pause-request.txt");
-                                if (!File.Exists(pauseRequest))
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                                    if (statusData.Any() && string.Equals("STOPPED", statusData.FirstOrDefault().Status,
-                                            StringComparison.OrdinalIgnoreCase))
-                                        SaveStartCommandToDb();
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Unexpected error. " + ex.Message);
-                                //Console.WriteLine("Unexpected error. " + ex.Message);
-                            }
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-                    }
-                    catch (Exception exReaderStatus)
-                    {
-                        _logger.LogError(exReaderStatus,
-                            "Unexpected error checking inventory status on OnRunPeriodicTasksJobManagerEvent " +
-                            exReaderStatus.Message);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogInformation("Unexpected error. " + ex.Message, SeverityType.Error);
-                    try
-                    {
-                        if (!string.Equals("127.0.0.1", _readerAddress, StringComparison.OrdinalIgnoreCase) &&
-                            !string.Equals("localhost", _readerAddress, StringComparison.OrdinalIgnoreCase))
-                        {
-                            if (ex.Message.Contains("Timeout"))
-                            {
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                                if (_readerAddress.EndsWith(".local"))
-                                {
-                                    _readerAddress = "169.254.1.1";
-                                }
-                                else
-                                {
-                                    // Get the current build configuration
-                                    string buildConfiguration = "Release"; // Default to Debug if unable to determine
-#if DEBUG
-                                    buildConfiguration = "Debug";
-#endif
-                                    _readerAddress = _configuration.GetValue<string>("ReaderInfo:Address");
-                                    // Get the value based on the build configuration
-                                    if ("Debug".Equals(buildConfiguration))
-                                    {
-                                        _readerAddress = _configuration.GetValue<string>("ReaderInfo:DebugAddress") ?? _readerAddress;
-                                    }
-                                }
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-
-                                if (_iotDeviceInterfaceClient == null)
-                                {
-                                    if (_readerAddress != null)
-                                    {
-                                        _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
-                                    }
-                                    else
-                                    {
-                                        // Handle the null case, e.g., log an error, throw an exception, or use a default value
-                                        throw new InvalidOperationException("Reader address cannot be null when initializing the IoT reader interface.");
-                                    }
-                                }
-
-                            }
-                            else if (ex.Message.Contains("No route to host"))
-                            {
-                                // Get the current build configuration
-                                string buildConfiguration = "Release"; // Default to Debug if unable to determine
-#if DEBUG
-                                buildConfiguration = "Debug";
-#endif
-                                _readerAddress = _configuration.GetValue<string>("ReaderInfo:Address");
-                                // Get the value based on the build configuration
-                                if ("Debug".Equals(buildConfiguration))
-                                {
-                                    _readerAddress = _configuration.GetValue<string>("ReaderInfo:DebugAddress") ?? _readerAddress;
-                                }
-
-                                if (_iotDeviceInterfaceClient == null)
-                                {
-                                    if (_readerAddress != null)
-                                    {
-                                        _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
-                                    }
-                                    else
-                                    {
-                                        // Handle the null case, e.g., log an error, throw an exception, or use a default value
-                                        throw new InvalidOperationException("Reader address cannot be null when initializing the IoT reader interface.");
-                                    }
-                                }
-
-                            }
-                        }
-                        else if (ex.Message.Contains("Status: 404"))
-                        {
-                            // exits the app
-
-                            await Task.Delay(TimeSpan.FromSeconds(2));
-                            _logger.LogInformation("Restarting process - status 404");
-                            // Restart the application by spawning a new process with the same arguments
-                            var process = Process.GetCurrentProcess();
-                            process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                            Process.Start(process.MainModule.FileName);
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-                            Environment.Exit(1);
-                        }
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-
-                try
-                {
-                    // recupera comandos solicitados
-                    var commands = dbContext.ReaderCommands
-                        .OrderBy(f => f.Timestamp)
-                        .ToList();
-
-                    if (commands.Any())
-                        for (var i = 0; i < commands.Count; i++)
-                            try
-                            {
-                                if (string.Equals("START_INVENTORY", commands[i].Id,
-                                        StringComparison.OrdinalIgnoreCase))
-                                {
-                                    try
-                                    {
-                                        var pauseRequest = Path.Combine("/customer", "pause-request.txt");
-                                        if (File.Exists(pauseRequest)) File.Delete(pauseRequest);
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        _logger.LogError(ex, "Unexpected error. " + ex.Message);
-                                        //Console.WriteLine("Unexpected error. " + ex.Message);
-                                    }
-
-                                    await StartTasksAsync();
-                                    dbContext.ReaderCommands.Remove(commands[i]);
-                                    await dbContext.SaveChangesAsync();
-                                }
-
-                                if (string.Equals("STOP_INVENTORY", commands[i].Id, StringComparison.OrdinalIgnoreCase))
-                                {
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch)
-                                     && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
-                                     StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        _logger.LogInformation("Cleaning up batch EPC list.");
-                                        try
-                                        {
-                                            _smartReaderTagEventsListBatch.Clear();
-                                        }
-                                        catch (Exception)
-                                        {
-
-                                        }
-
-                                    }
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-                                    try
-                                    {
-                                        var pauseRequest = Path.Combine("/customer", "pause-request.txt");
-                                        File.WriteAllText(pauseRequest, "pause");
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        _logger.LogError(ex, "Unexpected error. " + ex.Message);
-                                        //Console.WriteLine("Unexpected error. " + ex.Message);
-                                    }
-
-                                    try
-                                    {
-                                        await StopPresetAsync();
-                                    }
-                                    catch (Exception)
-                                    {
-                                    }
-
-                                    await StopTasksAsync();
-                                    dbContext.ReaderCommands.Remove(commands[i]);
-                                    await dbContext.SaveChangesAsync();
-                                }
-
-                                if (string.Equals("START_PRESET", commands[i].Id, StringComparison.OrdinalIgnoreCase))
-                                {
-                                    try
-                                    {
-                                        var pauseRequest = Path.Combine("/customer", "pause-request.txt");
-                                        if (File.Exists(pauseRequest)) File.Delete(pauseRequest);
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        _logger.LogError(ex, "Unexpected error. " + ex.Message);
-                                        //Console.WriteLine("Unexpected error. " + ex.Message);
-                                    }
-
-                                    await StartPresetAsync();
-                                    dbContext.ReaderCommands.Remove(commands[i]);
-                                    await dbContext.SaveChangesAsync();
-                                }
-
-                                if (string.Equals("STOP_PRESET", commands[i].Id, StringComparison.OrdinalIgnoreCase))
-                                {
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch)
-                                     && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
-                                     StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        _logger.LogInformation("Cleaning up batch EPC list.");
-                                        try
-                                        {
-                                            _smartReaderTagEventsListBatch.Clear();
-                                            _smartReaderTagEventsListBatchOnUpdate.Clear();
-                                        }
-                                        catch (Exception)
-                                        {
-
-                                        }
-
-                                    }
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-                                    try
-                                    {
-                                        var pauseRequest = Path.Combine("/customer", "pause-request.txt");
-                                        File.WriteAllText(pauseRequest, "pause");
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        _logger.LogError(ex, "Unexpected error. " + ex.Message);
-                                        //Console.WriteLine("Unexpected error. " + ex.Message);
-                                    }
-
-                                    await StopPresetAsync();
-                                    dbContext.ReaderCommands.Remove(commands[i]);
-                                    await dbContext.SaveChangesAsync();
-                                }
-
-                                if (string.Equals("MODE_COMMAND", commands[i].Id, StringComparison.OrdinalIgnoreCase))
-                                {
-                                    try
-                                    {
-                                        ProcessMqttModeJsonCommand(commands[i].Value);
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        _logger.LogError(ex, "Unexpected error. " + ex.Message);
-
-                                    }
-                                    await StopPresetAsync();
-                                    dbContext.ReaderCommands.Remove(commands[i]);
-                                    await dbContext.SaveChangesAsync();
-                                }
-
-                                if (commands[i].Id.StartsWith("SET_GPO_"))
-                                {
-                                    var gpoPortParts = commands[i].Id.Split("_");
-                                    var gpoPort = int.Parse(gpoPortParts[2]);
-                                    var gpoPortStatus = bool.Parse(commands[i].Value);
-                                    await SetGpoPortAsync(gpoPort, gpoPortStatus);
-                                    dbContext.ReaderCommands.Remove(commands[i]);
-                                    await dbContext.SaveChangesAsync();
-                                }
-
-                                if (commands[i].Id.StartsWith("CLEAN_EPC_SOFTWARE_HISTORY_FILTERS"))
-                                {
-                                    try
-                                    {
-                                        _readEpcs.Clear();
-                                        _softwareFilterReadCountTimeoutDictionary.Clear();
-                                        _knowTagsForSoftwareFilterWindowSec.Clear();
-                                    }
-                                    catch (Exception)
-                                    {
-                                    }
-
-                                    dbContext.ReaderCommands.Remove(commands[i]);
-                                    await dbContext.SaveChangesAsync();
-                                }
-
-                                if (commands[i].Id.StartsWith("UPGRADE_SYSTEM_IMAGE"))
-                                {
-                                    try
-                                    {
-                                        string commandValue = commands[i].Value;
-                                        dbContext.ReaderCommands.Remove(commands[i]);
-                                        await dbContext.SaveChangesAsync();
-
-                                        var cmdPayload = JsonConvert.DeserializeObject<Dictionary<object, object>>(commandValue);
-
-                                        long maxRetries = 1;
-                                        long timeoutInMinutes = 3;
-                                        var remoteUrl = "";
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                                        if (cmdPayload.ContainsKey("remoteUrl"))
-                                        {
-                                            remoteUrl = (string)cmdPayload["remoteUrl"];
-                                        }
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-
-                                        if (cmdPayload.ContainsKey("timeoutInMinutes"))
-                                        {
-                                            timeoutInMinutes = (long)cmdPayload["timeoutInMinutes"];
-                                        }
-
-                                        if (cmdPayload.ContainsKey("maxRetries"))
-                                        {
-                                            maxRetries = (long)cmdPayload["maxRetries"];
-                                        }
-                                        UpgradeSystemImage(remoteUrl, timeoutInMinutes, maxRetries);
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        _logger.LogWarning(ex, "Unexpected error parsing upgrade command. " + ex.Message);
-                                    }
-
-
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Unexpected error. " + ex.Message);
-                            }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Unexpected error. " + ex.Message);
-                }
-
-                try
-                {
-                    var serialData = await GetSerialAsync();
-                    var serialFromReader = "";
-
-                    try
-                    {
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                        if (serialData.Any()
-                            && serialData.FirstOrDefault() != null
-                            && !string.IsNullOrEmpty(serialData.FirstOrDefault().SerialNumber))
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                            serialFromReader = serialData.FirstOrDefault().SerialNumber;
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-                        if (string.IsNullOrEmpty(DeviceId))
-                            if (!string.IsNullOrEmpty(serialFromReader))
-                                DeviceId = serialFromReader;
-
-                        if (string.IsNullOrEmpty(DeviceId))
-                            if (!string.IsNullOrEmpty(serialFromReader))
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                                DeviceIdMqtt = serialFromReader;
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-
-                        if (!string.IsNullOrEmpty(serialFromReader) && !string.Equals(DeviceId, serialFromReader,
-                                StringComparison.OrdinalIgnoreCase)) DeviceId = serialFromReader;
-
-                        try
-                        {
-                            if (!string.IsNullOrEmpty(DeviceId))
-                            {
-                                if (_standaloneConfigDTO != null
-                                    && (string.IsNullOrEmpty(_standaloneConfigDTO.readerSerial)
-                                        || !string.Equals(DeviceId, _standaloneConfigDTO.readerSerial)))
-                                {
-                                    _standaloneConfigDTO.readerSerial = DeviceId;
-
-                                    try
-                                    {
-                                        //var configHelper = new IniConfigHelper();
-                                        //configHelper.SaveDtoToFile(_standaloneConfigDTO);
-                                        SaveConfigDtoToDb(_standaloneConfigDTO);
-                                        _logger.LogInformation("Config updated with serial. " +
-                                                               _standaloneConfigDTO.readerSerial);
-                                    }
-                                    catch (Exception)
-                                    {
-                                    }
-                                }
-
-                                if (string.IsNullOrEmpty(_expectedLicense))
-                                    _expectedLicense = Utils.CreateMD5Hash("sM@RTrEADER2022-" + DeviceId);
-                            }
-                        }
-                        catch (Exception)
-                        {
-                        }
-                    }
-                    catch (Exception)
-                    {
-                    }
-
-
-                    var serialDatadb = new ReaderStatus();
-                    serialDatadb.Value = JsonConvert.SerializeObject(serialData);
-                    var existingSerialData = await dbContext.ReaderStatus.FindAsync("READER_SERIAL");
-                    if (existingSerialData != null)
-                    {
-                        existingSerialData.Value = JsonConvert.SerializeObject(serialData);
-                        dbContext.ReaderStatus.Update(existingSerialData);
-                        await dbContext.SaveChangesAsync();
-                    }
-                    else
-                    {
-                        serialDatadb.Id = "READER_SERIAL";
-                        serialDatadb.Value = JsonConvert.SerializeObject(serialData);
-                        dbContext.ReaderStatus.Add(serialDatadb);
-                        await dbContext.SaveChangesAsync();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Unexpected error. " + ex.Message);
-                }
-
-
-                Thread.Sleep(100);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected error on OnRunPeriodicTasksJobManagerEvent. " + ex.Message);
-            }
-            //}
-            //finally
-            //{
-            //    if (hasLock)
-            //    {
-            //        Monitor.Exit(_locker);
-            //    }
-            //}
-
-            //    try
-            //    {
-            //        if (string.Equals("1", _standaloneConfigDTO.heartbeatEnabled, StringComparison.OrdinalIgnoreCase))
-            //            if (_stopwatchKeepalive.Elapsed.Seconds > int.Parse(_standaloneConfigDTO.heartbeatPeriodSec))
-            //            {
-            //                ProcessKeepalive();
-            //                _stopwatchKeepalive.Stop();
-            //                _stopwatchKeepalive.Reset();
-            //                _stopwatchKeepalive.Start();
-            //            }
-            //    }
-            //    catch (Exception ex)
-            //    {
-            //        _logger.LogError(ex,
-            //            "Unexpected error running keepalive manager on OnRunPeriodicTasksJobManagerEvent. " + ex.Message);
-            //    }
-        }
-        catch (Exception)
-        {
-        }
-
-
-        //finally
-        //{
-        //    //Monitor.Exit(_timerPeriodicTasksJobManagerLock);
-        //    periodicJobTaskLock.Release();
-        //}
-        //}
+    private void EnablePeriodicTasks()
+    {
         PeriodicTasksTimerInventoryData.Enabled = true;
         PeriodicTasksTimerInventoryData.Start();
     }
+
+    private bool ValidateConfig()
+    {
+        if (_standaloneConfigDTO == null)
+        {
+            _logger.LogWarning("Configuration DTO is null. Exiting periodic tasks.");
+            return false;
+        }
+        return true;
+    }
+
+    private async Task HandleHttpPostTimeoutAsync()
+    {
+        if (_messageQueueTagSmartReaderTagEventHttpPost.Count > 0 && _httpTimerStopwatch.Elapsed.Minutes > 10)
+        {
+            _logger.LogInformation("HTTP POST timeout detected. Restarting process...");
+            await RestartApplicationAsync();
+        }
+    }
+
+    private async Task RestartApplicationAsync()
+    {
+        await Task.Delay(TimeSpan.FromSeconds(2));
+        var process = Process.GetCurrentProcess();
+        process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
+        Process.Start(process.MainModule?.FileName ?? throw new InvalidOperationException("Main module not found"));
+        Environment.Exit(1); // Exit the current process
+    }
+
+    private async Task RefreshBearerTokenAsync()
+    {
+        if (string.Equals("BEARER", _standaloneConfigDTO.httpAuthenticationType, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals("1", _standaloneConfigDTO.httpAuthenticationTokenApiEnabled, StringComparison.OrdinalIgnoreCase) &&
+            _stopwatchBearerToken.IsRunning && _stopwatchBearerToken.Elapsed.Minutes > 30)
+        {
+            _stopwatchBearerToken.Reset();
+
+            try
+            {
+                var updatedBearerToken = await _httpUtil.GetBearerTokenUsingJsonBodyAsync(
+                    _standaloneConfigDTO.httpAuthenticationTokenApiUrl,
+                    _standaloneConfigDTO.httpAuthenticationTokenApiBody);
+
+                if (!string.IsNullOrEmpty(updatedBearerToken))
+                {
+                    _standaloneConfigDTO.httpAuthenticationTokenApiValue = updatedBearerToken;
+                    _logger.LogInformation("Bearer token refreshed successfully.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to refresh bearer token.");
+            }
+            finally
+            {
+                _stopwatchBearerToken.Start();
+            }
+        }
+    }
+
+    private async Task UpdateLicenseAndConfigAsync()
+    {
+        try
+        {
+            //_logger.LogInformation("Starting UpdateLicenseAndConfigAsync...");
+
+            // Update license
+            try
+            {
+                if (_plugins?.ContainsKey("LICENSE") == false)
+                {
+                    //_logger.LogInformation("License key not found in plugins. Updating license...");
+
+                    if (string.IsNullOrEmpty(_expectedLicense))
+                    {
+                        if (string.IsNullOrEmpty(DeviceId))
+                        {
+                            _logger.LogWarning("DeviceId is null or empty. Cannot generate expected license.");
+                            return;
+                        }
+
+                        _expectedLicense = Utils.CreateMD5Hash("sM@RTrEADER2022-" + DeviceId);
+                    }
+
+                    var licenseToSet = await GetLicenseFromDb();
+                    if (string.IsNullOrEmpty(licenseToSet))
+                    {
+                        _logger.LogWarning("No license found in database. Using the existing license from configuration.");
+                        licenseToSet = _standaloneConfigDTO?.licenseKey ?? string.Empty;
+                    }
+
+                    SaveLicenseToDb(licenseToSet);
+                   // _logger.LogInformation("License updated successfully: {License}", licenseToSet);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while updating the license.");
+            }
+
+            // Update configuration
+            try
+            {
+                var configModel = await GetConfigDtoFromDb();
+                if (configModel == null)
+                {
+                    _logger.LogWarning("No configuration found in the database.");
+                    return;
+                }
+
+                if (!_standaloneConfigDTO.Equals(configModel))
+                {
+                    _logger.LogInformation("Configuration mismatch detected. Updating configuration...");
+
+                    ConfigFileHelper.SaveFile(configModel);
+                    LoadConfig();
+
+                    SaveConfigDtoToDb(_standaloneConfigDTO);
+                    _logger.LogInformation("Configuration updated successfully.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while updating the configuration.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogCritical(ex, "An unexpected error occurred in UpdateLicenseAndConfigAsync.");
+        }
+    }
+
+
+    private async Task ProcessReaderCommandsAsync()
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDb>();
+
+        var commands = await dbContext.ReaderCommands.OrderBy(f => f.Timestamp).ToListAsync();
+
+        foreach (var command in commands)
+        {
+            try
+            {
+                _logger.LogDebug($"Processing Reader Command {command.Id}");
+                await ExecuteCommandAsync(command);
+                dbContext.ReaderCommands.Remove(command);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to execute command: {CommandId}", command.Id);
+            }
+        }
+
+        await dbContext.SaveChangesAsync();
+    }
+
+    private async Task ExecuteCommandAsync(ReaderCommands command)
+    {
+        if (command == null)
+        {
+            _logger.LogWarning("Attempted to execute a null command.");
+            return;
+        }
+
+        _logger.LogInformation("Processing command: {CommandId}, Value: {CommandValue}", command.Id, command.Value);
+
+        try
+        {
+            switch (command.Id.ToUpperInvariant())
+            {
+                case "START_INVENTORY":
+                    await HandleStartInventoryAsync();
+                    break;
+
+                case "STOP_INVENTORY":
+                    await HandleStopInventoryAsync();
+                    break;
+
+                case "START_PRESET":
+                    await HandleStartPresetAsync();
+                    break;
+
+                case "STOP_PRESET":
+                    await HandleStopPresetAsync();
+                    break;
+
+                case string id when id.StartsWith("SET_GPO_"):
+                    await HandleSetGpoCommandAsync(command);
+                    break;
+
+                case "CLEAN_EPC_SOFTWARE_HISTORY_FILTERS":
+                    HandleCleanEpcSoftwareHistoryFilters();
+                    break;
+
+                case "UPGRADE_SYSTEM_IMAGE":
+                    await HandleUpgradeSystemImageAsync(command);
+                    break;
+
+                case "MODE_COMMAND":
+                    HandleModeCommand(command.Value);
+                    break;
+
+                default:
+                    _logger.LogWarning("Unknown command: {CommandId}", command.Id);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred while executing command: {CommandId}", command.Id);
+            throw; // Optionally rethrow if it should propagate
+        }
+    }
+
+    private async Task HandleStartInventoryAsync()
+    {
+        _logger.LogInformation("Starting inventory tasks...");
+        try
+        {
+            var pauseRequestPath = Path.Combine("/customer", "pause-request.txt");
+            if (File.Exists(pauseRequestPath))
+            {
+                File.Delete(pauseRequestPath);
+            }
+            await StartTasksAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to start inventory.");
+        }
+    }
+
+    private async Task HandleStopInventoryAsync()
+    {
+        _logger.LogInformation("Stopping inventory tasks...");
+        try
+        {
+            var pauseRequestPath = Path.Combine("/customer", "pause-request.txt");
+            File.WriteAllText(pauseRequestPath, "pause");
+
+            await StopPresetAsync();
+            await StopTasksAsync();
+
+            _logger.LogInformation("Inventory tasks stopped.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to stop inventory.");
+        }
+    }
+
+    private async Task HandleStartPresetAsync()
+    {
+        _logger.LogInformation("Starting preset tasks...");
+        try
+        {
+            var pauseRequestPath = Path.Combine("/customer", "pause-request.txt");
+            if (File.Exists(pauseRequestPath))
+            {
+                File.Delete(pauseRequestPath);
+            }
+            await StartPresetAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to start preset tasks.");
+        }
+    }
+
+    private async Task HandleStopPresetAsync()
+    {
+        _logger.LogInformation("Stopping preset tasks...");
+        try
+        {
+            var pauseRequestPath = Path.Combine("/customer", "pause-request.txt");
+            File.WriteAllText(pauseRequestPath, "pause");
+
+            await StopPresetAsync();
+            _logger.LogInformation("Preset tasks stopped.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to stop preset tasks.");
+        }
+    }
+
+    private async Task HandleSetGpoCommandAsync(ReaderCommands command)
+    {
+        _logger.LogInformation("Setting GPO port...");
+        try
+        {
+            var parts = command.Id.Split('_');
+            if (parts.Length < 3)
+            {
+                _logger.LogWarning("Invalid SET_GPO command format: {CommandId}", command.Id);
+                return;
+            }
+
+            if (int.TryParse(parts[2], out var port) && bool.TryParse(command.Value, out var status))
+            {
+                await SetGpoPortAsync(port, status);
+                _logger.LogInformation("GPO port {Port} set to {Status}.", port, status);
+            }
+            else
+            {
+                _logger.LogWarning("Invalid port or status in SET_GPO command: {CommandValue}", command.Value);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to set GPO port.");
+        }
+    }
+
+
+
+    private void HandleCleanEpcSoftwareHistoryFilters()
+    {
+        _logger.LogInformation("Cleaning up EPC software history filters...");
+        try
+        {
+            _readEpcs.Clear();
+            _softwareFilterReadCountTimeoutDictionary.Clear();
+            _knowTagsForSoftwareFilterWindowSec.Clear();
+            _logger.LogInformation("EPC software history filters cleaned.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to clean EPC software history filters.");
+        }
+    }
+
+    private async Task HandleUpgradeSystemImageAsync(ReaderCommands command)
+    {
+        _logger.LogInformation("Upgrading system image...");
+        try
+        {
+            var payload = JsonConvert.DeserializeObject<Dictionary<string, object>>(command.Value);
+            if (payload == null)
+            {
+                _logger.LogWarning("Invalid UPGRADE_SYSTEM_IMAGE command payload.");
+                return;
+            }
+
+            var remoteUrl = payload.GetValueOrDefault("remoteUrl", string.Empty)?.ToString();
+            var timeout = payload.GetValueOrDefault("timeoutInMinutes", 3);
+            var maxRetries = payload.GetValueOrDefault("maxRetries", 1);
+
+            if (string.IsNullOrEmpty(remoteUrl))
+            {
+                _logger.LogWarning("Remote URL is missing in UPGRADE_SYSTEM_IMAGE command.");
+                return;
+            }
+
+            UpgradeSystemImage(remoteUrl, Convert.ToInt64(timeout), Convert.ToInt64(maxRetries));
+            _logger.LogInformation("System image upgraded successfully.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to upgrade system image.");
+        }
+    }
+
+    private void HandleModeCommand(string commandValue)
+    {
+        _logger.LogInformation("Processing mode command: {CommandValue}", commandValue);
+        try
+        {
+            ProcessMqttModeJsonCommand(commandValue);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to process mode command.");
+        }
+    }
+
+    private async Task UpdateReaderStatusAsync()
+    {
+        //_logger.LogInformation("Starting UpdateReaderStatusAsync...");
+
+        try
+        {
+            // Retrieve status data
+            var statusData = await GetReaderStatusAsync();
+            if (statusData == null || !statusData.Any())
+            {
+                _logger.LogWarning("No status data retrieved from the reader.");
+                return;
+            }
+
+            //_logger.LogInformation("Reader status data retrieved successfully.");
+
+            // Create a database scope
+            using var scope = Services.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDb>();
+
+            try
+            {
+                // Check existing status in the database
+                var existingStatus = await dbContext.ReaderStatus.FindAsync("READER_STATUS");
+                if (existingStatus != null)
+                {
+                    existingStatus.Value = JsonConvert.SerializeObject(statusData);
+                    dbContext.ReaderStatus.Update(existingStatus);
+                    //_logger.LogInformation("Reader status updated in the database.");
+                }
+                else
+                {
+                    dbContext.ReaderStatus.Add(new ReaderStatus
+                    {
+                        Id = "READER_STATUS",
+                        Value = JsonConvert.SerializeObject(statusData)
+                    });
+                    //_logger.LogInformation("New reader status added to the database.");
+                }
+
+                // Save changes to the database
+                await dbContext.SaveChangesAsync();
+               //_logger.LogInformation("Database changes committed successfully.");
+            }
+            catch (Exception dbEx)
+            {
+                _logger.LogError(dbEx, "An error occurred while updating the reader status in the database.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred while updating the reader status.");
+        }
+    }
+
+
+    private async Task UpdateReaderSerialAsync()
+    {
+        try
+        {
+            //_logger.LogInformation("Starting UpdateReaderSerialAsync...");
+
+            // Fetch serial data from the reader
+            var serialData = await GetSerialAsync();
+            if (serialData == null || !serialData.Any())
+            {
+                _logger.LogWarning("No serial data received from the reader.");
+                return;
+            }
+
+            var serialFromReader = serialData.FirstOrDefault()?.SerialNumber;
+
+            if (string.IsNullOrEmpty(serialFromReader))
+            {
+                _logger.LogWarning("Serial number from reader is null or empty.");
+                return;
+            }
+
+            //_logger.LogInformation("Retrieved serial number: {Serial}", serialFromReader);
+
+            // Update the configuration DTO
+            if (_standaloneConfigDTO == null)
+            {
+                _logger.LogError("StandaloneConfigDTO is null. Cannot update reader serial.");
+                return;
+            }
+
+            if (!string.Equals(_standaloneConfigDTO.readerSerial, serialFromReader, StringComparison.OrdinalIgnoreCase))
+            {
+                _standaloneConfigDTO.readerSerial = serialFromReader;
+
+                try
+                {
+                    SaveConfigDtoToDb(_standaloneConfigDTO);
+                    _logger.LogInformation("Reader serial updated in configuration database: {Serial}", serialFromReader);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to save updated reader serial to the database.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred while updating the reader serial.");
+        }
+
+    }
+
+
+    private async Task SendHeartbeatAsync()
+    {
+        if (string.Equals("1", _standaloneConfigDTO.heartbeatEnabled, StringComparison.OrdinalIgnoreCase) &&
+            _stopwatchKeepalive.Elapsed.Seconds > int.Parse(_standaloneConfigDTO.heartbeatPeriodSec))
+        {
+            await ProcessKeepalive();
+            _stopwatchKeepalive.Restart();
+        }
+    }
+
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -7789,19 +7798,21 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             try
             {
+                _standaloneConfigDTO = StandaloneConfigDTO.CleanupUrlEncoding(_standaloneConfigDTO);
                 if (_standaloneConfigDTO != null) SaveConfigDtoToDb(_standaloneConfigDTO);
                 _proxyAddress = _standaloneConfigDTO.networkProxy;
                 _proxyPort = int.Parse(_standaloneConfigDTO.networkProxyPort);
             }
             catch (Exception)
             {
+                _logger.LogError("Error saving initial settings");
             }
 
             if (_iotDeviceInterfaceClient == null)
             {
                 if (_readerAddress != null)
                 {
-                    _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                    _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
                 }
                 else
                 {
@@ -7817,7 +7828,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 try
                 {
-                    _iotDeviceInterfaceClient.UpdateReaderRfidInterface(
+                    await _iotDeviceInterfaceClient.UpdateReaderRfidInterface(
                         RfidInterface.FromJson("{\"rfidInterface\":\"rest\"}"));
                 }
                 catch (Exception)
@@ -7835,7 +7846,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     {
                         if (_readerAddress != null)
                         {
-                            _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                            _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
                         }
                         else
                         {
@@ -7861,7 +7872,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     if (_readerAddress != null)
                     {
-                        _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                        _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
                     }
                     else
                     {
@@ -7899,7 +7910,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     if (_readerAddress != null)
                     {
-                        _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                        _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
                     }
                     else
                     {
@@ -8058,7 +8069,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     if (_readerAddress != null)
                     {
-                        _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort);
+                        _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
                     }
                     else
                     {
@@ -8409,7 +8420,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         _logger.LogInformation($"Details: '{plugin?.GetDescription()}'.");
                                         _logger.LogInformation($"DeviceId: '{DeviceId}'.");
                                         plugin.SetDeviceId(DeviceId);
-                                        plugin.Init();
+                                        await plugin.Init();
                                         _plugins.Add(plugin?.GetName(), plugin);
                                     }
                                     catch (Exception ex)
@@ -8467,8 +8478,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _timerSummaryStreamPublisher.AutoReset = false;
             _timerSummaryStreamPublisher.Start();
 
-
-
             _timerTagPublisherUsbDrive.Elapsed += OnRunPeriodicUsbDriveTasksEvent!;
             _timerTagPublisherUsbDrive.Interval = 100;
             _timerTagPublisherUsbDrive.AutoReset = false;
@@ -8478,7 +8487,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _timerTagPublisherUdpServer.Interval = 500;
             _timerTagPublisherUdpServer.AutoReset = false;
             _timerTagPublisherUdpServer.Start();
-
 
             _timerTagPublisherRetry.Elapsed += OnRunPeriodicTagPublisherRetryTasksEvent!;
             _timerTagPublisherRetry.Interval = 500;
@@ -8499,8 +8507,23 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             UpdateSystemImageFallbackFlag();
 
             while (!stoppingToken.IsCancellationRequested)
-                //_logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
-                await Task.Delay(10);
+            {
+                try
+                {
+                    if (_standaloneConfigDTO != null &&
+                    !string.IsNullOrEmpty(_standaloneConfigDTO.socketServer) &&
+                    string.Equals("1", _standaloneConfigDTO.socketServer, StringComparison.OrdinalIgnoreCase))
+                    {
+                        await EnsureSocketServerConnectionAsync();
+                    }
+                }
+                catch (System.Exception)
+                {
+
+                }
+                
+                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); // Adjust delay as needed
+            }
         }
         catch (Exception ex)
         {
@@ -9179,7 +9202,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         }
                         if (!string.IsNullOrEmpty(commandIdValue))
                         {
-                            WriteMqttCommandIdToFile(commandIdValue);
+                            await WriteMqttCommandIdToFile(commandIdValue);
                             if (!string.IsNullOrEmpty(previousCommandId))
                                 if (previousCommandId.Trim().Equals(commandIdValue.Trim()))
                                 {
@@ -9926,7 +9949,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
                                 if (!string.IsNullOrEmpty(commandIdValue))
                                 {
-                                    WriteMqttCommandIdToFile(commandIdValue);
+                                    await WriteMqttCommandIdToFile(commandIdValue);
                                     if (!string.IsNullOrEmpty(previousCommandId))
                                         if (previousCommandId.Trim().Equals(commandIdValue.Trim()))
                                         {
@@ -10613,7 +10636,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             }
 
                             var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                            _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
+                            await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
                                 mqttQualityOfServiceLevel, retain);
                             //if ("success".Equals(commandStatus))
                             //{
@@ -11140,7 +11163,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         _standaloneConfigDTO.readerName)))
                 try
                 {
-                    ProcessMqttManagementCommandJsonAsync(mqttMessage, true);
+                    await ProcessMqttManagementCommandJsonAsync(mqttMessage, true);
 
 
                 }
@@ -11154,7 +11177,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                              _standaloneConfigDTO.readerName)))
                 try
                 {
-                    ProcessMqttControlCommandJsonAsync(mqttMessage, true);
+                    await ProcessMqttControlCommandJsonAsync(mqttMessage, true);
                 }
                 catch (Exception ex)
                 {
@@ -11328,7 +11351,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         method = "DELETE";
                     }
 
-                    CallIotRestFulInterfaceAsync(mqttMessage, endpointString, method, mqttCommandResponseTopic, true);
+                    await CallIotRestFulInterfaceAsync(mqttMessage, endpointString, method, mqttCommandResponseTopic, true);
                 }
                 catch (Exception ex)
                 {
@@ -12722,7 +12745,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     }
                     catch (Exception)
                     {
-                        ProcessGpoErrorPortAsync();
+                        await ProcessGpoErrorPortAsync();
                     }
                 }
         }
@@ -12736,7 +12759,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
         catch (Exception ex)
         {
-            ProcessGpoErrorPortAsync();
+            await ProcessGpoErrorPortAsync();
             _logger.LogError(ex, "Unexpected error on ProcessTagEventData " + ex.Message);
         }
     }
@@ -12747,10 +12770,20 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 #pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.
         try
         {
+           // Validate input
             if (tagInventoryEvent == null)
+            {
+                _logger.LogError("Received null tag event");
                 return;
+            }
 
-            //var licenseToSet = "";
+            // Create thread-safe collections wrapper
+            // var tagCollections = new ThreadSafeCollections(
+            //     _logger,
+            //     _readEpcs,
+            //     _currentSkus, 
+            //     _currentSkuReadEpcs
+            // );
 
             if (string.Equals("1", _standaloneConfigDTO.enablePlugin,
                                 StringComparison.OrdinalIgnoreCase))
@@ -12874,21 +12907,40 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     StringComparison.OrdinalIgnoreCase))
                                 if (!string.IsNullOrEmpty(sku))
                                 {
-                                    if (!_currentSkuReadEpcs.Contains(epc))
-                                    {
-                                        _currentSkuReadEpcs.Add(epc);
-                                        if (!_currentSkus.ContainsKey(sku))
-                                            _currentSkus.TryAdd(sku, 1);
-                                        else
-                                            try
-                                            {
-                                                _currentSkus[sku] = _currentSkus[sku] + 1;
-                                            }
-                                            catch (Exception)
-                                            {
-                                            }
-                                    }
+                                   // Create an instance of ThreadSafeCollections to handle concurrent access
+                                    var collections = new ThreadSafeCollections(
+                                        _logger,
+                                        _readEpcs,
+                                        _currentSkus,
+                                        _currentSkuReadEpcs
+                                    );
 
+                                    try
+                                    {
+                                        // Use the ValidationService to handle the validation and tracking
+                                        // This ensures thread-safe operations and centralized validation logic
+                                        var validationResult = await _validationService.ValidateAndTrackEpcAsync(epc, sku);
+
+                                        if (!validationResult)
+                                        {
+                                            // The EPC was already processed, so we log it and continue
+                                            _logger.LogInformation($"Skipping duplicate EPC: {epc} for SKU: {sku}");
+                                        }
+                                        else 
+                                        {
+                                            // If we're tracking SKU counts separately, use the thread-safe collection
+                                            // This provides an additional layer of safety for SKU counting
+                                            if (!collections.UpdateSkuCount(sku))
+                                            {
+                                                _logger.LogWarning($"Failed to update count for SKU: {sku}");
+                                            }
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        // Log any errors that occur during validation or counting
+                                        _logger.LogError(ex, $"Error processing EPC: {epc} for SKU: {sku}");
+                                    }
                                 }
                         }
                         catch (Exception)
@@ -12936,22 +12988,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     StringComparison.OrdinalIgnoreCase))
                                 if (!string.IsNullOrEmpty(tagRead.TagDataKey))
                                 {
-                                    if (!_currentSkuReadEpcs.Contains(epc))
+                                    var validationResult = await _validationService.ValidateAndTrackEpcAsync(
+                                        epc,
+                                        tagRead.TagDataKey
+                                    );
+
+                                    if (!validationResult)
                                     {
-                                        _currentSkuReadEpcs.Add(epc);
-                                        if (!_currentSkus.ContainsKey(tagRead.TagDataKey))
-                                            _currentSkus.TryAdd(tagRead.TagDataKey, 1);
-                                        else
-                                            try
-                                            {
-                                                _currentSkus[tagRead.TagDataKey] = _currentSkus[tagRead.TagDataKey] + 1;
-                                            }
-                                            catch (Exception)
-                                            {
-                                            }
+                                        _logger.LogInformation($"Duplicate EPC detected: {epc}");
+                                        // Optionally return here if you want to skip duplicate EPCs
                                     }
-
-
                                 }
                         }
                     }
@@ -13247,87 +13293,118 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
 
             if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch)
-                        && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
-                            StringComparison.OrdinalIgnoreCase))
+                && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
+                    StringComparison.OrdinalIgnoreCase))
             {
-                try
-                {
-                    if (_smartReaderTagEventsListBatch.TryGetValue(tagRead.Epc, out JObject retrievedValue))
-                    {
+                var batchProcessor = new ThreadSafeBatchProcessor(
+                    _logger,
+                    _smartReaderTagEventsListBatch,
+                    _smartReaderTagEventsListBatchOnUpdate
+                );
 
-                        try
-                        {
-                            var existingEventOnCurrentAntenna = (JObject)(retrievedValue["tag_reads"].FirstOrDefault(q => (long)q["antennaPort"] == tagRead.AntennaPort));
-
-
-                            if (string.Equals("1", _standaloneConfigDTO.filterTagEventsListBatchOnChangeBasedOnAntennaZone, StringComparison.OrdinalIgnoreCase))
-                            {
-                                var existingEventOnCurrentAntennaZone = (JObject)(retrievedValue["tag_reads"].FirstOrDefault(q => (string)q["epc"] == tagRead.Epc));
-                                //var zoneNames = _standaloneConfigDTO.antennaZones.Split(",");
-                                if (existingEventOnCurrentAntennaZone != null)
-                                {
-                                    var currentAntennazone = existingEventOnCurrentAntennaZone["antennaZone"].Value<string>();
-                                    if (!string.IsNullOrEmpty(currentAntennazone)
-                                        && !tagRead.AntennaZone.Equals(currentAntennazone))
-                                    {
-                                        if (string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange, StringComparison.OrdinalIgnoreCase)
-                                        && !_smartReaderTagEventsListBatchOnUpdate.ContainsKey(tagRead.Epc))
-                                        {
-                                            _smartReaderTagEventsListBatchOnUpdate.TryAdd(tagRead.Epc, dataToPublish);
-                                        }
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                // it has been read on a different antenna:
-                                if (existingEventOnCurrentAntenna == null)
-                                {
-                                    if (string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange, StringComparison.OrdinalIgnoreCase)
-                                        && !_smartReaderTagEventsListBatchOnUpdate.ContainsKey(tagRead.Epc))
-                                    {
-                                        _smartReaderTagEventsListBatchOnUpdate.TryAdd(tagRead.Epc, dataToPublish);
-                                    }
-                                }
-                            }
-                        }
-                        catch (Exception)
-                        {
-
-
-                        }
-                        _smartReaderTagEventsListBatch.TryUpdate(tagRead.Epc, dataToPublish, retrievedValue);
-                    }
-                    else
-                    {
-
-                        if (string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange, StringComparison.OrdinalIgnoreCase)
-                            && !_smartReaderTagEventsListBatchOnUpdate.ContainsKey(tagRead.Epc))
-                        {
-                            _smartReaderTagEventsListBatchOnUpdate.TryAdd(tagRead.Epc, dataToPublish);
-                        }
-                        else
-                        {
-                            _smartReaderTagEventsListBatch.TryAdd(tagRead.Epc, dataToPublish);
-                        }
-
-                    }
-                }
-                catch (Exception)
-                {
-
-
-                }
+                await batchProcessor.ProcessEventBatchAsync(
+                    tagRead,
+                    dataToPublish,
+                    _standaloneConfigDTO
+                );
             }
             else
             {
-                if (string.Equals("1", _standaloneConfigDTO.enableValidation, StringComparison.OrdinalIgnoreCase)
-                || string.Equals("1", _standaloneConfigDTO.groupEventsOnInventoryStatus,
-                    StringComparison.OrdinalIgnoreCase))
+                if (string.Equals("1", _standaloneConfigDTO.enableValidation, 
+                    StringComparison.OrdinalIgnoreCase)
+                    || string.Equals("1", _standaloneConfigDTO.groupEventsOnInventoryStatus,
+                        StringComparison.OrdinalIgnoreCase))
+                {
                     _messageQueueTagSmartReaderTagEventGroupToValidate.Enqueue(dataToPublish);
+                }
                 else
+                {
                     EnqueueToExternalPublishers(dataToPublish, true);
+                }
             }
+
+            // if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch)
+            //             && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
+            //                 StringComparison.OrdinalIgnoreCase))
+            // {
+            //     try
+            //     {
+            //         if (_smartReaderTagEventsListBatch.TryGetValue(tagRead.Epc, out JObject retrievedValue))
+            //         {
+
+            //             try
+            //             {
+            //                 var existingEventOnCurrentAntenna = (JObject)(retrievedValue["tag_reads"].FirstOrDefault(q => (long)q["antennaPort"] == tagRead.AntennaPort));
+
+
+            //                 if (string.Equals("1", _standaloneConfigDTO.filterTagEventsListBatchOnChangeBasedOnAntennaZone, StringComparison.OrdinalIgnoreCase))
+            //                 {
+            //                     var existingEventOnCurrentAntennaZone = (JObject)(retrievedValue["tag_reads"].FirstOrDefault(q => (string)q["epc"] == tagRead.Epc));
+            //                     //var zoneNames = _standaloneConfigDTO.antennaZones.Split(",");
+            //                     if (existingEventOnCurrentAntennaZone != null)
+            //                     {
+            //                         var currentAntennazone = existingEventOnCurrentAntennaZone["antennaZone"].Value<string>();
+            //                         if (!string.IsNullOrEmpty(currentAntennazone)
+            //                             && !tagRead.AntennaZone.Equals(currentAntennazone))
+            //                         {
+            //                             if (string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange, StringComparison.OrdinalIgnoreCase)
+            //                             && !_smartReaderTagEventsListBatchOnUpdate.ContainsKey(tagRead.Epc))
+            //                             {
+            //                                 _smartReaderTagEventsListBatchOnUpdate.TryAdd(tagRead.Epc, dataToPublish);
+            //                             }
+            //                         }
+            //                     }
+            //                 }
+            //                 else
+            //                 {
+            //                     // it has been read on a different antenna:
+            //                     if (existingEventOnCurrentAntenna == null)
+            //                     {
+            //                         if (string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange, StringComparison.OrdinalIgnoreCase)
+            //                             && !_smartReaderTagEventsListBatchOnUpdate.ContainsKey(tagRead.Epc))
+            //                         {
+            //                             _smartReaderTagEventsListBatchOnUpdate.TryAdd(tagRead.Epc, dataToPublish);
+            //                         }
+            //                     }
+            //                 }
+            //             }
+            //             catch (Exception)
+            //             {
+
+
+            //             }
+            //             _smartReaderTagEventsListBatch.TryUpdate(tagRead.Epc, dataToPublish, retrievedValue);
+            //         }
+            //         else
+            //         {
+
+            //             if (string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange, StringComparison.OrdinalIgnoreCase)
+            //                 && !_smartReaderTagEventsListBatchOnUpdate.ContainsKey(tagRead.Epc))
+            //             {
+            //                 _smartReaderTagEventsListBatchOnUpdate.TryAdd(tagRead.Epc, dataToPublish);
+            //             }
+            //             else
+            //             {
+            //                 _smartReaderTagEventsListBatch.TryAdd(tagRead.Epc, dataToPublish);
+            //             }
+
+            //         }
+            //     }
+            //     catch (Exception)
+            //     {
+
+
+            //     }
+            // }
+            // else
+            // {
+            //     if (string.Equals("1", _standaloneConfigDTO.enableValidation, StringComparison.OrdinalIgnoreCase)
+            //     || string.Equals("1", _standaloneConfigDTO.groupEventsOnInventoryStatus,
+            //         StringComparison.OrdinalIgnoreCase))
+            //         _messageQueueTagSmartReaderTagEventGroupToValidate.Enqueue(dataToPublish);
+            //     else
+            //         EnqueueToExternalPublishers(dataToPublish, true);
+            // }
 
 
         }
@@ -13485,7 +13562,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             if (string.Equals("1", _standaloneConfigDTO.serialPort, StringComparison.OrdinalIgnoreCase))
                 try
                 {
-                    var line = ExtractLineFromJsonObject(dataToPublish);
+                    var line = ExtractLineFromJsonObject(dataToPublish, _standaloneConfigDTO, _logger);
                     try
                     {
                         if (_serialTty != null)
@@ -13880,7 +13957,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     }
 
 #pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-    public async Task<StandaloneConfigDTO> GetConfigDtoFromDb()
+public async Task<StandaloneConfigDTO> GetConfigDtoFromDb()
 #pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
     {
 #pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.
@@ -13892,8 +13969,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             var configModel = dbContext.ReaderConfigs.FindAsync("READER_CONFIG").Result;
             if (configModel != null)
             {
+                
                 var savedConfigDTO = JsonConvert.DeserializeObject<StandaloneConfigDTO>(configModel.Value);
-                if (savedConfigDTO != null) model = savedConfigDTO;
+                if (savedConfigDTO != null)
+                {
+                    model = StandaloneConfigDTO.CleanupUrlEncoding(savedConfigDTO); ;
+                }
             }
         }
         catch (Exception ex)
@@ -14476,4 +14557,40 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         var pauseRequest = Path.Combine("/customer", "pause-request.txt");
         return File.Exists(pauseRequest);
     }
+
+    private void RemoveOldestEntries<TKey, TValue>(ConcurrentDictionary<TKey, TValue> dictionary, double removeCount)
+    {
+        var orderedEntries = dictionary.OrderBy(x => 
+            (x.Value as ReadCountTimeoutEvent)?.EventTimestamp ?? 0).Take((int)removeCount);
+        
+        foreach (var entry in orderedEntries)
+        {
+            dictionary.TryRemove(entry.Key, out _);
+        }
+    }
+
+    private void RemoveOldestBatchEntries(ConcurrentDictionary<string, JObject> dictionary, double removeCount)
+    {
+        var orderedEntries = dictionary.OrderBy(x => {
+            try
+            {
+                if (x.Value["firstSeenTimestamp"] != null)
+                {
+                    return x.Value["firstSeenTimestamp"].Value<long>();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error accessing timestamp for batch entry");
+            }
+            return long.MaxValue;
+        }).Take((int)removeCount);
+
+        foreach (var entry in orderedEntries)
+        {
+            dictionary.TryRemove(entry.Key, out _);
+        }
+    }
 }
+
+

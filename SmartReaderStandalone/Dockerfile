@@ -2,7 +2,7 @@
 # run the build:
 # docker build --platform=linux/arm -t smartreader -f ./Dockerfile ../
 # docker build --progress=plain --platform=linux/arm -t smartreader-upgx -f ./Dockerfile ../
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS base
 USER app
 WORKDIR /app
 EXPOSE 8443
@@ -10,7 +10,7 @@ EXPOSE 8443
 ARG BUILDPLATFORM=linux/arm
 
 #FROM --platform=$BUILDPLATFORM  mcr.microsoft.com/dotnet/sdk:8.0 AS build
-FROM --platform=$BUILDPLATFORM  mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM --platform=$BUILDPLATFORM  mcr.microsoft.com/dotnet/sdk:9.0 AS build
 ARG BUILD_CONFIGURATION=Release
 ARG TARGETARCH=arm
 WORKDIR /src

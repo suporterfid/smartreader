@@ -27,6 +27,7 @@ using SmartReader.ViewModel.Auth;
 using SmartReaderJobs.Utils;
 using SmartReaderJobs.ViewModel.Events;
 using SmartReaderStandalone.Entities;
+using SmartReaderStandalone.IotDeviceInterface;
 using SmartReaderStandalone.Plugins;
 using SmartReaderStandalone.Services;
 using SmartReaderStandalone.Utils;
@@ -7737,12 +7738,14 @@ ProcessKeepalive()
             }
 
             //_logger.LogInformation("Retrieved serial number: {Serial}", serialFromReader);
+            await SaveSerialToDbAsync(serialFromReader);
 
             // Update the configuration DTO
             if (_standaloneConfigDTO == null)
             {
                 _logger.LogError("StandaloneConfigDTO is null. Cannot update reader serial.");
                 return;
+                
             }
 
             if (!string.Equals(_standaloneConfigDTO.readerSerial, serialFromReader, StringComparison.OrdinalIgnoreCase))
@@ -14318,6 +14321,86 @@ public async Task<StandaloneConfigDTO> GetConfigDtoFromDb()
         finally
         {
             readLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Saves or updates a device serial number in the database using proper concurrency control.
+    /// </summary>
+    /// <param name="deviceSerial">The serial number of the device to be saved</param>
+    /// <returns>Task representing the asynchronous operation</returns>
+    /// <exception cref="ArgumentNullException">Thrown when deviceSerial is null or empty</exception>
+    public async Task SaveSerialToDbAsync(string deviceSerial)
+    {
+        // Input validation is crucial for robustness
+        if (string.IsNullOrWhiteSpace(deviceSerial))
+        {
+            throw new ArgumentNullException(nameof(deviceSerial));
+        }
+
+        try
+        {
+            // Using await with a disposable lock pattern for better resource management
+            using var lockAcquisition = await readLock.WaitAsyncWithTimeout(TimeSpan.FromSeconds(30));
+
+            // Creating a transactional scope to ensure database consistency
+            using var scope = Services.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDb>();
+
+            // Using proper async/await pattern without .Result to prevent deadlocks
+            var configModel = await dbContext.ReaderStatus.FindAsync("READER_SERIAL");
+
+            // Using object initialization for cleaner code
+            var serialModelDto = new SmartreaderSerialNumberDto
+            {
+                SerialNumber = deviceSerial
+            };
+
+            var serialModelDtoList = new List<SmartreaderSerialNumberDto> { serialModelDto };
+
+            if (configModel == null)
+            {
+                configModel = new ReaderStatus
+                {
+                    Id = "READER_SERIAL",
+                    Value = JsonConvert.SerializeObject(serialModelDtoList, new JsonSerializerSettings
+                    {
+                        NullValueHandling = NullValueHandling.Ignore
+                    })
+                };
+                await dbContext.ReaderStatus.AddAsync(configModel);
+            }
+            else
+            {
+                configModel.Value = JsonConvert.SerializeObject(serialModelDtoList, new JsonSerializerSettings
+                {
+                    NullValueHandling = NullValueHandling.Ignore
+                });
+                dbContext.ReaderStatus.Update(configModel);
+            }
+
+            // Adding retry logic for transient database errors
+            await RetryPolicy.ExecuteAsync(async () => await dbContext.SaveChangesAsync());
+        }
+        catch (TimeoutException tex)
+        {
+            _logger.LogError(tex, "Timeout while attempting to acquire lock for saving device serial: {DeviceSerial}", deviceSerial);
+            throw;
+        }
+        catch (DbUpdateConcurrencyException dcex)
+        {
+            _logger.LogError(dcex, "Concurrency conflict while saving device serial: {DeviceSerial}", deviceSerial);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error while saving device serial: {DeviceSerial}. Error: {ErrorMessage}",
+                deviceSerial, ex.Message);
+            throw;
+        }
+        finally
+        {
+            // The lock release is now handled by the disposable pattern
         }
     }
 

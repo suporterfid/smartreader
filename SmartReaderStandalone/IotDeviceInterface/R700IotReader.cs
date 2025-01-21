@@ -9,7 +9,6 @@
 //****************************************************************************************************
 #endregion
 using Impinj.Atlas;
-using Newtonsoft.Json;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Net;
@@ -21,6 +20,7 @@ using System.Net.Sockets;
 using System.Reflection.PortableExecutable;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using NetworkInterface = Impinj.Atlas.NetworkInterface;
 
@@ -1075,7 +1075,7 @@ public class R700IotReader : IR700IotReader
                 // Determine the type of event
                 if (!str.Contains("GpiTransitionEvent"))
                 {
-                    readerEvent = JsonConvert.DeserializeObject<ReaderEvent>(str);
+                    readerEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<ReaderEvent>(str);
                 }
 
                 if (readerEvent == null)

@@ -21,7 +21,7 @@ var vueApplication = new Vue({
 		rshellCurrentPassword: "",
 		rshellNewPassword: "",
 		rshellNewPasswordCheck: "",
-		applicationLabel: 'version 4.0.0.50',
+		applicationLabel: 'version 4.0.0.51',
 		applicationBy: 'Smartreader R700',
 		//applicationBy: 'SoLink R700',
 

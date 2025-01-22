@@ -11,6 +11,7 @@
 using Impinj.Atlas;
 using Impinj.Utils.DebugLogger;
 using McMaster.NETCore.Plugins;
+using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MQTTnet;
@@ -63,6 +64,15 @@ namespace SmartReader.IotDeviceInterface;
 
 public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 {
+    public class SocketServerHealth
+    {
+        public bool IsListening { get; set; }
+        public int ConnectedClients { get; set; }
+        public DateTime LastSuccessfulSend { get; set; }
+        public int PendingMessages { get; set; }
+        public int FailedSendsCount { get; set; }
+    }
+
     private class ThreadSafeCollections
     {
         private readonly Microsoft.Extensions.Logging.ILogger _logger;
@@ -157,6 +167,60 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
         }
     }
+
+    private class SocketSendRetryPolicy
+    {
+        private const int MaxRetries = 3;
+        private const int RetryDelayMs = 1000; // 1 second between retries
+        private const int SendTimeoutMs = 5000; // 5 second timeout for sends
+
+        public async Task<bool> ExecuteWithRetryAsync(
+            SimpleTcpServer server,
+            string client,
+            byte[] data,
+            Microsoft.Extensions.Logging.ILogger logger)
+        {
+            int retryCount = 0;
+            bool sendSuccess = false;
+
+            while (!sendSuccess && retryCount < MaxRetries)
+            {
+                try
+                {
+                    using var cts = new CancellationTokenSource(SendTimeoutMs);
+
+                    // Wrap the sync Send in a task to support timeout
+                    await Task.Run(() => {
+                        server.Send(client, data);
+                    }, cts.Token);
+
+                    sendSuccess = true;
+                    logger.LogDebug($"Successfully sent message to client after {retryCount} retries");
+                }
+                catch (OperationCanceledException)
+                {
+                    logger.LogWarning($"Send operation timed out after {SendTimeoutMs}ms");
+                    retryCount++;
+                    if (retryCount < MaxRetries)
+                    {
+                        await Task.Delay(RetryDelayMs);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, $"Error sending to client (attempt {retryCount + 1}/{MaxRetries})");
+                    retryCount++;
+                    if (retryCount < MaxRetries)
+                    {
+                        await Task.Delay(RetryDelayMs);
+                    }
+                }
+            }
+
+            return sendSuccess;
+        }
+    }
+
     private static string? _readerAddress = null; // Nullable with default null value
 
     private static readonly string? _bearerToken = null; // Nullable with default null value
@@ -1219,32 +1283,67 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     // Add health check method
     public bool IsSocketServerHealthy()
     {
-        return _socketServer != null && 
-            _socketServer.IsListening && 
-            _socketServer.GetClients()?.Any() == true;
+        return _socketServer != null &&
+               _socketServer.IsListening &&
+               _socketServer.GetClients()?.Any() == true;
     }
+
 
     private async Task EnsureSocketServerConnectionAsync()
     {
-        if (!IsSocketServerHealthy())
+        if (_standaloneConfigDTO != null && !string.IsNullOrEmpty(_standaloneConfigDTO.socketServer)
+                                         && string.Equals("1", _standaloneConfigDTO.socketServer,
+                                             StringComparison.OrdinalIgnoreCase))
         {
-            await _socketLock.WaitAsync();
-            try
+            if (!IsSocketServerHealthy())
             {
-                // Double check after acquiring lock
-                if (!IsSocketServerHealthy())
+                await _socketLock.WaitAsync();
+                try
                 {
-                    _logger.LogWarning("Reloading Socket Server based on Stop/Start.");
-                    StopTcpSocketServer();
-                    await Task.Delay(1000); // Cool down
-                    StartTcpSocketServer();
+                    // Double check after acquiring lock
+                    if (!IsSocketServerHealthy())
+                    {
+                        _logger.LogWarning("Restarting Socket Server based on health check.");
+                        StopTcpSocketServer();
+                        await Task.Delay(1000); // Cool down
+                        StartTcpSocketServer();
+                    }
+                }
+                finally
+                {
+                    _socketLock.Release();
                 }
             }
-            finally
+            try
             {
-                _socketLock.Release();
+                if(_socketServer != null)
+                {
+                    _logger.LogInformation("Socket Server Stat:");
+                    _logger.LogInformation(_socketServer.Statistics.ToString());
+
+
+                    List<string> clients = _socketServer.GetClients().ToList();
+                    if (clients != null && clients.Count > 0)
+                    {
+                        _logger.LogInformation($"Socket clients connected: {clients.Count}");
+                        foreach (string curr in clients)
+                        {
+                            _logger.LogInformation($"Client currently connect over Socket: {curr}");
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogInformation($"Socket clients connected: 0");
+                    }
+                }
+                
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error verifying tcp socket server. ");
             }
         }
+            
     }
 
     private void StartTcpSocketServer()
@@ -1256,18 +1355,25 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 if (_socketServer == null)
                 {
+                    _socketServer = new SimpleTcpServer("*", int.Parse(_standaloneConfigDTO.socketPort));
+
+                    _socketServer.Settings.NoDelay = true;
+                    _socketServer.Settings.IdleClientTimeoutMs = 30000;
+                    _socketServer.Settings.IdleClientEvaluationIntervalMs = 10000;
+
                     // _logger.LogInformation("Creating tcp socket server. " + _standaloneConfigDTO.socketPort, SeverityType.Debug);
                     //_logger.LogInformation("Creating tcp socket server. [" + _standaloneConfigDTO.socketPort + "] ");
                     _logger.LogInformation("Creating tcp socket server. [" + _standaloneConfigDTO.socketPort + "] ");
-                    _socketServer = new SimpleTcpServer("0.0.0.0:" + _standaloneConfigDTO.socketPort);
+                    //_socketServer = new SimpleTcpServer("0.0.0.0:" + _standaloneConfigDTO.socketPort);
                     // set events
                     _socketServer.Events.ClientConnected += ClientConnected!;
                     _socketServer.Events.ClientDisconnected += ClientDisconnected!;
                     _socketServer.Events.DataReceived += DataReceived!;
+                    _socketServer.Events.DataSent += DataSent!;
 
                     _socketServer.Keepalive.EnableTcpKeepAlives = true;
                     _socketServer.Keepalive.TcpKeepAliveInterval = 5;      // seconds to wait before sending subsequent keepalive
-                    _socketServer.Keepalive.TcpKeepAliveTime = 5;          // seconds to wait before sending a keepalive
+                    _socketServer.Keepalive.TcpKeepAliveTime = 10;          // seconds to wait before sending a keepalive
                     _socketServer.Keepalive.TcpKeepAliveRetryCount = 5;    // number of failed keepalive probes before terminating connection
                 }
 
@@ -1412,17 +1518,72 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private void ClientConnected(object sender, ConnectionEventArgs e)
     {
-        _logger.LogInformation("[" + e.IpPort + "] client connected", SeverityType.Debug);
+        _logger.LogInformation($"Client connected from {e.IpPort}");
+        var clients = _socketServer?.GetClients()?.Count() ?? 0;
+        _logger.LogInformation($"Total connected clients: {clients}");
+
+        try
+        {
+            if (_standaloneConfigDTO != null &&
+                string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
+            {
+                var mqttManagementEvents = new Dictionary<string, object> {
+                    { "smartreader-socket-status", "client-disconnected" },
+                    { "client-ip", e.IpPort },
+                    { "disconnect-reason", e.Reason },
+                    { "connected-clients", clients }
+                };
+                PublishMqttManagementEventAsync(mqttManagementEvents).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to publish client connection event");
+        }
     }
+
 
     private void ClientDisconnected(object sender, ConnectionEventArgs e)
     {
-        _logger.LogInformation("[" + e.IpPort + "] client disconnected: " + e.Reason, SeverityType.Debug);
+        _logger.LogWarning($"Client disconnected from {e.IpPort}. Reason: {e.Reason}");
+        var clients = _socketServer?.GetClients()?.Count() ?? 0;
+        _logger.LogInformation($"Remaining connected clients: {clients}");
+
+        try
+        {
+            if (clients == 0)
+            {
+                _logger.LogWarning("No Socket clients connected - messages will be queued");
+            }
+
+            if (_standaloneConfigDTO != null &&
+                string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
+            {
+                var mqttManagementEvents = new Dictionary<string, object> {
+                    { "smartreader-socket-status", "client-disconnected" },
+                    { "client-ip", e.IpPort },
+                    { "disconnect-reason", e.Reason },
+                    { "connected-clients", clients }
+                };
+                PublishMqttManagementEventAsync(mqttManagementEvents).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to publish client disconnection event");
+        }
     }
 
     private void DataReceived(object sender, DataReceivedEventArgs e)
     {
-        _logger.LogInformation("[" + e.IpPort + "]: " + Encoding.UTF8.GetString(e.Data), SeverityType.Debug);
+
+        _logger.LogInformation($"Socket Server - Data Received: [ {e.IpPort} ]:  {Encoding.UTF8.GetString(e.Data)}");
+    }
+
+    private void DataSent(object sender, DataSentEventArgs e)
+    {
+        _logger.LogInformation($"Socket Server - Data Sent: [ {e.IpPort} ]:  {e.BytesSent}");
+       
     }
 
     private void ClientConnectedSocketCommand(object sender, ConnectionEventArgs e)
@@ -6926,7 +7087,7 @@ ProcessKeepalive()
 
     private async Task ProcessSocketJsonTagEventDataAsync(JObject smartReaderTagEventData)
     {
-        // Validate input early to fail fast
+        // Validate input
         if (smartReaderTagEventData == null)
         {
             _logger.LogWarning("Received null event data for socket processing");
@@ -6947,14 +7108,15 @@ ProcessKeepalive()
                 _logger.LogWarning("Empty line extracted from event data");
                 return;
             }
-            
+
             byte[] messageBytes = Encoding.UTF8.GetBytes(line);
 
             // Validate socket server state
             if (_socketServer == null || !_socketServer.IsListening)
             {
                 _logger.LogWarning("Socket server not available, attempting restart...");
-                try {
+                try
+                {
                     TryRestartSocketServer();
                     if (_socketServer == null || !_socketServer.IsListening)
                     {
@@ -6968,7 +7130,8 @@ ProcessKeepalive()
                         return;
                     }
                 }
-                catch (Exception ex) {
+                catch (Exception ex)
+                {
                     _logger.LogError(ex, "Error restarting socket server");
                     return;
                 }
@@ -6993,12 +7156,12 @@ ProcessKeepalive()
                     try
                     {
                         using var cts = new CancellationTokenSource(SendTimeoutMs);
-                        
+
                         // Wrap the sync Send in a task to support timeout
                         await Task.Run(() => {
                             _socketServer.Send(client, messageBytes);
                         }, cts.Token);
-                        
+
                         sendSuccess = true;
                         _logger.LogDebug($"Successfully sent message to client after {retryCount} retries");
                     }
@@ -7026,13 +7189,15 @@ ProcessKeepalive()
                 {
                     _logger.LogError($"Failed to send message to client after {MaxRetries} attempts");
                     await ProcessGpoErrorPortAsync();
-                    
+
                     // Consider removing failed client
-                    try {
+                    try
+                    {
                         _socketServer.DisconnectClient(client);
                         _logger.LogInformation("Disconnected failed client");
                     }
-                    catch (Exception ex) {
+                    catch (Exception ex)
+                    {
                         _logger.LogError(ex, "Error disconnecting failed client");
                     }
                 }
@@ -7042,7 +7207,7 @@ ProcessKeepalive()
         {
             _logger.LogError(ex, "Fatal error in socket processing");
             await ProcessGpoErrorPortAsync();
-            
+
             // Requeue message if possible
             if (_messageQueueTagSmartReaderTagEventSocketServer.Count < 1000)
             {

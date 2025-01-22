@@ -1,1 +1,2 @@
-https://www.dropbox.com/s/oskqtyel1yg81qj/8.1.0_Octane_Embedded_Development_Tools.tar.gz?dl=1
+8.4.0_Octane_Embedded_Development_Tools.tar.gz:
+https://www.dropbox.com/scl/fi/p936683paiwk2ano9m5b5/8.4.0_Octane_Embedded_Development_Tools.tar.gz?rlkey=ronmeeocqfd2oeiukyonhs6j2&dl=1

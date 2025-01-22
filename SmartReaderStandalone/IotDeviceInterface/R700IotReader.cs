@@ -830,7 +830,16 @@ public class R700IotReader : IR700IotReader
             var readerStatus = new ReaderStatus();
             var systemInfo = _iotDeviceInterfaceClient.SystemAsync().Result;
 
-            var currentInterface = _iotDeviceInterfaceClient.SystemRfidInterfaceGetAsync().Result;
+            var currentInterface = new RfidInterface();
+            try
+            {
+                currentInterface = _iotDeviceInterfaceClient.SystemRfidInterfaceGetAsync().Result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Error while trying to query the current interface mode.");
+            }
+            
             if (currentInterface.RfidInterface1 == RfidInterface1.Rest)
             {
                 readerStatus = _iotDeviceInterfaceClient.StatusAsync().Result;

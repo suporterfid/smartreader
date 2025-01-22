@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
 	  <RuntimeIdentifiers>win-x64;linux-arm;linux-x64;</RuntimeIdentifiers>
 	  <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -28,12 +28,12 @@
     <PackageReference Include="Serilog.Expressions" Version="5.0.0">
       <TreatAsUsed>true</TreatAsUsed>
     </PackageReference>
-    <PackageReference Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" Version="9.0.1">
+    <PackageReference Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" Version="8.0.12">
       <ExcludeAssets></ExcludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.12" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="System.IO.Ports" Version="9.0.1" />
+    <PackageReference Include="System.IO.Ports" Version="8.0.0" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Impinj.Atlas">
@@ -221,6 +221,8 @@
   <ItemGroup>
     <Folder Include="cap_deploy\" />
     <Folder Include="cap_template\plugins\" />
+    <Folder Include="config\" />
+    <Folder Include="output\" />
     <Folder Include="plugins\" />
     <Folder Include="wwwroot\licenses\" />
   </ItemGroup>

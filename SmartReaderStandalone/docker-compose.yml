@@ -1,9 +1,74 @@
 version: "3.8"
 services:
-  smartreader:
-    image: ubuntu:20.04
+  # The main service for building our .NET application and creating the UPGX package
+  smartreader-build:
+    # We'll build this service using our Dockerfile
     build:
-        dockerfile: Dockerfile.BuildCap
+      context: .  # Uses the current directory as build context
+      dockerfile: Dockerfile  # Points to our main Dockerfile
+      args:
+        # These arguments can be overridden when running docker-compose
+        BUILD_CONFIGURATION: Release
+        TARGETARCH: arm
+      # Specify the platform for multi-architecture builds
+      platforms:
+        - "linux/arm"
+    # Names the resulting image
+    image: smartreader:latest
+    # Configure container-specific settings
+    container_name: smartreader-builder
+    # Mount volumes for persistent storage and build outputs
     volumes:
-      - /c/temp:/tmp
+      # Mount a local directory to access build outputs
+      - ./output:/tmp/output
+      # Mount source code directory if needed for development
+      - .:/src
+    # Set environment variables for the build process
+    environment:
+      - DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+      - DOTNET_RUNNING_IN_CONTAINER=true
 
+  # Optional service for development and debugging
+  smartreader-dev:
+    # Uses the built image from the build service
+    image: smartreader:latest
+    # Names the development container
+    container_name: smartreader-dev
+    # Dependencies - ensures build happens first
+    depends_on:
+      - smartreader-build
+    # Mount volumes for development
+    volumes:
+      - ./output:/app/output
+      - ./config:/app/config
+    # Port mapping if needed for development
+    ports:
+      - "8443:8443"
+    # Development-specific environment variables
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+
+  # Service for UPGX package generation
+  smartreader-upgx:
+    # Uses Ubuntu 20.04 as specified in your original compose file
+    image: ubuntu:20.04
+    # Names the UPGX generation container
+    container_name: smartreader-upgx
+    # Ensures the main build completes first
+    depends_on:
+      - smartreader-build
+    # Build configuration for UPGX packaging
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: myupgx
+    # Mount volumes for accessing build artifacts and outputs
+    volumes:
+      - ./output:/tmp/output
+      # Mount ETK tools if needed separately
+      - ./etk_tools:/tmp/etk_tools
+    # Command to run when container starts
+    command: >
+      bash -c "cp /etk/smartreader_cap.upgx /tmp/output/ && 
+      echo 'UPGX package has been copied to output directory'"

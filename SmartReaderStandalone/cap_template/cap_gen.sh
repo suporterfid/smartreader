@@ -100,6 +100,7 @@ map_setting() {
         "Input Directory")       CAP_SOURCE="$2";;
         "Encrypt")               ENCRYPT="$2";;
         "Recipients")            RECIPIENTS="$2";;
+        "Partition Size")        PARTITION_SIZE="$2";;
         *) warn "Ignoring unknown setting '$1 = $2'";;
     esac 
 }
@@ -120,10 +121,17 @@ parse_description() {
     [ -n "$CAP_SOURCE" ] || fail "'Input Directory' field not set in '$DESC_FILE'"
     case "$VALID_READER_HW" in
         "R700") ;&
+        "R700V2") ;&
+        "R720") ;&
         "R510") ;&
         "R515") ;&
         "R***") vlog "Valid Reader Hardware '$VALID_READER_HW' is valid" ;;
         *) fail "Setting Valid Reader Hardware to '$VALID_READER_HW' is invalid" ;;
+    esac
+    case "$PARTITION_SIZE" in
+        "128") ;&
+        "256") vlog "Partition size '$PARTITION_SIZE' is valid" ;;
+        *) fail "Setting Partition size to '$PARTITION_SIZE' is invalid" ;;
     esac
 
     # ensure that encrypt flag is valid
@@ -151,6 +159,7 @@ check_tools() {
     SBIN=$HOST_DIR/sbin
 
     RAUC=$BIN/rauc
+    TEGRITY=$BIN/tegrity
 
     RAUC_CERT=$HOST_DIR/share/signing/cap.cert
     RAUC_KEY=$HOST_DIR/share/signing/cap.key
@@ -199,9 +208,32 @@ bundle_create() {
     tmpdir=$(mktemp -d)
     vlog "Working in tmpdir '$tmpdir'"
 
-    # Create and mount FS
-    run_cmd $FALLOCATE -l $((128*1024*1024)) $tmpdir/cap.ext4
-    run_cmd $MKFS -d $CAP_SOURCE/ $tmpdir/cap.ext4
+    # Generate signing keys
+    if [ -n "$GEN_KEY" ]; then
+        openssl req -x509 -config $HOST_DIR/etc/ssl/openssl.cnf -newkey rsa:4096 -nodes -keyout cap.key.pem -out cap.cert.pem -subj "/CN=CAP" -days 10000
+    fi
+
+    # Don't specify keyring when using self signed keys
+    if [ -n "$RAUC_KEYRING" ]; then
+        RAUC_KEYRING_CMD="--keyring $RAUC_KEYRING"
+    fi
+
+    # if a manifest exists, create run-time integrity information
+    if [ -a "$CAP_SOURCE/input_manifest.json" ]; then
+        LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOST_DIR/lib run_cmd $TEGRITY create "$CAP_SOURCE/input_manifest.json" "$CAP_SOURCE/manifest.json" "$CAP_SOURCE/" $RAUC_CERT $RAUC_KEY
+    fi
+
+    # ensure bundle is larger than 4 kbytes
+    bundle_size=$(du -bs $CAP_SOURCE/ | cut -f 1)
+    if [ $bundle_size -le 8192 ]; then
+        echo "WARNING: padding small bundle so that it is larger than 4 kbytes"
+        dd if=/dev/urandom of=$CAP_SOURCE/.pad bs=1 count=4096
+    fi
+
+
+     # Create and mount FS
+    run_cmd $FALLOCATE -l $(($PARTITION_SIZE*1024*1024)) $tmpdir/cap.ext4
+    run_cmd $MKFS -O verity -b 4096 -d $CAP_SOURCE/ $tmpdir/cap.ext4
     run_cmd $E2FSCK -n -f $tmpdir/cap.ext4
 
     bundle_format=""
@@ -267,20 +299,9 @@ case "\$1" in
         exit 1
         ;;
 esac
-
 exit 0
 EOF
     chmod +x $tmpdir/cap-hook.sh
-
-    # Generate signing keys
-    if [ -n "$GEN_KEY" ]; then
-        openssl req -x509 -config $HOST_DIR/etc/ssl/openssl.cnf -newkey rsa:4096 -nodes -keyout cap.key.pem -out cap.cert.pem -subj "/CN=CAP" -days 10000
-    fi
-
-    # Don't specify keyring when using self signed keys
-    if [ -n "$RAUC_KEYRING" ]; then
-        RAUC_KEYRING_CMD="--keyring $RAUC_KEYRING"
-    fi
 
     # Finally call Rauc
     rm -f $OUTPUT_FILE

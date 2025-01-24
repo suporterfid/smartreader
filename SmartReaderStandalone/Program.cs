@@ -108,9 +108,40 @@ builder.WebHost.ConfigureKestrel(opt =>
 {
     opt.ListenAnyIP(8443, listOpt => { listOpt.UseHttps(@"/customer/localhost.pfx", "r700"); });
 });
+
+builder.Services.AddSingleton<IConfigurationService, ConfigurationService>();
+
+builder.Services.AddSingleton<ITcpSocketService, TcpSocketService>(serviceProvider =>
+{
+    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+    var logger = serviceProvider.GetRequiredService<ILogger<TcpSocketService>>();
+    var configurationService = serviceProvider.GetRequiredService<IConfigurationService>();
+
+    return new TcpSocketService(serviceProvider, configuration, logger, configurationService);
+}); ;
+
 builder.Services.AddSingleton<IotInterfaceService>();
-builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvider => serviceProvider.GetService<IotInterfaceService>());
+builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvider =>
+{
+    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+    var logger = serviceProvider.GetRequiredService<ILogger<IotInterfaceService>>();
+    var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
+    var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
+    var configurationService = serviceProvider.GetRequiredService<IConfigurationService>();
+    var tcpSocketService = serviceProvider.GetRequiredService<ITcpSocketService>();
+
+    return new IotInterfaceService(serviceProvider, 
+        configuration, 
+        logger, 
+        loggerFactory, 
+        httpClientFactory, 
+        configurationService, 
+        tcpSocketService);
+});
+// builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvider => serviceProvider.GetService<IotInterfaceService>());
 builder.Services.AddScoped<ISummaryQueueBackgroundService, SummaryQueueBackgroundService>();
+
+
 
 // Create and start the MQTT servers
 var mqttFactory = new MqttFactory();
@@ -308,7 +339,11 @@ app.MapGet("/api/stream/tags", async (RuntimeDb db, HttpContext context) =>
 //RequireAuth
 //app.MapGet("/api/settings", [Authorize] async (RuntimeDb db) =>
 
-app.MapGet("/api/restore-default-settings", [AuthorizeBasicAuth]  async (RuntimeDb db, IotInterfaceService backgroundService, IConfiguration configuration) =>
+app.MapGet("/api/restore-default-settings", [AuthorizeBasicAuth]  async (
+    [FromServices] RuntimeDb db,
+    [FromServices] IotInterfaceService backgroundService, 
+    [FromServices] ConfigurationService configurationService,
+    [FromServices] IConfiguration configuration) =>
 {
     try
     {
@@ -354,7 +389,7 @@ app.MapGet("/api/restore-default-settings", [AuthorizeBasicAuth]  async (Runtime
 
                 
             }
-            backgroundService.SaveConfigDtoToDb(configDto);
+            configurationService.SaveConfigDtoToDb(configDto);
             dtos.Add(configDto);
             return Results.Ok(dtos);
         }

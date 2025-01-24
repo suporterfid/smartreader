@@ -8,10 +8,13 @@
 //
 //****************************************************************************************************
 #endregion
+using Newtonsoft.Json.Linq;
+using SmartReader.Infrastructure.ViewModel;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using static Org.BouncyCastle.Math.EC.ECCurve;
 
 namespace SmartReaderJobs.Utils;
 
@@ -403,4 +406,138 @@ public class Utils
     }
 
     #endregion
+
+    public static string ExtractLineFromJsonObject(
+    JObject smartReaderTagEventData,
+    StandaloneConfigDTO config,
+    Microsoft.Extensions.Logging.ILogger logger)
+    {
+        if (smartReaderTagEventData == null)
+            throw new ArgumentNullException(nameof(smartReaderTagEventData));
+
+        if (config == null)
+            throw new ArgumentNullException(nameof(config));
+
+        var sb = new StringBuilder();
+        string fieldDelim = GetFieldDelimiter(config.fieldDelim);
+        string lineEnd = GetLineEnd(config.lineEnd);
+
+        try
+        {
+            if (!smartReaderTagEventData.ContainsKey("tag_reads")) return string.Empty;
+
+            foreach (var tagRead in smartReaderTagEventData["tag_reads"]?.ToList() ?? new List<JToken>())
+            {
+                AppendField(sb, tagRead["antennaPort"], config.includeAntennaPort, fieldDelim);
+                AppendField(sb, tagRead["antennaZone"], config.includeAntennaZone, fieldDelim);
+                AppendField(sb, tagRead["epc"], "1", fieldDelim); // Always include EPC if present
+                AppendField(sb, tagRead["firstSeenTimestamp"], config.includeFirstSeenTimestamp, fieldDelim);
+                AppendField(sb, tagRead["peakRssi"], config.includePeakRssi, fieldDelim);
+                AppendField(sb, tagRead["tid"], config.includeTid, fieldDelim);
+                AppendField(sb, tagRead["rfPhase"], config.includeRFPhaseAngle, fieldDelim);
+                AppendField(sb, tagRead["rfDoppler"], config.includeRFDopplerFrequency, fieldDelim);
+                AppendField(sb, tagRead["frequency"], config.includeRFChannelIndex, fieldDelim);
+
+                if (string.Equals("1", config.includeGpiEvent, StringComparison.OrdinalIgnoreCase))
+                {
+                    AppendGpiStatus(sb, tagRead, fieldDelim);
+                }
+
+                AppendSgtinFields(config, sb, tagRead, fieldDelim);
+            }
+
+            AppendField(sb, smartReaderTagEventData["readerName"], "1", fieldDelim);
+            AppendField(sb, smartReaderTagEventData["site"], "1", fieldDelim);
+            AppendCustomFields(sb, smartReaderTagEventData, config, fieldDelim);
+            AppendBarcode(sb, smartReaderTagEventData, config, fieldDelim);
+
+            sb.Append(lineEnd);
+        }
+        catch (Exception ex)
+        {
+            logger?.LogError(ex, "Error processing JSON object for line extraction.");
+            throw;
+        }
+
+        return sb.ToString().Replace(fieldDelim + lineEnd, lineEnd);
+    }
+
+    private static string GetFieldDelimiter(string fieldDelimConfig)
+    {
+        return fieldDelimConfig switch
+        {
+            "1" => ",",
+            "2" => " ",
+            "3" => "\t",
+            "4" => ";",
+            _ => ""
+        };
+    }
+
+    private static void AppendField(StringBuilder sb, JToken field, string condition, string fieldDelim)
+    {
+        if (string.Equals("1", condition, StringComparison.OrdinalIgnoreCase))
+        {
+            sb.Append(field?.ToString() ?? string.Empty);
+            sb.Append(fieldDelim);
+        }
+    }
+
+    private static void AppendGpiStatus(StringBuilder sb, JToken tagRead, string fieldDelim)
+    {
+        for (int i = 1; i <= 4; i++)
+        {
+            var gpiStatus = tagRead?[$"gpi{i}Status"]?.ToString();
+            sb.Append(string.IsNullOrEmpty(gpiStatus) ? "0" : gpiStatus);
+            sb.Append(fieldDelim);
+        }
+    }
+
+    private static void AppendSgtinFields(StandaloneConfigDTO standaloneConfigDTO, StringBuilder sb, JToken tagRead, string fieldDelim)
+    {
+        if (string.Equals("1", standaloneConfigDTO?.parseSgtinEnabled, StringComparison.OrdinalIgnoreCase))
+        {
+            AppendField(sb, tagRead["tagDataKeyName"], standaloneConfigDTO?.parseSgtinIncludeKeyType, fieldDelim);
+            AppendField(sb, tagRead["tagDataKey"], "1", fieldDelim); // Always include tagDataKey
+            AppendField(sb, tagRead["tagDataSerial"], standaloneConfigDTO?.parseSgtinIncludeSerial, fieldDelim);
+            AppendField(sb, tagRead["tagDataPureIdentity"], standaloneConfigDTO?.parseSgtinIncludePureIdentity, fieldDelim);
+        }
+    }
+
+    private static void AppendCustomFields(StringBuilder sb, JObject data, StandaloneConfigDTO config, string fieldDelim)
+    {
+        for (int i = 1; i <= 4; i++)
+        {
+            var customFieldEnabled = (string)data[$"customField{i}Enabled"];
+            var customFieldName = (string)data[$"customField{i}Name"];
+            if (string.Equals("1", customFieldEnabled, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(customFieldName))
+            {
+                AppendField(sb, data[customFieldName], "1", fieldDelim);
+            }
+        }
+    }
+
+    private static void AppendBarcode(StringBuilder sb, JObject data, StandaloneConfigDTO config, string fieldDelim)
+    {
+        var barcode = data["barcode"]?.ToString() ?? data.SelectToken("tag_reads[0].barcode")?.ToString();
+        if (!string.IsNullOrEmpty(barcode) && (
+            string.Equals("1", config?.enableBarcodeSerial, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals("1", config?.enableBarcodeHid, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals("1", config?.enableBarcodeTcp, StringComparison.OrdinalIgnoreCase)))
+        {
+            sb.Append(barcode);
+            sb.Append(fieldDelim);
+        }
+    }
+
+    private static string GetLineEnd(string lineEndConfig)
+    {
+        return lineEndConfig switch
+        {
+            "1" => "\n",
+            "2" => "\r\n",
+            "3" => "\r",
+            _ => ""
+        };
+    }
 }

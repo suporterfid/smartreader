@@ -1430,3 +1430,4 @@ SmartReaderStandalone/obj/Release/net6.0/linux-arm/PubTmp/Out/wwwroot/ytem.js
 .vs/SmartReaderStandalone/DesignTimeBuild/.dtbcache.v2
 SmartReaderStandalone/etk_tools/8.4.0_Octane_Embedded_Development_Tools.tar.gz
 SmartReaderStandalone/build_logs/build_log_20250122_183430.txt
+/SmartReaderStandalone/build_logs

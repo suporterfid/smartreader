@@ -1,143 +1,216 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using Newtonsoft.Json.Linq;
 using SmartReader.Infrastructure.ViewModel;
+using SmartReaderJobs.Utils;
 using SmartReaderStandalone.ViewModel.Read;
 
-public class ThreadSafeBatchProcessor
+
+using System.Collections.Concurrent;
+using System.Globalization;
+using Newtonsoft.Json.Linq;
+using SmartReader.Infrastructure.ViewModel;
+using SmartReaderJobs.Utils;
+using SmartReaderStandalone.ViewModel.Read;
+
+public class ThreadSafeBatchProcessor : IDisposable
 {
     private readonly ILogger _logger;
+    private readonly ConcurrentDictionary<string, TagEventData> _tagEventDataDictionary;
     private readonly ConcurrentDictionary<string, JObject> _eventsListBatch;
     private readonly ConcurrentDictionary<string, JObject> _eventsListBatchOnUpdate;
+    private readonly ConcurrentDictionary<string, JObject> _eventsListAbsent;
+    private readonly StandaloneConfigDTO _config;
     private readonly SemaphoreSlim _batchLock = new SemaphoreSlim(1, 1);
+    private readonly Timer _expirationTimer;
+    private readonly int _expirationCheckIntervalMs = 100; // Check every second
 
     public ThreadSafeBatchProcessor(
         ILogger logger,
-        ConcurrentDictionary<string, JObject> eventsListBatch,
-        ConcurrentDictionary<string, JObject> eventsListBatchOnUpdate)
+        StandaloneConfigDTO config,
+        ref ConcurrentDictionary<string, JObject> eventsListBatch,
+        ref ConcurrentDictionary<string, JObject> eventsListBatchOnUpdate,
+        ref ConcurrentDictionary<string, JObject> eventsListAbsent)
     {
         _logger = logger;
+        _config = config;
         _eventsListBatch = eventsListBatch;
+        _eventsListAbsent = eventsListAbsent;
         _eventsListBatchOnUpdate = eventsListBatchOnUpdate;
+        _tagEventDataDictionary = new ConcurrentDictionary<string, TagEventData>();
+
+        // Initialize and start the expiration timer
+        _expirationTimer = new Timer(CheckExpiredTags, null, 0, _expirationCheckIntervalMs);
     }
 
-    public async Task ProcessEventBatchAsync(
-        TagRead tagRead, 
-        JObject dataToPublish, 
-        StandaloneConfigDTO config)
+    private async void CheckExpiredTags(object? state)
+    {
+        if (_config.tagPresenceTimeoutEnabled != "1")
+        {
+            return;
+        }
+
+        try
+        {
+            await _batchLock.WaitAsync();
+            var timeoutSeconds = double.Parse(_config.tagPresenceTimeoutInSec, CultureInfo.InvariantCulture);
+            ProcessExpiredTags(timeoutSeconds);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking for expired tags");
+        }
+        finally
+        {
+            _batchLock.Release();
+        }
+    }
+
+    private bool ProcessExpiredTags(double expirationInSeconds)
+    {
+        bool tagsExpired = false;
+        var expiredTags = GetExpiredTags(expirationInSeconds).ToList();
+
+        if (expiredTags.Any())
+        {
+            _logger.LogInformation($"Found {expiredTags.Count} expired tags to process");
+
+            foreach (var expiredEpc in expiredTags)
+            {
+                if (_eventsListBatch.TryRemove(expiredEpc, out var expiredEvent))
+                {
+                    _eventsListAbsent.TryAdd(expiredEpc, expiredEvent);
+                    _logger.LogInformation($"Moved expired EPC: {expiredEpc} to eventsListAbsent.");
+
+                    // Trigger update with current state when a tag expires
+                    foreach (var remainingTag in _eventsListBatch)
+                    {
+                        _eventsListBatchOnUpdate.AddOrUpdate(
+                            remainingTag.Key,
+                            remainingTag.Value,
+                            (_, __) => remainingTag.Value);
+                    }
+
+                    tagsExpired = true;
+                }
+                _tagEventDataDictionary.TryRemove(expiredEpc, out _);
+            }
+        }
+
+        return tagsExpired;
+    }
+
+    public async Task<bool> ProcessEventBatchAsync(TagRead tagRead, JObject? tagDataJObject)
     {
         try
         {
             await _batchLock.WaitAsync();
-            try
+
+            if (_tagEventDataDictionary.TryGetValue(tagRead.Epc, out var existingData))
             {
-                if (_eventsListBatch.TryGetValue(tagRead.Epc, out JObject retrievedValue))
-                {
-                    await UpdateExistingEventBatchAsync(
-                        tagRead, 
-                        dataToPublish, 
-                        retrievedValue, 
-                        config);
-                }
-                else
-                {
-                    await AddNewEventBatchAsync(
-                        tagRead, 
-                        dataToPublish, 
-                        config);
-                }
+                UpdateExistingTagEvent(tagRead, existingData, tagDataJObject);
             }
-            finally
+            else
             {
-                _batchLock.Release();
+                AddNewTagEvent(tagRead, tagDataJObject);
             }
+
+            return true;
         }
-        catch (Exception ex)
+        finally
         {
-            _logger.LogError(ex, $"Error processing event batch for EPC: {tagRead.Epc}");
-            throw;
+            _batchLock.Release();
         }
     }
 
-    private async Task UpdateExistingEventBatchAsync(
-        TagRead tagRead, 
-        JObject dataToPublish, 
-        JObject retrievedValue, 
-        StandaloneConfigDTO config)
+    private void UpdateExistingTagEvent(TagRead tagRead, TagEventData existingData, JObject? tagDataJObject)
     {
-        try
-        {
-            var existingEventOnCurrentAntenna = (JObject)(retrievedValue["tag_reads"]
-                .FirstOrDefault(q => (long)q["antennaPort"] == tagRead.AntennaPort));
+        bool shouldPublish = HasAntennaChanged(tagRead, existingData);
 
-            if (ShouldUpdateBasedOnAntennaZone(tagRead, retrievedValue, config))
+        existingData.FirstSeenTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        existingData.AntennaPort = tagRead.AntennaPort;
+        existingData.AntennaZone = tagRead.AntennaZone;
+
+        // Update collections if antenna changed
+        if (shouldPublish)
+        {
+            _logger.LogInformation($"Publishing updated tag data for EPC: {tagRead.Epc}");
+            _eventsListBatchOnUpdate.AddOrUpdate(tagRead.Epc, tagDataJObject, (_, __) => tagDataJObject);
+            _eventsListBatch.AddOrUpdate(tagRead.Epc, tagDataJObject, (_, __) => tagDataJObject);
+        }
+    }
+
+    private void AddNewTagEvent(TagRead tagRead, JObject? tagDataJObject)
+    {
+        var newTagEventData = new TagEventData
+        {
+            Epc = tagRead.Epc,
+            FirstSeenTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            AntennaPort = tagRead.AntennaPort,
+            AntennaZone = tagRead.AntennaZone
+        };
+
+        _tagEventDataDictionary.TryAdd(tagRead.Epc, newTagEventData);
+        _eventsListBatch.TryAdd(tagRead.Epc, tagDataJObject);
+
+        // Trigger update with all current tags when a new tag enters
+        foreach (var tag in _eventsListBatch)
+        {
+            _eventsListBatchOnUpdate.AddOrUpdate(
+                tag.Key,
+                tag.Value,
+                (_, __) => tag.Value);
+        }
+
+        _logger.LogInformation($"Added new tag event for EPC: {tagRead.Epc}");
+    }
+
+    private bool HasAntennaChanged(TagRead tagRead, TagEventData existingData)
+    {
+        if (existingData.AntennaPort != tagRead.AntennaPort ||
+            existingData.AntennaZone != tagRead.AntennaZone)
+        {
+            _logger.LogInformation($"Tag EPC: {tagRead.Epc} moved from AntennaPort: {existingData.AntennaPort} to {tagRead.AntennaPort} or from AntennaZone: {existingData.AntennaZone} to {tagRead.AntennaZone}.");
+            return true;
+        }
+        return false;
+    }
+
+    private IEnumerable<string> GetExpiredTags(double expirationInSeconds)
+    {
+        var currentTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        foreach (var kvp in _tagEventDataDictionary)
+        {
+            var timeElapsed = (currentTimestamp - kvp.Value.FirstSeenTimestamp) / 1000.0;
+            if (timeElapsed > expirationInSeconds)
             {
-                await TryAddToUpdateBatch(tagRead, dataToPublish, config);
+                yield return kvp.Key;
             }
-            else if (existingEventOnCurrentAntenna == null)
-            {
-                await TryAddToUpdateBatch(tagRead, dataToPublish, config);
-            }
-
-            _eventsListBatch.TryUpdate(tagRead.Epc, dataToPublish, retrievedValue);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, $"Error updating event batch for EPC: {tagRead.Epc}");
-            throw;
         }
     }
 
-    private bool ShouldUpdateBasedOnAntennaZone(
-        TagRead tagRead, 
-        JObject retrievedValue, 
-        StandaloneConfigDTO config)
+    // Interface methods for TagEventPublisher
+    public ConcurrentDictionary<string, JObject> GetCurrentBatch() => _eventsListBatch;
+    public ConcurrentDictionary<string, JObject> GetOnUpdateBatch() => _eventsListBatchOnUpdate;
+    public ConcurrentDictionary<string, JObject> GetAbsentBatch() => _eventsListAbsent;
+    public void ClearOnUpdateBatch() => _eventsListBatchOnUpdate.Clear();
+    public void ClearAbsentList() => _eventsListAbsent.Clear();
+
+    public void Dispose()
     {
-        if (!string.Equals("1", config.filterTagEventsListBatchOnChangeBasedOnAntennaZone, 
-            StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var existingEventOnCurrentAntennaZone = (JObject)(retrievedValue["tag_reads"]
-            .FirstOrDefault(q => (string)q["epc"] == tagRead.Epc));
-
-        if (existingEventOnCurrentAntennaZone == null)
-        {
-            return false;
-        }
-
-        var currentAntennaZone = existingEventOnCurrentAntennaZone["antennaZone"].Value<string>();
-        return !string.IsNullOrEmpty(currentAntennaZone) 
-            && !tagRead.AntennaZone.Equals(currentAntennaZone);
-    }
-
-    private async Task AddNewEventBatchAsync(
-        TagRead tagRead, 
-        JObject dataToPublish, 
-        StandaloneConfigDTO config)
-    {
-        if (string.Equals("1", config.updateTagEventsListBatchOnChange, 
-            StringComparison.OrdinalIgnoreCase)
-            && !_eventsListBatchOnUpdate.ContainsKey(tagRead.Epc))
-        {
-            _eventsListBatchOnUpdate.TryAdd(tagRead.Epc, dataToPublish);
-        }
-        else
-        {
-            _eventsListBatch.TryAdd(tagRead.Epc, dataToPublish);
-        }
-    }
-
-    private async Task TryAddToUpdateBatch(
-        TagRead tagRead, 
-        JObject dataToPublish, 
-        StandaloneConfigDTO config)
-    {
-        if (string.Equals("1", config.updateTagEventsListBatchOnChange, 
-            StringComparison.OrdinalIgnoreCase)
-            && !_eventsListBatchOnUpdate.ContainsKey(tagRead.Epc))
-        {
-            _eventsListBatchOnUpdate.TryAdd(tagRead.Epc, dataToPublish);
-        }
+        _expirationTimer?.Dispose();
+        _batchLock?.Dispose();
     }
 }
+
+public class TagEventData
+{
+    public string Epc { get; set; }
+    public long FirstSeenTimestamp { get; set; }
+    public long? AntennaPort { get; set; }
+    public string AntennaZone { get; set; }
+}
+
+
+
+

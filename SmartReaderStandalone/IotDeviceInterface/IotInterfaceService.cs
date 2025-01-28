@@ -22,11 +22,13 @@ using MQTTnet.Protocol;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Serilog;
+using Serilog.Events;
 using SmartReader.Infrastructure.Database;
 using SmartReader.Infrastructure.ViewModel;
 using SmartReader.ViewModel.Auth;
 using SmartReaderJobs.Utils;
 using SmartReaderJobs.ViewModel.Events;
+using SmartReaderJobs.ViewModel.Mqtt.Endpoint;
 using SmartReaderStandalone.Entities;
 using SmartReaderStandalone.IotDeviceInterface;
 using SmartReaderStandalone.Plugins;
@@ -54,6 +56,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks.Dataflow;
 using System.Timers;
 using TagDataTranslation;
 using DataReceivedEventArgs = SuperSimpleTcp.DataReceivedEventArgs;
@@ -222,6 +225,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
+    
+
     private static string? _readerAddress = null; // Nullable with default null value
 
     private static readonly string? _bearerToken = null; // Nullable with default null value
@@ -229,6 +234,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     private static readonly object _timerTagPublisherHttpLock = new();
 
     private static readonly object _timerTagPublisherOpcUaLock = new();
+
+    // private readonly object _batchLock = new object();
+
+    private readonly SemaphoreSlim _batchLock = new SemaphoreSlim(1, 1);
+
+    private readonly SemaphoreSlim _publishSemaphore = new SemaphoreSlim(1, 1);
 
     private static int _positioningExpirationInSec = 3; // No change needed, value type with initializer
 
@@ -282,18 +293,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     private static UDPSocket? _udpSocketServer = null;
 
     //private static UdpClientUtil _udpClientUtil;
-
-    private static IManagedMqttClient? _mqttClient = null;
-
-    //private static IMqttClient _mqttClient;
-
-    private static ManagedMqttClientOptions? _mqttClientOptions = null;
-
-    //private static IMqttClientOptions _mqttClientOptions;
-
-    //private static IManagedMqttClient _mqttCommandClient;
-
-    private static ManagedMqttClientOptions? _mqttCommandClientOptions = null;
 
     private static string? _expectedLicense = null;
 
@@ -438,7 +437,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private AggregateInputReader? _aggInputReader = null;
 
-    
+    private ThreadSafeBatchProcessor _batchProcessor;
+
+    private TagEventPublisher _tagEventPublisher;
+
+
 
     //private readonly RuntimeDb _db;
 
@@ -448,8 +451,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private string? DeviceIdWithDashes = null;
 
-    protected Timer PeriodicTasksTimerInventoryData = new();
-
     private string? ExternalApiToken = null;
 
     private readonly ValidationService _validationService;
@@ -458,13 +459,21 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private readonly ITcpSocketService _tcpSocketService;
 
+    private readonly IMqttService _mqttService;
+
+    //private double _mqttPublishIntervalInSec = 1;
+    //private double _mqttPublishIntervalInMs = 10;
+    //private double _mqttUpdateTagEventsListBatchOnChangeIntervalInSec = 1;
+    //private double _mqttUpdateTagEventsListBatchOnChangeIntervalInMs = 10;
+    private MqttPublishingConfiguration _mqttPublishingConfiguration;
+
+    private bool _emptyEventPublished = false;
+
     public static Dictionary<string, IPlugin> _plugins = new();
 
-    
-    //private readonly CircularBuffer<JObject> _failedMessages = new CircularBuffer<JObject>(1000);
-    
-
     private readonly ILoggerFactory _loggerFactory;
+
+    private string _buildConfiguration = "Release"; // Default to Debug if unable to determine
 
 
 
@@ -474,13 +483,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         ILoggerFactory loggerFactory, 
         IHttpClientFactory httpClientFactory, 
         IConfigurationService configurationService,
-        ITcpSocketService tcpSocketService)
+        ITcpSocketService tcpSocketService,
+        IMqttService mqttService)
     {
         _configuration = configuration;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         Services = services;
         HttpClientFactory = httpClientFactory;
+
 
         _validationService = new ValidationService(
             logger,
@@ -491,6 +502,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _configurationService = configurationService;
 
         _tcpSocketService = tcpSocketService;
+
+        _mqttService = mqttService;
+
+#if DEBUG
+        _buildConfiguration = "Debug";
+#endif
 
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
         var filePath = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
@@ -505,6 +522,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _httpUtil = _configurationService.CreateHttpUtil(HttpClientFactory);
 
         _logger.LogInformation($"Reader Address: {_readerAddress}, Reader Username: {_readerUsername}");
+        
 
         _timerPeriodicTasksJob = new Timer(100);
 
@@ -535,6 +553,44 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _gpiTimerTask = HandleGpiTimerAsync(_gpiTimer, _gpiCts.Token);
 
         _httpTimerStopwatch = new Stopwatch();
+
+        try
+        {
+
+
+            _mqttPublishingConfiguration = LoadMqttPublishingConfiguration();
+        }
+        catch (Exception)
+        {
+
+            
+        }
+
+        try
+        {
+            InitializeReaderDeviceAsync();
+        }
+        catch (Exception)
+        {
+
+           
+        }
+        _batchProcessor = new ThreadSafeBatchProcessor(
+                    _logger,
+                    _standaloneConfigDTO,
+                    ref _smartReaderTagEventsListBatch,
+                    ref _smartReaderTagEventsListBatchOnUpdate,
+                    ref _smartReaderTagEventsAbsence
+                );
+
+        _tagEventPublisher = new TagEventPublisher(
+            _logger,
+            _standaloneConfigDTO,
+            _mqttPublishingConfiguration,
+            _batchProcessor,
+            _standaloneConfigDTO.readerName,
+            _iotDeviceInterfaceClient.MacAddress
+            );
 
         //try
         //{
@@ -1356,29 +1412,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
-    private void MqttLog(string threshold, string message)
-    {
-        try
-        {
-            if (_mqttClient != null && _mqttClient.IsConnected)
-            {
-                //namespace/group_id/message_type/edge_node_id/[device_id]
-                //topic: spBv1.0/{GroupID}/+/{EdgeID}/#
-                //namespace/group_id/DDATA/edge_node_id/device_id
-                var payload = DateTime.Now.ToString(CultureInfo.InvariantCulture) + "|" + DeviceIdMqtt + "|" +
-                              threshold +
-                              "|" + message;
-                //
-                Task.Run(() =>
-                    _mqttClient.EnqueueAsync("smartreader/log/" + DeviceIdMqtt, payload,
-                        MqttQualityOfServiceLevel.AtLeastOnce));
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "MqttLog: Unexpected error. " + ex.Message);
-        }
-    }
+    
 
 
 
@@ -1504,31 +1538,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "MqttLog: Unexpected error. " + ex.Message);
+            _logger.LogError(ex, "Unexpected error. " + ex.Message);
         }
     }
-
-    //void EndpointDetected(object sender, EndpointMetadata md)
-    //{
-    //    _logger.LogInformation("UDP Endpoint detected: " + md.Ip + ":" + md.Port);
-    //    try
-    //    {
-    //        if(!_udpClients.ContainsKey(md.Ip))
-    //        {
-    //            _udpClients.TryAdd(md.Ip, md.Port);
-    //        }
-
-    //    }
-    //    catch (Exception)
-    //    {
-
-    //    }
-    //}
-
-    //void DatagramReceived(object sender, Datagram dg)
-    //{
-    //    _logger.LogInformation("Datagram Received [" + dg.Ip + ":" + dg.Port + "]: " + Encoding.UTF8.GetString(dg.Data));
-    //}
 
     public async Task<List<SmartreaderSerialNumberDto>> GetSerialAsync()
     {
@@ -1548,11 +1560,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
             }
 
-           
-
             var info = await _iotDeviceInterfaceClient.GetSystemInfoAsync();
-
-
             var serialData = new SmartreaderSerialNumberDto();
             serialData.SerialNumber = info.SerialNumber;
             try
@@ -1575,7 +1583,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         catch (Exception)
         {
         }
-
 
         return returnData;
     }
@@ -1915,7 +1922,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             var mqttManagementEvents = new Dictionary<string, object>();
             mqttManagementEvents.Add("smartreader-status", "started");
-            await PublishMqttManagementEventAsync(mqttManagementEvents);
+            await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
         }
         catch (Exception ex)
         {
@@ -1987,7 +1994,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         var mqttManagementEvents = new Dictionary<string, object>();
         mqttManagementEvents.Add("smartreader-status", "stopped");
-        await PublishMqttManagementEventAsync(mqttManagementEvents);
+        await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
     }
 
     public async Task ApplySettingsAsync()
@@ -2036,7 +2043,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             var mqttManagementEvents = new Dictionary<string, object>();
             mqttManagementEvents.Add("smartreader-status", "settings-applied");
-            await PublishMqttManagementEventAsync(mqttManagementEvents);
+            await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
 
             await _iotDeviceInterfaceClient.GetReaderInventoryPresetListAsync();
         }
@@ -2442,6 +2449,27 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
+    private void HandleMessageReceived(object? sender, MqttMessageEventArgs e)
+    {
+        Console.WriteLine($"Received message from ClientId='{e.ClientId}', Topic='{e.Topic}': Payload='{e.Payload}'");
+
+        ProcessMqttCommandMessage(e.ClientId, e.Topic, e.Payload);
+    }
+
+    private async void OnGpoErrorRequested(object? sender, MqttErrorEventArgs e)
+    {
+        _logger.LogInformation($"GPO Error triggered with details: {e.Details}");
+
+        try
+        {
+            await ProcessGpoErrorPortAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing GPO port.");
+        }
+    }
+
     public async Task<ObservableCollection<string>> GetPresetListAsync()
     {
         if (_iotDeviceInterfaceClient == null)
@@ -2572,11 +2600,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 if (gpiStatusEvent.Count > 0)
                 {
                     _logger.LogInformation($"Publishing gpi status event: {serializedData}");
-                    await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
-                    // Wait until the queue is fully processed.
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                    SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
+                    await _mqttService.PublishAsync(mqttCommandResponseTopic, serializedData, _iotDeviceInterfaceClient.MacAddress, mqttQualityOfServiceLevel, retain);
                 }
 
             }
@@ -3141,12 +3165,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 if (statusEvent.Count > 0)
                 {
                     _logger.LogInformation($"Publishing app status event: {serializedData}");
-                    await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
-                    // Wait until the queue is fully processed.
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                    SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-                    //_ = ProcessGpoErrorPortRecoveryAsync();
+                    await _mqttService.PublishAsync(mqttCommandResponseTopic, serializedData, _iotDeviceInterfaceClient.MacAddress, mqttQualityOfServiceLevel, retain);
                 }
 
             }
@@ -3607,12 +3626,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 if (statusEvent.Count > 0)
                 {
                     _logger.LogInformation($"Publishing status event (1): {serializedData}");
-                    await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
-                    // Wait until the queue is fully processed.
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                    SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-                    //_ = ProcessGpoErrorPortRecoveryAsync();
+                    await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                        serializedData, 
+                        _iotDeviceInterfaceClient.MacAddress, 
+                        mqttQualityOfServiceLevel, 
+                        retain);
                 }
 
             }
@@ -3735,7 +3753,8 @@ ProcessKeepalive()
             }
 
 
-        if (dataToPublish != null && string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
+        if (dataToPublish != null 
+            && _standaloneConfigDTO.mqttEnabled == "1")
             try
             {
                 var mqttManagementEventsTopic = _standaloneConfigDTO.mqttManagementEventsTopic;
@@ -3769,12 +3788,7 @@ ProcessKeepalive()
                 if (smartReaderTagReadEvent != null && smartReaderTagReadEvent.TagReads.Any())
                 {
                     _logger.LogInformation($"Publishing tag event: {serializedData}");
-                    await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData, mqttQualityOfServiceLevel, retain);
-                    // Wait until the queue is fully processed.
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                    SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-                    //_ = ProcessGpoErrorPortRecoveryAsync();
+                    await _mqttService.PublishAsync(mqttCommandResponseTopic, serializedData, _iotDeviceInterfaceClient.MacAddress, mqttQualityOfServiceLevel, retain);
                 }
 
             }
@@ -3822,10 +3836,10 @@ ProcessKeepalive()
 
 
                 //    var serializedData = JsonConvert.SerializeObject(eventStatus);
-                //    await _mqttClient.EnqueueAsync(mqttManagementEventsTopic, serializedData,
+                //    await _mqttService.PublishAsync(mqttManagementEventsTopic, serializedData,
                 //        mqttQualityOfServiceLevel, retain);
                 //    // Wait until the queue is fully processed.
-                //    SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                //    
                 //}
                 //catch (Exception)
                 //{
@@ -3947,7 +3961,7 @@ ProcessKeepalive()
 
                             if (mqttManagementEvents.Count > 0)
                             {
-                                await PublishMqttManagementEventAsync(mqttManagementEvents);
+                                await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
                             }
                         }
 
@@ -4046,7 +4060,7 @@ ProcessKeepalive()
 
                             if (mqttManagementEvents.Count > 0)
                             {
-                                await PublishMqttManagementEventAsync(mqttManagementEvents);
+                                await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
                             }
                         }
 
@@ -4171,33 +4185,55 @@ ProcessKeepalive()
             }
 
             var shouldProcess = false;
-            _logger.LogInformation($"EPC Hex: {tagEvent.EpcHex} Antenna : {tagEvent.AntennaPort} LastSeenTime {tagEvent.LastSeenTime}");
+            _logger.LogDebug($"EPC Hex: {tagEvent.EpcHex} Antenna : {tagEvent.AntennaPort} LastSeenTime {tagEvent.LastSeenTime}");
 
             await Task.Run(() => ProcessGpoBlinkAnyTagGpoPortAsync());
 
 
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
-            if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
-                            StringComparison.OrdinalIgnoreCase))
-            {
-                if (_smartReaderTagEventsListBatch.ContainsKey(tagEvent.EpcHex))
-                {
-                    try
-                    {
-                        var updatedCurrentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now) * 1000;
-                        _smartReaderTagEventsListBatch[tagEvent.EpcHex]["firstSeenTimestamp"] = updatedCurrentEventTimestamp;
-                    }
-                    catch (KeyNotFoundException ex)
-                    {
-                        _logger.LogDebug(ex, $"EPC {tagEvent.EpcHex} expired from batch list");
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, $"Error updating timestamp for EPC {tagEvent.EpcHex} in batch list");
-                    }
+            //if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
+            //                StringComparison.OrdinalIgnoreCase))
+            //{
+            //    if (_smartReaderTagEventsListBatch.ContainsKey(tagEvent.EpcHex))
+            //    {
+            //        var epcObject = _smartReaderTagEventsListBatch[tagEvent.EpcHex];
+            //        var updatedCurrentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now) * 1000;
+            //        var threadSafeBatchProcessor = new ThreadSafeBatchProcessor(
+            //            _logger,
+            //            _smartReaderTagEventsListBatch,
+            //            _smartReaderTagEventsListBatchOnUpdate);
 
-                }
-            }
+            //        await threadSafeBatchProcessor.ProcessEventBatchAsync(
+            //            new TagRead
+            //            {
+            //                Epc = tagEvent.EpcHex,
+            //                AntennaPort = tagEvent.AntennaPort,
+            //                AntennaZone = tagEvent.AntennaName,
+            //                FirstSeenTimestamp = updatedCurrentEventTimestamp
+            //            },
+            //            epcObject, // Populate with relevant data
+            //            _standaloneConfigDTO);
+            //        //try
+            //        //{
+            //        //    var updatedCurrentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now) * 1000;
+
+            //        //    // Retrieve the JObject for the specific EPC
+            //        //    var epcObject = _smartReaderTagEventsListBatch[tagEvent.EpcHex];
+
+            //        //    // Safely update the property (overwrite if exists or add otherwise)
+            //        //    epcObject["firstSeenTimestamp"] = updatedCurrentEventTimestamp;
+            //        //}
+            //        //catch (KeyNotFoundException ex)
+            //        //{
+            //        //    _logger.LogDebug(ex, $"EPC {tagEvent.EpcHex} expired from batch list");
+            //        //}
+            //        //catch (Exception ex)
+            //        //{
+            //        //    _logger.LogError(ex, $"Error updating timestamp for EPC {tagEvent.EpcHex} in batch list");
+            //        //}
+            //    }
+
+            //}
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
             if (!string.IsNullOrEmpty(_standaloneConfigDTO.stopTriggerDuration)
                 && string.Equals("1", _standaloneConfigDTO.stopTriggerType,
@@ -4401,18 +4437,17 @@ ProcessKeepalive()
                     }
                     _lastTagRead.Epc = tagEvent.EpcHex;
                     _lastTagRead.AntennaPort = tagEvent.AntennaPort;
-                    //var currentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
-                    if (tagEvent.LastSeenTime.HasValue)
-                        _lastTagRead.FirstSeenTimestamp = tagEvent.LastSeenTime.Value.ToFileTimeUtc();
+
+                    AdjustTagReadEventTimestamp(tagEvent, _lastTagRead);
+
                     shouldProcess = true;
                 }
                 else
                 {
                     if (_lastTagRead.Epc == tagEvent.EpcHex && _lastTagRead.AntennaPort == tagEvent.AntennaPort)
                     {
-                        if (tagEvent.LastSeenTime.HasValue)
-                            if (_lastTagRead.FirstSeenTimestamp != tagEvent.LastSeenTime.Value.ToFileTimeUtc())
-                                shouldProcess = true;
+                        AdjustTagReadEventTimestamp(tagEvent, _lastTagRead);
+                        shouldProcess = true;
                     }
                     else
                     {
@@ -4421,8 +4456,7 @@ ProcessKeepalive()
 
                     _lastTagRead.Epc = tagEvent.EpcHex;
                     _lastTagRead.AntennaPort = tagEvent.AntennaPort;
-                    if (tagEvent.LastSeenTime.HasValue)
-                        _lastTagRead.FirstSeenTimestamp = tagEvent.LastSeenTime.Value.ToFileTimeUtc();
+                    AdjustTagReadEventTimestamp(tagEvent, _lastTagRead);
                 }
             }
 
@@ -4459,6 +4493,20 @@ ProcessKeepalive()
         {
             _logger.LogError(ex, $"Critical error processing tag event for EPC: {tagEvent?.EpcHex ?? "unknown"}");
             await ProcessGpoErrorPortAsync();
+        }
+    }
+
+    private void AdjustTagReadEventTimestamp(TagInventoryEvent tagInventoryEvent, TagRead tagEvent)
+    {
+        if ("Release".Equals(_buildConfiguration))
+        {
+            if (tagInventoryEvent.LastSeenTime.HasValue)
+                tagEvent.FirstSeenTimestamp = tagInventoryEvent.LastSeenTime.Value.ToFileTimeUtc();
+        }
+        else
+        {
+            var currentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
+            tagEvent.FirstSeenTimestamp = currentEventTimestamp;
         }
     }
 
@@ -5100,321 +5148,517 @@ ProcessKeepalive()
 
     }
 
+    //    private async void OnRunPeriodicTagFilterListsEvent(object sender, ElapsedEventArgs e)
+    //    {
+    //        const int WarningThreshold = 800; // 80% of max size
+    //#pragma warning disable CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
+    //        _timerTagFilterLists.Enabled = false;
+    //        _timerTagFilterLists.Stop();
+
+    //        try
+    //        {
+    //            try
+    //            {
+    //                if (_readEpcs.Count > WarningThreshold)
+    //                {
+    //                    _logger.LogWarning($"_readEpcs size ({_readEpcs.Count}) approaching limit");
+    //                }
+
+    //                if (_softwareFilterReadCountTimeoutDictionary.Count > WarningThreshold)
+    //                {
+    //                    _logger.LogWarning($"_softwareFilterReadCountTimeoutDictionary size ({_softwareFilterReadCountTimeoutDictionary.Count}) approaching limit");
+    //                }
+
+    //                if (_smartReaderTagEventsListBatch.Count > WarningThreshold)
+    //                {
+    //                    _logger.LogWarning($"_smartReaderTagEventsListBatch size ({_smartReaderTagEventsListBatch.Count}) approaching limit");
+    //                }
+    //            }
+    //            catch (System.Exception)
+    //            {
+
+    //            }
+
+
+    //            if (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterEnabled)
+    //                && !"0".Equals(_standaloneConfigDTO.softwareFilterEnabled))
+    //            {
+    //                try
+    //                {
+    //                    if (_readEpcs.Count > 1000)
+    //                    {
+    //                        var count = _readEpcs.Count - 1000;
+    //                        if (count > 0)
+    //                        {
+    //                            // remove that number of items from the start of the list
+    //                            long eventTimestampToRemove = 0;
+    //                            foreach (var k in _readEpcs.Keys.Take(count))
+    //                                _readEpcs.TryRemove(k, out eventTimestampToRemove);
+    //                        }
+    //                    }
+
+    //                    var oldTimestamp = DateTime.Now.AddHours(-1);
+    //                    var oldTimestampToCheck = Utils.CSharpMillisToJavaLong(oldTimestamp);
+    //                    foreach (var kvp in _readEpcs.Where(x => x.Value < oldTimestampToCheck).ToList())
+    //                    {
+    //                        var val = kvp.Value;
+    //                        _readEpcs.TryRemove(kvp.Key, out val);
+    //                    }
+    //                }
+    //                catch (Exception ex)
+    //                {
+    //                    _logger.LogError(ex, "Unexpected error on remove _readEpcs" + ex.Message);
+    //                }
+
+    //                try
+    //                {
+
+    //                    var expiration = long.Parse(_standaloneConfigDTO.softwareFilterWindowSec);
+
+    //                    var oldTimestamp = DateTime.Now.AddHours(-1);
+    //                    var oldTimestampToCheck = Utils.CSharpMillisToJavaLong(oldTimestamp);
+    //                    foreach (var kvp in _readEpcs.ToList())
+    //                    {
+    //                        var val = kvp.Value;
+    //                        var currentEventTimestamp = DateTime.Now;
+    //                        var currentTimestampToCheck = Utils.CSharpMillisToJavaLong(currentEventTimestamp);
+    //                        var dateTimeOffsetCurrentEventTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(currentTimestampToCheck);
+    //                        var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(val);
+    //                        var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
+    //                        if (timeDiff.TotalSeconds > expiration)
+    //                        {
+    //                            _readEpcs.TryRemove(kvp.Key, out val);
+    //                        }
+    //                    }
+    //                }
+    //                catch (Exception ex)
+    //                {
+    //                    _logger.LogError(ex, "Unexpected error on remove _readEpcs" + ex.Message);
+    //                }
+    //            }
+
+    //            if (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled)
+    //                && !"0".Equals(_standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled))
+    //                try
+    //                {
+    //                    if (_softwareFilterReadCountTimeoutDictionary.Count > 1000)
+    //                    {
+    //                        var count = _softwareFilterReadCountTimeoutDictionary.Count - 1000;
+    //                        if (count > 0)
+    //                        {
+    //                            // remove that number of items from the start of the list
+    //                            ReadCountTimeoutEvent? eventTimestampToRemove;
+    //                            foreach (var k in _softwareFilterReadCountTimeoutDictionary.Keys.Take(count))
+    //                                _softwareFilterReadCountTimeoutDictionary.TryRemove(k, out eventTimestampToRemove);
+    //                        }
+    //                    }
+
+    //                    var currentTimestamp = DateTime.Now;
+    //                    var currentTimestampToCheck = Utils.CSharpMillisToJavaLong(currentTimestamp);
+    //                    var dateTimeOffsetCurrentEventTimestamp =
+    //                        DateTimeOffset.FromUnixTimeMilliseconds(currentTimestampToCheck);
+    //                    foreach (var kvp in _softwareFilterReadCountTimeoutDictionary)
+    //                    {
+    //                        var dateTimeOffsetLastSeenTimestamp =
+    //                            DateTimeOffset.FromUnixTimeMilliseconds(kvp.Value.EventTimestamp);
+    //                        var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
+    //                        if (timeDiff.TotalHours > 1)
+    //                        {
+    //                            var val = kvp.Value;
+    //                            _softwareFilterReadCountTimeoutDictionary.TryRemove(kvp.Key, out val);
+    //                        }
+    //                    }
+    //                }
+    //                catch (Exception ex)
+    //                {
+    //                    _logger.LogError(ex,
+    //                        "Unexpected error on remove _softwareFilterReadCountTimeoutDictionary" + ex.Message);
+    //                }
+
+    //            if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled, StringComparison.OrdinalIgnoreCase))
+    //            {
+    //                if (_isStarted)
+    //                {
+    //                    try
+    //                    {
+    //                        var currentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
+
+    //                        double expirationInSec = 2;
+    //                        double expirationInMillis = 2000;
+    //                        double.TryParse(_standaloneConfigDTO.tagPresenceTimeoutInSec, NumberStyles.Float, CultureInfo.InvariantCulture, out expirationInSec);
+    //                        expirationInMillis = expirationInSec * 1000;
+
+    //                        var dateTimeOffsetCurrentEventTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(currentEventTimestamp);
+    //                        //var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(_readEpcs[tagEvent.EpcHex]);
+
+    //                        var secondsToAdd = expirationInSec * -1;
+    //                        var expiredEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now.AddSeconds(secondsToAdd));
+
+    //                        //var expiredEvents = _smartReaderTagEventsListBatch.Values.Where(t => t["tag_reads"]["firstSeenTimestamp"].Where(q => (long)q["firstSeenTimestamp"] <= expiredEventTimestamp));
+    //                        var currentEvents = _smartReaderTagEventsListBatch.Values;
+    //                        //var expiredEvents = _smartReaderTagEventsListBatch.Values.Where(t => (long)t["tag_reads"]["firstSeenTimestamp"] <= expiredEventTimestamp);
+    //                        //var existingEventOnCurrentAntenna = (JObject)(retrievedValue["tag_reads"].FirstOrDefault(q => (long)q["antennaPort"] == tagRead.AntennaPort));
+
+    //                        foreach (JObject currentEvent in currentEvents)
+    //                        {
+
+    //                            foreach (JObject currentEventItem in currentEvent["tag_reads"])
+    //                            {
+    //                                long firstSeenTimestamp = currentEventItem["firstSeenTimestamp"].Value<long>() / 1000;
+    //                                string expiredEpc = currentEventItem["epc"].Value<string>();
+    //                                var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(firstSeenTimestamp);
+
+    //                                var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
+    //                                if (timeDiff.TotalSeconds > expirationInSec)
+    //                                {
+
+    //                                    JObject eventToRemove = null;
+    //                                    if (_smartReaderTagEventsListBatch.TryGetValue(expiredEpc, out eventToRemove))
+    //                                    {
+    //                                        if (eventToRemove != null)
+    //                                        {
+    //                                            if (_smartReaderTagEventsListBatch.ContainsKey(expiredEpc))
+    //                                            {
+
+    //                                                if (_smartReaderTagEventsListBatch.TryRemove(expiredEpc, out eventToRemove))
+    //                                                {
+    //                                                    _logger.LogInformation($"Expired EPC detected {timeDiff.TotalSeconds}: {expiredEpc} - firstSeenTimestamp: {dateTimeOffsetLastSeenTimestamp.ToString("o")}, current timestamp: {dateTimeOffsetCurrentEventTimestamp.ToString("o")} current timeout set {expirationInSec}");
+    //                                                }
+    //                                            }
+
+    //                                            if (!_smartReaderTagEventsAbsence.ContainsKey(expiredEpc))
+    //                                            {
+    //                                                _logger.LogInformation($"On-Change event requested for expired EPC: {expiredEpc}");
+    //                                                _smartReaderTagEventsAbsence.TryAdd(expiredEpc, eventToRemove);
+
+    //                                            }
+
+    //                                        }
+    //                                    }
+    //                                }
+    //                            }
+
+    //                        }
+
+    //                        if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
+    //                                StringComparison.OrdinalIgnoreCase) && _smartReaderTagEventsAbsence.Any())
+    //                        {
+    //                            JObject smartReaderTagReadEvent;
+    //                            JObject? smartReaderTagReadEventAggregated = null;
+    //                            var smartReaderTagReadEventsArray = new JArray();
+
+    //                            foreach (var tagEpcToRemove in _smartReaderTagEventsAbsence.Keys)
+    //                            {
+    //                                JObject? expiredTagEvent = null;
+
+    //                                if (_smartReaderTagEventsListBatch.ContainsKey(tagEpcToRemove))
+    //                                {
+    //                                    _smartReaderTagEventsListBatch.TryRemove(tagEpcToRemove, out expiredTagEvent);
+    //                                }
+
+    //                            }
+
+    //                            _smartReaderTagEventsAbsence.Clear();
+
+    //                            if (_smartReaderTagEventsListBatch.Count > 0)
+    //                            {
+    //                                foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
+    //                                {
+    //                                    smartReaderTagReadEvent = smartReaderTagReadEventBatch;
+    //                                    try
+    //                                    {
+    //                                        if (smartReaderTagReadEvent == null)
+    //                                            continue;
+    //                                        if (smartReaderTagReadEventAggregated == null)
+    //                                        {
+    //                                            smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
+    //                                            smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+    //                                                .FirstOrDefault().FirstOrDefault());
+    //                                        }
+    //                                        else
+    //                                        {
+    //                                            try
+    //                                            {
+    //                                                smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+    //                                                    .FirstOrDefault().FirstOrDefault());
+    //                                            }
+    //                                            catch (Exception ex)
+    //                                            {
+    //                                                _logger.LogInformation(ex,
+    //                                                    "Unexpected error while filtering tags " + ex.Message);
+    //                                            }
+    //                                        }
+    //                                    }
+    //                                    catch (Exception ex)
+    //                                    {
+    //                                        _logger.LogError(ex, "Unexpected error on while filtering tags " + ex.Message);
+    //                                    }
+    //                                }
+    //                                try
+    //                                {
+    //                                    if (smartReaderTagReadEventAggregated != null && smartReaderTagReadEventsArray != null &&
+    //                                        smartReaderTagReadEventsArray.Count > 0)
+    //                                    {
+    //                                        smartReaderTagReadEventAggregated["tag_reads"] = smartReaderTagReadEventsArray;
+
+    //                                        await ProcessMqttJsonTagEventDataAsync(smartReaderTagReadEventAggregated);
+    //                                    }
+    //                                }
+    //                                catch (Exception ex)
+    //                                {
+    //                                    _logger.LogError(ex, "Unexpected error on while filtering tags " + ex.Message);
+    //                                }
+    //                            }
+    //                            else
+    //                            {
+    //                                // generate empty event...
+
+
+    //                                var emptyTagData = new SmartReaderTagReadEvent();
+    //                                emptyTagData.ReaderName = _standaloneConfigDTO.readerName;
+    //#pragma warning disable CS8602 // Dereference of a possibly null reference.
+    //                                emptyTagData.Mac = _iotDeviceInterfaceClient.MacAddress;
+    //#pragma warning restore CS8602 // Dereference of a possibly null reference.
+    //                                emptyTagData.TagReads = new List<TagRead>();
+    //                                JObject emptyTagDataObject = JObject.FromObject(emptyTagData);
+    //                                smartReaderTagReadEventsArray.Add(emptyTagDataObject);
+
+    //                                try
+    //                                {
+
+    //                                    await ProcessMqttJsonTagEventDataAsync(emptyTagDataObject);
+    //                                }
+    //                                catch (Exception ex)
+    //                                {
+    //                                    _logger.LogError(ex, "Unexpected error on while filtering tags " + ex.Message);
+    //                                }
+    //                            }
+
+
+    //                        }
+
+
+    //                    }
+    //                    catch (Exception)
+    //                    {
+
+
+    //                    }
+    //                }
+    //                else
+    //                {
+    //                    _smartReaderTagEventsAbsence.Clear();
+    //                    _smartReaderTagEventsListBatch.Clear();
+    //                    _smartReaderTagEventsAbsence.Clear();
+    //                }
+
+    //            }
+    //        }
+    //        catch (Exception)
+    //        {
+    //        }
+
+
+    //        _timerTagFilterLists.Enabled = true;
+    //        _timerTagFilterLists.Start();
+    //#pragma warning restore CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
+    //    }
+
     private async void OnRunPeriodicTagFilterListsEvent(object sender, ElapsedEventArgs e)
     {
-        const int WarningThreshold = 800; // 80% of max size
-#pragma warning disable CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
         _timerTagFilterLists.Enabled = false;
         _timerTagFilterLists.Stop();
 
         try
         {
-            try
+            // Use the same batch lock as the processor
+            using (await _batchLock.WaitAsyncWithTimeout(TimeSpan.FromSeconds(5)))
             {
-                if (_readEpcs.Count > WarningThreshold)
-                {
-                    _logger.LogWarning($"_readEpcs size ({_readEpcs.Count}) approaching limit");
-                }
-                
-                if (_softwareFilterReadCountTimeoutDictionary.Count > WarningThreshold)
-                {
-                    _logger.LogWarning($"_softwareFilterReadCountTimeoutDictionary size ({_softwareFilterReadCountTimeoutDictionary.Count}) approaching limit");
-                }
-                
-                if (_smartReaderTagEventsListBatch.Count > WarningThreshold)
-                {
-                    _logger.LogWarning($"_smartReaderTagEventsListBatch size ({_smartReaderTagEventsListBatch.Count}) approaching limit");
-                }
-            }
-            catch (System.Exception)
-            {
+                // Monitor collection sizes
+                await MonitorCollectionSizesAsync();
 
-            }
-            
+                // Process software filters
+                await ProcessSoftwareFiltersAsync();
 
-            if (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterEnabled)
-                && !"0".Equals(_standaloneConfigDTO.softwareFilterEnabled))
-            {
-                try
-                {
-                    if (_readEpcs.Count > 1000)
-                    {
-                        var count = _readEpcs.Count - 1000;
-                        if (count > 0)
-                        {
-                            // remove that number of items from the start of the list
-                            long eventTimestampToRemove = 0;
-                            foreach (var k in _readEpcs.Keys.Take(count))
-                                _readEpcs.TryRemove(k, out eventTimestampToRemove);
-                        }
-                    }
-
-                    var oldTimestamp = DateTime.Now.AddHours(-1);
-                    var oldTimestampToCheck = Utils.CSharpMillisToJavaLong(oldTimestamp);
-                    foreach (var kvp in _readEpcs.Where(x => x.Value < oldTimestampToCheck).ToList())
-                    {
-                        var val = kvp.Value;
-                        _readEpcs.TryRemove(kvp.Key, out val);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Unexpected error on remove _readEpcs" + ex.Message);
-                }
-
-                try
-                {
-
-                    var expiration = long.Parse(_standaloneConfigDTO.softwareFilterWindowSec);
-
-                    var oldTimestamp = DateTime.Now.AddHours(-1);
-                    var oldTimestampToCheck = Utils.CSharpMillisToJavaLong(oldTimestamp);
-                    foreach (var kvp in _readEpcs.ToList())
-                    {
-                        var val = kvp.Value;
-                        var currentEventTimestamp = DateTime.Now;
-                        var currentTimestampToCheck = Utils.CSharpMillisToJavaLong(currentEventTimestamp);
-                        var dateTimeOffsetCurrentEventTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(currentTimestampToCheck);
-                        var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(val);
-                        var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
-                        if (timeDiff.TotalSeconds > expiration)
-                        {
-                            _readEpcs.TryRemove(kvp.Key, out val);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Unexpected error on remove _readEpcs" + ex.Message);
-                }
-            }
-
-            if (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled)
-                && !"0".Equals(_standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled))
-                try
-                {
-                    if (_softwareFilterReadCountTimeoutDictionary.Count > 1000)
-                    {
-                        var count = _softwareFilterReadCountTimeoutDictionary.Count - 1000;
-                        if (count > 0)
-                        {
-                            // remove that number of items from the start of the list
-                            ReadCountTimeoutEvent? eventTimestampToRemove;
-                            foreach (var k in _softwareFilterReadCountTimeoutDictionary.Keys.Take(count))
-                                _softwareFilterReadCountTimeoutDictionary.TryRemove(k, out eventTimestampToRemove);
-                        }
-                    }
-
-                    var currentTimestamp = DateTime.Now;
-                    var currentTimestampToCheck = Utils.CSharpMillisToJavaLong(currentTimestamp);
-                    var dateTimeOffsetCurrentEventTimestamp =
-                        DateTimeOffset.FromUnixTimeMilliseconds(currentTimestampToCheck);
-                    foreach (var kvp in _softwareFilterReadCountTimeoutDictionary)
-                    {
-                        var dateTimeOffsetLastSeenTimestamp =
-                            DateTimeOffset.FromUnixTimeMilliseconds(kvp.Value.EventTimestamp);
-                        var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
-                        if (timeDiff.TotalHours > 1)
-                        {
-                            var val = kvp.Value;
-                            _softwareFilterReadCountTimeoutDictionary.TryRemove(kvp.Key, out val);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex,
-                        "Unexpected error on remove _softwareFilterReadCountTimeoutDictionary" + ex.Message);
-                }
-
-            if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled, StringComparison.OrdinalIgnoreCase))
-            {
-                if (_isStarted)
-                {
-                    try
-                    {
-                        var currentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
-
-                        double expirationInSec = 2;
-                        double expirationInMillis = 2000;
-                        double.TryParse(_standaloneConfigDTO.tagPresenceTimeoutInSec, NumberStyles.Float, CultureInfo.InvariantCulture, out expirationInSec);
-                        expirationInMillis = expirationInSec * 1000;
-
-                        var dateTimeOffsetCurrentEventTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(currentEventTimestamp);
-                        //var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(_readEpcs[tagEvent.EpcHex]);
-
-                        var secondsToAdd = expirationInSec * -1;
-                        var expiredEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now.AddSeconds(secondsToAdd));
-
-                        //var expiredEvents = _smartReaderTagEventsListBatch.Values.Where(t => t["tag_reads"]["firstSeenTimestamp"].Where(q => (long)q["firstSeenTimestamp"] <= expiredEventTimestamp));
-                        var currentEvents = _smartReaderTagEventsListBatch.Values;
-                        //var expiredEvents = _smartReaderTagEventsListBatch.Values.Where(t => (long)t["tag_reads"]["firstSeenTimestamp"] <= expiredEventTimestamp);
-                        //var existingEventOnCurrentAntenna = (JObject)(retrievedValue["tag_reads"].FirstOrDefault(q => (long)q["antennaPort"] == tagRead.AntennaPort));
-
-                        foreach (JObject currentEvent in currentEvents)
-                        {
-
-                            foreach (JObject currentEventItem in currentEvent["tag_reads"])
-                            {
-                                long firstSeenTimestamp = currentEventItem["firstSeenTimestamp"].Value<long>() / 1000;
-                                string expiredEpc = currentEventItem["epc"].Value<string>();
-                                var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(firstSeenTimestamp);
-
-                                var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
-                                if (timeDiff.TotalSeconds > expirationInSec)
-                                {
-
-                                    JObject eventToRemove = null;
-                                    if (_smartReaderTagEventsListBatch.TryGetValue(expiredEpc, out eventToRemove))
-                                    {
-                                        if (eventToRemove != null)
-                                        {
-                                            if (_smartReaderTagEventsListBatch.ContainsKey(expiredEpc))
-                                            {
-
-                                                if (_smartReaderTagEventsListBatch.TryRemove(expiredEpc, out eventToRemove))
-                                                {
-                                                    _logger.LogInformation($"Expired EPC detected {timeDiff.TotalSeconds}: {expiredEpc} - firstSeenTimestamp: {dateTimeOffsetLastSeenTimestamp.ToString("o")}, current timestamp: {dateTimeOffsetCurrentEventTimestamp.ToString("o")} current timeout set {expirationInSec}");
-                                                }
-                                            }
-
-                                            if (!_smartReaderTagEventsAbsence.ContainsKey(expiredEpc))
-                                            {
-                                                _logger.LogInformation($"On-Change event requested for expired EPC: {expiredEpc}");
-                                                _smartReaderTagEventsAbsence.TryAdd(expiredEpc, eventToRemove);
-
-                                            }
-
-                                        }
-                                    }
-                                }
-                            }
-
-                        }
-
-                        if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
-                                StringComparison.OrdinalIgnoreCase) && _smartReaderTagEventsAbsence.Any())
-                        {
-                            JObject smartReaderTagReadEvent;
-                            JObject? smartReaderTagReadEventAggregated = null;
-                            var smartReaderTagReadEventsArray = new JArray();
-
-                            foreach (var tagEpcToRemove in _smartReaderTagEventsAbsence.Keys)
-                            {
-                                JObject? expiredTagEvent = null;
-
-                                if (_smartReaderTagEventsListBatch.ContainsKey(tagEpcToRemove))
-                                {
-                                    _smartReaderTagEventsListBatch.TryRemove(tagEpcToRemove, out expiredTagEvent);
-                                }
-
-                            }
-
-                            _smartReaderTagEventsAbsence.Clear();
-
-                            if (_smartReaderTagEventsListBatch.Count > 0)
-                            {
-                                foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
-                                {
-                                    smartReaderTagReadEvent = smartReaderTagReadEventBatch;
-                                    try
-                                    {
-                                        if (smartReaderTagReadEvent == null)
-                                            continue;
-                                        if (smartReaderTagReadEventAggregated == null)
-                                        {
-                                            smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
-                                            smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                                .FirstOrDefault().FirstOrDefault());
-                                        }
-                                        else
-                                        {
-                                            try
-                                            {
-                                                smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                                    .FirstOrDefault().FirstOrDefault());
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                _logger.LogInformation(ex,
-                                                    "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                                            }
-                                        }
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                                    }
-                                }
-                                try
-                                {
-                                    if (smartReaderTagReadEventAggregated != null && smartReaderTagReadEventsArray != null &&
-                                        smartReaderTagReadEventsArray.Count > 0)
-                                    {
-                                        smartReaderTagReadEventAggregated["tag_reads"] = smartReaderTagReadEventsArray;
-
-                                        await ProcessMqttJsonTagEventDataAsync(smartReaderTagReadEventAggregated);
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                                }
-                            }
-                            else
-                            {
-                                // generate empty event...
-
-
-                                var emptyTagData = new SmartReaderTagReadEvent();
-                                emptyTagData.ReaderName = _standaloneConfigDTO.readerName;
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                                emptyTagData.Mac = _iotDeviceInterfaceClient.MacAddress;
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-                                emptyTagData.TagReads = new List<TagRead>();
-                                JObject emptyTagDataObject = JObject.FromObject(emptyTagData);
-                                smartReaderTagReadEventsArray.Add(emptyTagDataObject);
-
-                                try
-                                {
-
-                                    await ProcessMqttJsonTagEventDataAsync(emptyTagDataObject);
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                                }
-                            }
-
-
-                        }
-
-
-                    }
-                    catch (Exception)
-                    {
-
-
-                    }
-                }
-                else
-                {
-                    _smartReaderTagEventsAbsence.Clear();
-                    _smartReaderTagEventsListBatch.Clear();
-                    _smartReaderTagEventsAbsence.Clear();
-                }
-
+                //// Process tag presence timeout
+                //if (_isStarted && _batchProcessor.IsTagPresenceTimeoutEnabled(_standaloneConfigDTO))
+                //{
+                //    await ProcessTagPresenceTimeoutAsync();
+                //}
             }
         }
-        catch (Exception)
+        catch (TimeoutException)
         {
+            _logger.LogWarning("Timed out waiting for batch lock in tag filter processing");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in periodic tag filter processing");
+        }
+        finally
+        {
+            _timerTagFilterLists.Enabled = true;
+            _timerTagFilterLists.Start();
+        }
+    }
+
+    private async Task MonitorCollectionSizesAsync()
+    {
+        const int WarningThreshold = 800;
+
+        if (_readEpcs.Count > WarningThreshold)
+        {
+            _logger.LogWarning($"_readEpcs size ({_readEpcs.Count}) approaching limit");
         }
 
+        if (_softwareFilterReadCountTimeoutDictionary.Count > WarningThreshold)
+        {
+            _logger.LogWarning($"_softwareFilterReadCountTimeoutDictionary size ({_softwareFilterReadCountTimeoutDictionary.Count}) approaching limit");
+        }
 
-        _timerTagFilterLists.Enabled = true;
-        _timerTagFilterLists.Start();
-#pragma warning restore CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
+        if (_smartReaderTagEventsListBatch.Count > WarningThreshold)
+        {
+            _logger.LogWarning($"_smartReaderTagEventsListBatch size ({_smartReaderTagEventsListBatch.Count}) approaching limit");
+        }
     }
+    
+
+    private bool IsSoftwareFilterEnabled()
+    {
+        return _standaloneConfigDTO != null &&
+               (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterEnabled) &&
+                string.Equals("1", _standaloneConfigDTO.softwareFilterEnabled, StringComparison.OrdinalIgnoreCase)) ||
+               (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled) &&
+                string.Equals("1", _standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task ProcessSoftwareFiltersAsync()
+    {
+        if (IsSoftwareFilterEnabled())
+        {
+            await CleanupExpiredReadEpcsAsync();
+            await CleanupTimeoutDictionaryAsync();
+        }
+    }
+
+    private async Task CleanupExpiredReadEpcsAsync()
+    {
+        try
+        {
+            // Check if _readEpcs exceeds size limit
+            if (_readEpcs.Count > 1000)
+            {
+                var count = _readEpcs.Count - 1000;
+                if (count > 0)
+                {
+                    // Remove oldest items first
+                    var oldestKeys = _readEpcs.OrderBy(kvp => kvp.Value)
+                                            .Take(count)
+                                            .Select(kvp => kvp.Key)
+                                            .ToList();
+
+                    foreach (var key in oldestKeys)
+                    {
+                        _readEpcs.TryRemove(key, out _);
+                    }
+                    _logger.LogInformation($"Removed {count} oldest entries from _readEpcs to maintain size limit");
+                }
+            }
+
+            // Remove expired entries based on timeout window
+            if (!string.IsNullOrEmpty(_standaloneConfigDTO?.softwareFilterWindowSec))
+            {
+                var expiration = long.Parse(_standaloneConfigDTO.softwareFilterWindowSec);
+                var currentTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
+                var dateTimeOffsetCurrentEventTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(currentTimestamp);
+
+                var expiredKeys = _readEpcs.Where(kvp =>
+                {
+                    var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(kvp.Value);
+                    var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
+                    return timeDiff.TotalSeconds > expiration;
+                })
+                .Select(kvp => kvp.Key)
+                .ToList();
+
+                foreach (var key in expiredKeys)
+                {
+                    _readEpcs.TryRemove(key, out _);
+                }
+
+                if (expiredKeys.Any())
+                {
+                    _logger.LogInformation($"Removed {expiredKeys.Count} expired entries from _readEpcs");
+                }
+            }
+
+            // Additional cleanup for entries older than 1 hour
+            var oneHourAgo = Utils.CSharpMillisToJavaLong(DateTime.Now.AddHours(-1));
+            var oldKeys = _readEpcs.Where(kvp => kvp.Value < oneHourAgo)
+                                  .Select(kvp => kvp.Key)
+                                  .ToList();
+
+            foreach (var key in oldKeys)
+            {
+                _readEpcs.TryRemove(key, out _);
+            }
+
+            if (oldKeys.Any())
+            {
+                _logger.LogInformation($"Removed {oldKeys.Count} entries older than 1 hour from _readEpcs");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error cleaning up expired read EPCs");
+        }
+    }
+
+    private async Task CleanupTimeoutDictionaryAsync()
+    {
+        try
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            // Iterate through the dictionary and remove expired entries
+            foreach (var key in _softwareFilterReadCountTimeoutDictionary.Keys)
+            {
+                if (_softwareFilterReadCountTimeoutDictionary.TryGetValue(key, out var entry))
+                {
+                    // Calculate expiration based on EventTimestamp + Timeout
+                    var expirationTime = entry.EventTimestamp + entry.Timeout;
+
+                    // Remove the entry if it has expired
+                    if (expirationTime < now)
+                    {
+                        _softwareFilterReadCountTimeoutDictionary.TryRemove(key, out _);
+                        _logger.LogDebug($"Removed expired entry for key {key} with Epc {entry.Epc}");
+                    }
+                }
+            }
+
+            _logger.LogInformation("Completed cleanup of expired entries in _softwareFilterReadCountTimeoutDictionary.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error occurred during CleanupTimeoutDictionaryAsync.");
+        }
+
+        // Simulate async operation (e.g., database or additional cleanup tasks)
+        await Task.CompletedTask;
+    }
+
+
+    
+
+    //private async Task HandleExpiredTagEventAsync(string epc, JObject removedEvent)
+    //{
+    //    // Example: Log the expired tag or perform additional cleanup if necessary
+    //    _logger.LogDebug($"Handling expired tag event for EPC: {epc}");
+
+    //    // Simulate an async operation if needed (e.g., database updates, event publishing)
+    //    await Task.CompletedTask;
+    //}
 
 #pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
     private async void OnRunPeriodicKeepaliveCheck(object sender, ElapsedEventArgs e)
@@ -5570,9 +5814,7 @@ ProcessKeepalive()
                         && string.Equals("1", _standaloneConfigDTO.httpPostEnabled,
                             StringComparison.OrdinalIgnoreCase))
             {
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch)
-                        && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
-                            StringComparison.OrdinalIgnoreCase))
+                if (_mqttPublishingConfiguration.BatchListEnabled)
                 {
                     const int MaxBatchSize = 1000;
 
@@ -5614,13 +5856,13 @@ ProcessKeepalive()
                                         catch (Exception ex)
                                         {
                                             _logger.LogInformation(ex,
-                                                "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                                "Unexpected error on OnRunPeriodicTagPublisherHttpTasksEvent " + ex.Message);
                                         }
                                     }
                                 }
                                 catch (Exception ex)
                                 {
-                                    _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                                    _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherHttpTasksEvent " + ex.Message);
                                 }
                             }
                         }
@@ -5739,16 +5981,16 @@ ProcessKeepalive()
 
 
 
-    private void HandleQueueOverflow()
-    {
-        while (_messageQueueTagSmartReaderTagEventSocketServer.Count > 1000)
-        {
-            if (_messageQueueTagSmartReaderTagEventSocketServer.TryDequeue(out var _))
-            {
-                _logger.LogWarning("Dropped oldest message from socket queue due to server unavailability");
-            }
-        }
-    }
+    //private void HandleQueueOverflow()
+    //{
+    //    while (_messageQueueTagSmartReaderTagEventSocketServer.Count > 1000)
+    //    {
+    //        if (_messageQueueTagSmartReaderTagEventSocketServer.TryDequeue(out var _))
+    //        {
+    //            _logger.LogWarning("Dropped oldest message from socket queue due to server unavailability");
+    //        }
+    //    }
+    //}
 
     private async void OnRunPeriodicSummaryStreamPublisherTasksEvent(object sender, ElapsedEventArgs e)
     {
@@ -5881,263 +6123,894 @@ ProcessKeepalive()
 #pragma warning restore CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
     }
 
+    //    private async void OnRunPeriodicTagPublisherMqttTasksEvent(object sender, ElapsedEventArgs e)
+    //    {
+    //#pragma warning disable CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
+    //        _timerTagPublisherMqtt.Enabled = false;
+    //        _timerTagPublisherMqtt.Stop();
+
+    //        //_logger.LogInformation($"OnRunPeriodicTagPublisherMqttTasksEvent: >>>");
+
+    //        JObject smartReaderTagReadEvent;
+    //        JObject? smartReaderTagReadEventAggregated = null;
+    //        var smartReaderTagReadEventsArray = new JArray();
+
+    //        double mqttPublishIntervalInSec = 1;
+    //        double mqttPublishIntervalInMillis = 10;
+    //        double mqttUpdateTagEventsListBatchOnChangeIntervalInSec = 1;
+    //        double mqttUpdateTagEventsListBatchOnChangeIntervalInMillis = 10;
+    //        //bool isUpdateTimeForOnChangeEvent = false;
+
+    //        if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttPuslishIntervalSec))
+    //            double.TryParse(_standaloneConfigDTO.mqttPuslishIntervalSec, NumberStyles.Float,
+    //                CultureInfo.InvariantCulture, out mqttPublishIntervalInSec);
+
+    //        if (mqttPublishIntervalInSec == 0)
+    //            mqttPublishIntervalInMillis = 5;
+    //        else
+    //            mqttPublishIntervalInMillis = mqttPublishIntervalInSec * 1000;
+
+    //        if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChangeIntervalInSec))
+    //            double.TryParse(_standaloneConfigDTO.updateTagEventsListBatchOnChangeIntervalInSec, NumberStyles.Float,
+    //                CultureInfo.InvariantCulture, out mqttUpdateTagEventsListBatchOnChangeIntervalInSec);
+
+    //        if (mqttUpdateTagEventsListBatchOnChangeIntervalInSec == 0)
+    //            mqttUpdateTagEventsListBatchOnChangeIntervalInMillis = 5;
+    //        else
+    //            mqttUpdateTagEventsListBatchOnChangeIntervalInMillis = mqttUpdateTagEventsListBatchOnChangeIntervalInSec * 1000;
+
+    //        try
+    //        {
+    //            if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttEnabled)
+    //                        && string.Equals("1", _standaloneConfigDTO.mqttEnabled,
+    //                            StringComparison.OrdinalIgnoreCase))
+    //            {
+    //                if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch)
+    //                        && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
+    //                            StringComparison.OrdinalIgnoreCase))
+    //                {
+
+    //                    //_logger.LogInformation($"_smartReaderTagEventsListBatchOnUpdate: {_smartReaderTagEventsListBatchOnUpdate.Count}");
+    //                    //_logger.LogInformation($"_smartReaderTagEventsListBatch: {_smartReaderTagEventsListBatch.Count}");
+    //                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChange)
+    //                        && string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange)
+    //                        && !_stopwatchStopTagEventsListBatchOnChange.IsRunning)
+    //                    {
+    //                        _stopwatchStopTagEventsListBatchOnChange.Start();
+    //                    }
+
+
+    //                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChange)
+    //                        && string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange,
+    //                            StringComparison.OrdinalIgnoreCase)
+    //                        && _smartReaderTagEventsListBatchOnUpdate.Count > 0)
+    //                    {
+
+    //                        //while (_stopwatchStopTagEventsListBatchOnChange.Elapsed.Seconds * 1000 < mqttUpdateTagEventsListBatchOnChangeIntervalInMillis)
+    //                        //{
+    //                        //    await Task.Delay(10);
+    //                        //}
+    //                        if (_stopwatchStopTagEventsListBatchOnChange.Elapsed.Seconds * 1000 >= mqttUpdateTagEventsListBatchOnChangeIntervalInMillis)
+    //                        {
+    //                            if (_stopwatchStopTagEventsListBatchOnChange.IsRunning)
+    //                            {
+    //                                _stopwatchStopTagEventsListBatchOnChange.Stop();
+    //                                _stopwatchStopTagEventsListBatchOnChange.Reset();
+    //                            }
+
+    //                            if (_smartReaderTagEventsListBatchOnUpdate.Count > 0)
+    //                            {
+    //                                _logger.LogInformation($"OnRunPeriodicTagPublisherMqttTasksEvent: publishing new events due to OnChange {_smartReaderTagEventsListBatchOnUpdate.Count}");
+    //                                foreach (var smartReaderTagReadEventBatchKV in _smartReaderTagEventsListBatchOnUpdate)
+    //                                {
+    //                                    if (!_smartReaderTagEventsListBatch.ContainsKey(smartReaderTagReadEventBatchKV.Key))
+    //                                    {
+    //                                        _smartReaderTagEventsListBatch.TryAdd(smartReaderTagReadEventBatchKV.Key, smartReaderTagReadEventBatchKV.Value);
+    //                                    }
+    //                                    else
+    //                                    {
+    //                                        _smartReaderTagEventsListBatch[smartReaderTagReadEventBatchKV.Key] = smartReaderTagReadEventBatchKV.Value;
+    //                                    }
+
+    //                                }
+
+    //                                _smartReaderTagEventsListBatchOnUpdate.Clear();
+
+    //                                if (_smartReaderTagEventsListBatch.Count > 0)
+    //                                {
+    //                                    foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
+    //                                    {
+    //                                        smartReaderTagReadEvent = smartReaderTagReadEventBatch;
+    //                                        try
+    //                                        {
+    //                                            if (smartReaderTagReadEvent == null)
+    //                                                continue;
+    //                                            if (smartReaderTagReadEventAggregated == null)
+    //                                            {
+    //                                                smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
+    //                                                smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+    //                                                    .FirstOrDefault().FirstOrDefault());
+    //                                            }
+    //                                            else
+    //                                            {
+    //                                                try
+    //                                                {
+    //                                                    smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+    //                                                        .FirstOrDefault().FirstOrDefault());
+    //                                                }
+    //                                                catch (Exception ex)
+    //                                                {
+    //                                                    _logger.LogInformation(ex,
+    //                                                        "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+    //                                                }
+    //                                            }
+    //                                        }
+    //                                        catch (Exception ex)
+    //                                        {
+    //                                            _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+    //                                        }
+    //                                    }
+    //                                }
+    //                            }
+    //                        }
+    //                    }
+    //                    else
+    //                    {
+    //                        if (_smartReaderTagEventsListBatch.Count > 0
+    //                            && _smartReaderTagEventsListBatchOnUpdate.Count == 0)
+    //                        {
+    //                            if (string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatchPublishing))
+    //                            {
+    //                                if (!_mqttPublisherStopwatch.IsRunning)
+    //                                {
+    //                                    _mqttPublisherStopwatch.Start();
+    //                                }
+    //                                //while (mqttPublisherTimer.Elapsed.Seconds * 1000 < mqttPublishIntervalInMillis)
+    //                                //{
+    //                                //    await Task.Delay(10);
+    //                                //}
+    //                                if (_mqttPublisherStopwatch.Elapsed.Seconds * 1000 >= mqttPublishIntervalInMillis)
+    //                                {
+    //                                    _mqttPublisherStopwatch.Restart();
+    //                                    _logger.LogInformation($"OnRunPeriodicTagPublisherMqttTasksEvent: publishing batch events list due to MqttPublishInterval {_smartReaderTagEventsListBatch.Count}");
+    //                                    foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
+    //                                    {
+    //                                        smartReaderTagReadEvent = smartReaderTagReadEventBatch;
+    //                                        try
+    //                                        {
+    //                                            if (smartReaderTagReadEvent == null)
+    //                                                continue;
+    //                                            if (smartReaderTagReadEventAggregated == null)
+    //                                            {
+    //                                                smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
+    //                                                smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+    //                                                    .FirstOrDefault().FirstOrDefault());
+    //                                            }
+    //                                            else
+    //                                            {
+    //                                                try
+    //                                                {
+    //                                                    smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+    //                                                        .FirstOrDefault().FirstOrDefault());
+    //                                                }
+    //                                                catch (Exception ex)
+    //                                                {
+    //                                                    _logger.LogInformation(ex,
+    //                                                        "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+    //                                                }
+    //                                            }
+    //                                        }
+    //                                        catch (Exception ex)
+    //                                        {
+    //                                            _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+    //                                        }
+    //                                    }
+    //                                }
+    //                            }
+    //                        }
+    //                    }
+    //                }
+    //                else
+    //                {
+    //                    if (!_mqttPublisherStopwatch.IsRunning)
+    //                    {
+    //                        _mqttPublisherStopwatch.Start();
+    //                    }
+
+    //                    while (_mqttPublisherStopwatch.Elapsed.Seconds * 1000 < mqttPublishIntervalInMillis)
+    //                    {
+    //                        while (_messageQueueTagSmartReaderTagEventMqtt.TryDequeue(out smartReaderTagReadEvent))
+    //                            try
+    //                            {
+    //                                if (smartReaderTagReadEvent == null)
+    //                                    continue;
+    //                                if (smartReaderTagReadEventAggregated == null)
+    //                                {
+    //                                    smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
+    //                                    smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+    //                                        .FirstOrDefault().FirstOrDefault());
+    //                                }
+    //                                else
+    //                                {
+    //                                    try
+    //                                    {
+    //                                        smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
+    //                                            .FirstOrDefault().FirstOrDefault());
+    //                                    }
+    //                                    catch (Exception ex)
+    //                                    {
+    //                                        _logger.LogInformation(ex,
+    //                                            "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+    //                                    }
+    //                                }
+    //                            }
+    //                            catch (Exception ex)
+    //                            {
+    //                                _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+    //                            }
+    //                    }
+    //                    _mqttPublisherStopwatch.Restart();
+    //                }
+    //            }
+
     private async void OnRunPeriodicTagPublisherMqttTasksEvent(object sender, ElapsedEventArgs e)
     {
-#pragma warning disable CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
         _timerTagPublisherMqtt.Enabled = false;
         _timerTagPublisherMqtt.Stop();
 
-        //_logger.LogInformation($"OnRunPeriodicTagPublisherMqttTasksEvent: >>>");
-
-        JObject smartReaderTagReadEvent;
-        JObject? smartReaderTagReadEventAggregated = null;
-        var smartReaderTagReadEventsArray = new JArray();
-
-        double mqttPublishIntervalInSec = 1;
-        double mqttPublishIntervalInMillis = 10;
-        double mqttUpdateTagEventsListBatchOnChangeIntervalInSec = 1;
-        double mqttUpdateTagEventsListBatchOnChangeIntervalInMillis = 10;
-        //bool isUpdateTimeForOnChangeEvent = false;
-
-        if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttPuslishIntervalSec))
-            double.TryParse(_standaloneConfigDTO.mqttPuslishIntervalSec, NumberStyles.Float,
-                CultureInfo.InvariantCulture, out mqttPublishIntervalInSec);
-
-        if (mqttPublishIntervalInSec == 0)
-            mqttPublishIntervalInMillis = 5;
-        else
-            mqttPublishIntervalInMillis = mqttPublishIntervalInSec * 1000;
-
-        if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChangeIntervalInSec))
-            double.TryParse(_standaloneConfigDTO.updateTagEventsListBatchOnChangeIntervalInSec, NumberStyles.Float,
-                CultureInfo.InvariantCulture, out mqttUpdateTagEventsListBatchOnChangeIntervalInSec);
-
-        if (mqttUpdateTagEventsListBatchOnChangeIntervalInSec == 0)
-            mqttUpdateTagEventsListBatchOnChangeIntervalInMillis = 5;
-        else
-            mqttUpdateTagEventsListBatchOnChangeIntervalInMillis = mqttUpdateTagEventsListBatchOnChangeIntervalInSec * 1000;
-
         try
         {
-            if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttEnabled)
-                        && string.Equals("1", _standaloneConfigDTO.mqttEnabled,
-                            StringComparison.OrdinalIgnoreCase))
+            // If we can't acquire the semaphore immediately, return
+            if (!_publishSemaphore.Wait(0))
             {
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch)
-                        && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
-                            StringComparison.OrdinalIgnoreCase))
-                {
-
-                    //_logger.LogInformation($"_smartReaderTagEventsListBatchOnUpdate: {_smartReaderTagEventsListBatchOnUpdate.Count}");
-                    //_logger.LogInformation($"_smartReaderTagEventsListBatch: {_smartReaderTagEventsListBatch.Count}");
-                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChange)
-                        && string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange)
-                        && !_stopwatchStopTagEventsListBatchOnChange.IsRunning)
-                    {
-                        _stopwatchStopTagEventsListBatchOnChange.Start();
-                    }
-
-
-                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChange)
-                        && string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange,
-                            StringComparison.OrdinalIgnoreCase)
-                        && _smartReaderTagEventsListBatchOnUpdate.Count > 0)
-                    {
-
-                        //while (_stopwatchStopTagEventsListBatchOnChange.Elapsed.Seconds * 1000 < mqttUpdateTagEventsListBatchOnChangeIntervalInMillis)
-                        //{
-                        //    await Task.Delay(10);
-                        //}
-                        if (_stopwatchStopTagEventsListBatchOnChange.Elapsed.Seconds * 1000 >= mqttUpdateTagEventsListBatchOnChangeIntervalInMillis)
-                        {
-                            if (_stopwatchStopTagEventsListBatchOnChange.IsRunning)
-                            {
-                                _stopwatchStopTagEventsListBatchOnChange.Stop();
-                                _stopwatchStopTagEventsListBatchOnChange.Reset();
-                            }
-
-                            if (_smartReaderTagEventsListBatchOnUpdate.Count > 0)
-                            {
-                                _logger.LogInformation($"OnRunPeriodicTagPublisherMqttTasksEvent: publishing new events due to OnChange {_smartReaderTagEventsListBatchOnUpdate.Count}");
-                                foreach (var smartReaderTagReadEventBatchKV in _smartReaderTagEventsListBatchOnUpdate)
-                                {
-                                    if (!_smartReaderTagEventsListBatch.ContainsKey(smartReaderTagReadEventBatchKV.Key))
-                                    {
-                                        _smartReaderTagEventsListBatch.TryAdd(smartReaderTagReadEventBatchKV.Key, smartReaderTagReadEventBatchKV.Value);
-                                    }
-                                    else
-                                    {
-                                        _smartReaderTagEventsListBatch[smartReaderTagReadEventBatchKV.Key] = smartReaderTagReadEventBatchKV.Value;
-                                    }
-
-                                }
-
-                                _smartReaderTagEventsListBatchOnUpdate.Clear();
-
-                                if (_smartReaderTagEventsListBatch.Count > 0)
-                                {
-                                    foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
-                                    {
-                                        smartReaderTagReadEvent = smartReaderTagReadEventBatch;
-                                        try
-                                        {
-                                            if (smartReaderTagReadEvent == null)
-                                                continue;
-                                            if (smartReaderTagReadEventAggregated == null)
-                                            {
-                                                smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
-                                                smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                                    .FirstOrDefault().FirstOrDefault());
-                                            }
-                                            else
-                                            {
-                                                try
-                                                {
-                                                    smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                                        .FirstOrDefault().FirstOrDefault());
-                                                }
-                                                catch (Exception ex)
-                                                {
-                                                    _logger.LogInformation(ex,
-                                                        "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                                                }
-                                            }
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        if (_smartReaderTagEventsListBatch.Count > 0
-                            && _smartReaderTagEventsListBatchOnUpdate.Count == 0)
-                        {
-                            if (string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatchPublishing))
-                            {
-                                if (!_mqttPublisherStopwatch.IsRunning)
-                                {
-                                    _mqttPublisherStopwatch.Start();
-                                }
-                                //while (mqttPublisherTimer.Elapsed.Seconds * 1000 < mqttPublishIntervalInMillis)
-                                //{
-                                //    await Task.Delay(10);
-                                //}
-                                if (_mqttPublisherStopwatch.Elapsed.Seconds * 1000 >= mqttPublishIntervalInMillis)
-                                {
-                                    _mqttPublisherStopwatch.Restart();
-                                    _logger.LogInformation($"OnRunPeriodicTagPublisherMqttTasksEvent: publishing batch events list due to MqttPublishInterval {_smartReaderTagEventsListBatch.Count}");
-                                    foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
-                                    {
-                                        smartReaderTagReadEvent = smartReaderTagReadEventBatch;
-                                        try
-                                        {
-                                            if (smartReaderTagReadEvent == null)
-                                                continue;
-                                            if (smartReaderTagReadEventAggregated == null)
-                                            {
-                                                smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
-                                                smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                                    .FirstOrDefault().FirstOrDefault());
-                                            }
-                                            else
-                                            {
-                                                try
-                                                {
-                                                    smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                                        .FirstOrDefault().FirstOrDefault());
-                                                }
-                                                catch (Exception ex)
-                                                {
-                                                    _logger.LogInformation(ex,
-                                                        "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                                                }
-                                            }
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    if (!_mqttPublisherStopwatch.IsRunning)
-                    {
-                        _mqttPublisherStopwatch.Start();
-                    }
-
-                    while (_mqttPublisherStopwatch.Elapsed.Seconds * 1000 < mqttPublishIntervalInMillis)
-                        while (_messageQueueTagSmartReaderTagEventMqtt.TryDequeue(out smartReaderTagReadEvent))
-                            try
-                            {
-                                if (smartReaderTagReadEvent == null)
-                                    continue;
-                                if (smartReaderTagReadEventAggregated == null)
-                                {
-                                    smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
-                                    smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                        .FirstOrDefault().FirstOrDefault());
-                                }
-                                else
-                                {
-                                    try
-                                    {
-                                        smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-                                            .FirstOrDefault().FirstOrDefault());
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        _logger.LogInformation(ex,
-                                            "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
-                            }
-
-                    _mqttPublisherStopwatch.Restart();
-                }
+                _logger.LogWarning("OnRunPeriodicTagPublisherMqttTasksEvent: can't acquire the semaphore immediately.");
+                return;
             }
-
-
 
             try
             {
-                if (smartReaderTagReadEventAggregated != null && smartReaderTagReadEventsArray != null &&
-                    smartReaderTagReadEventsArray.Count > 0)
-                {
-                    smartReaderTagReadEventAggregated["tag_reads"] = smartReaderTagReadEventsArray;
-
-                    await ProcessMqttJsonTagEventDataAsync(smartReaderTagReadEventAggregated);
-                }
+                await ProcessTagPublishingMqtt();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+                _logger.LogError(ex, "Error in ProcessTagPublishingMqtt");
             }
-
+            finally
+            {
+                _publishSemaphore.Release();
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+            _logger.LogError(ex, "Error in OnRunPeriodicTagPublisherMqttTasksEvent");
+        }
+        finally
+        {
+            _timerTagPublisherMqtt.Enabled = true;
+            _timerTagPublisherMqtt.Start();
         }
 
-
-        _timerTagPublisherMqtt.Enabled = true;
-        _timerTagPublisherMqtt.Start();
-#pragma warning restore CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
+        
     }
+
+    private MqttPublishingConfiguration LoadMqttPublishingConfiguration()
+    {
+        var config = new MqttPublishingConfiguration();
+
+        double mqttPublishIntervalInSec = 1;
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttPuslishIntervalSec))
+        {
+            double.TryParse(_standaloneConfigDTO.mqttPuslishIntervalSec,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out mqttPublishIntervalInSec);
+        }
+        config.PublishIntervalMs = mqttPublishIntervalInSec == 0 ? 5 : mqttPublishIntervalInSec * 1000;
+
+        double batchUpdateIntervalInSec = 1;
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChangeIntervalInSec))
+        {
+            double.TryParse(_standaloneConfigDTO.updateTagEventsListBatchOnChangeIntervalInSec,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out batchUpdateIntervalInSec);
+        }
+        config.BatchUpdateIntervalMs = batchUpdateIntervalInSec == 0 ? 5 : batchUpdateIntervalInSec * 1000;
+
+        
+        bool enableTagEventsListBatch = true;
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch))
+        {
+            Utils.TryParseBoolFromString(_standaloneConfigDTO.enableTagEventsListBatch, out enableTagEventsListBatch);
+        }
+        config.BatchListEnabled = enableTagEventsListBatch;
+
+        bool enableTagEventsListBatchPublishing = true;
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatchPublishing))
+        {
+            Utils.TryParseBoolFromString(_standaloneConfigDTO.enableTagEventsListBatchPublishing, out enableTagEventsListBatchPublishing);
+        }
+        config.BatchListPublishingEnabled = enableTagEventsListBatchPublishing;
+
+        bool batchListCleanupTagEventsOnReload = true;
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.cleanupTagEventsListBatchOnReload))
+        {
+            Utils.TryParseBoolFromString(_standaloneConfigDTO.cleanupTagEventsListBatchOnReload, out batchListCleanupTagEventsOnReload);
+        }
+        config.BatchListCleanupTagEventsOnReload = batchListCleanupTagEventsOnReload;
+
+        bool updateTagEventsListBatchOnChange = true;
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChange))
+        {
+            Utils.TryParseBoolFromString(_standaloneConfigDTO.updateTagEventsListBatchOnChange, out updateTagEventsListBatchOnChange);
+        }
+        config.BatchListUpdateTagEventsOnChange = updateTagEventsListBatchOnChange;
+
+        bool filterTagEventsListBatchOnChangeBasedOnAntennaZone = true;
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.filterTagEventsListBatchOnChangeBasedOnAntennaZone))
+        {
+            Utils.TryParseBoolFromString(_standaloneConfigDTO.filterTagEventsListBatchOnChangeBasedOnAntennaZone, out filterTagEventsListBatchOnChangeBasedOnAntennaZone);
+
+        }
+        config.BatchListUpdateTagEventsOnAntennaZoneChange = filterTagEventsListBatchOnChangeBasedOnAntennaZone;
+
+
+        return config;
+    }
+
+    private bool IsMqttEnabled()
+    {
+        // Check if MQTT is enabled in configuration
+        bool isMqttEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.mqttEnabled) &&
+            string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase);
+
+        // Log the MQTT status for debugging
+        if (!isMqttEnabled)
+        {
+            _logger.LogDebug("MQTT publishing is disabled");
+        }
+
+        return isMqttEnabled;
+    }
+
+    private async Task ProcessTagPublishingMqtt()
+    {
+        if (!IsMqttEnabled())
+            return;
+
+        var aggregatedEvent = default(JObject);
+        var eventsArray = new JArray();
+
+        _tagEventPublisher.ProcessPublishing(ref aggregatedEvent, eventsArray);
+
+        if (aggregatedEvent != null)
+        {
+            // Publish the aggregated event
+            await PublishMqttJsonTagEventDataAsync(aggregatedEvent);
+        }
+    }
+
+    //private async Task ProcessBatchPublishing()
+    //{
+    //    JObject? smartReaderTagReadEventAggregated = null;
+    //    var smartReaderTagReadEventsArray = new JArray();
+    //    try
+    //    {
+    //        // Use SemaphoreSlim for async-safe locking
+    //        await _batchLock.WaitAsync();
+
+
+    //        try
+    //        {
+    //            if (IsOnChangeUpdateEnabled())
+    //            {
+    //                ProcessOnChangeUpdates(ref smartReaderTagReadEventAggregated, smartReaderTagReadEventsArray);
+    //            }
+    //            else
+    //            {
+    //                ProcessRegularIntervalPublishing(ref smartReaderTagReadEventAggregated, smartReaderTagReadEventsArray);
+    //            }
+
+    //            // Modified condition to also publish when we have an aggregated event but empty array
+    //            // This covers the case where we want to publish an empty event list
+    //            if (smartReaderTagReadEventAggregated != null)
+    //            {
+    //                smartReaderTagReadEventAggregated["tag_reads"] = smartReaderTagReadEventsArray;
+    //                await PublishMqttJsonTagEventDataAsync(smartReaderTagReadEventAggregated);
+
+    //                _logger.LogInformation(
+    //                    "Published event with {Count} tag reads",
+    //                    smartReaderTagReadEventsArray.Count);
+    //            }
+    //        }
+    //        catch (Exception ex)
+    //        {
+    //            _logger.LogError(ex, "Error in ProcessBatchPublishing");
+    //        }
+    //        finally
+    //        {
+    //            // Always release the semaphore
+    //            _batchLock.Release();
+    //        }
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        _logger.LogError(ex, "Error in ProcessBatchPublishing.");
+    //    }
+        
+
+    //}
+
+    //private bool IsOnChangeUpdateEnabled()
+    //{
+    //    return !string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChange) &&
+    //           string.Equals("1", _standaloneConfigDTO.updateTagEventsListBatchOnChange,
+    //               StringComparison.OrdinalIgnoreCase);
+    //}
+
+    ///// <summary>
+    ///// Filters changes based on whether the antenna zone value has changed for the same EPC.
+    ///// </summary>
+    ///// <param name="tagRead">The tag read event to process.</param>
+    ///// <param name="existingEvent">The existing event for the same EPC.</param>
+    ///// <returns>True if the antenna zone value has changed, otherwise false.</returns>
+    //private bool HasAntennaZoneChanged(JObject tagRead, JObject existingEvent)
+    //{
+    //    if (tagRead == null || existingEvent == null)
+    //    {
+    //        return false;
+    //    }
+
+    //    // Extract the antenna zone from the tag read and the existing event
+    //    var newAntennaZone = tagRead["antennaZone"]?.Value<string>();
+    //    var existingAntennaZone = existingEvent["antennaZone"]?.Value<string>();
+
+    //    // Determine if the antenna zone has changed
+    //    return !string.Equals(newAntennaZone, existingAntennaZone, StringComparison.OrdinalIgnoreCase);
+    //}
+
+
+
+    
+
+    
+
+    //private void ProcessTagEvent(
+    //JObject? smartReaderTagReadEvent,
+    //ref JObject? smartReaderTagReadEventAggregated,
+    //JArray smartReaderTagReadEventsArray)
+    //{
+    //    // Skip null events
+    //    if (smartReaderTagReadEvent == null)
+    //    {
+    //        return;
+    //    }
+
+    //    try
+    //    {
+    //        // Initialize aggregated event if it's null
+    //        if (smartReaderTagReadEventAggregated == null)
+    //        {
+    //            smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
+
+    //            // Extract and add the first tag read
+    //            var firstTagRead = ExtractTagRead(smartReaderTagReadEvent);
+    //            if (firstTagRead != null)
+    //            {
+    //                smartReaderTagReadEventsArray.Add(firstTagRead);
+    //                _logger.LogDebug("Initialized aggregated event with first tag read");
+    //            }
+    //        }
+    //        else
+    //        {
+    //            // Add subsequent tag reads to the array
+    //            var tagRead = ExtractTagRead(smartReaderTagReadEvent);
+    //            if (tagRead != null)
+    //            {
+    //                smartReaderTagReadEventsArray.Add(tagRead);
+    //                _logger.LogDebug("Added tag read to existing aggregated event");
+    //            }
+    //        }
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        _logger.LogError(ex,
+    //            "Unexpected error processing tag event: {ErrorMessage}", ex.Message);
+    //        throw; // Rethrow to be handled by caller
+    //    }
+    //}
+
+    
+
+
+    //private void ProcessOnChangeUpdates(ref JObject? smartReaderTagReadEventAggregated, JArray smartReaderTagReadEventsArray)
+    //{
+    //    if (!_stopwatchStopTagEventsListBatchOnChange.IsRunning)
+    //    {
+    //        _stopwatchStopTagEventsListBatchOnChange.Start();
+    //    }
+
+    //    if(IsTagPresenceTimeoutEnabled() 
+    //        && _smartReaderTagEventsAbsence.Count > 0
+    //        && _smartReaderTagEventsListBatch.Count > 0)
+    //    {
+    //        JObject smartReaderTagReadEvent;
+
+    //        foreach (var tagEpcToRemove in _smartReaderTagEventsAbsence.Keys)
+    //        {
+    //            JObject? expiredTagEvent = null;
+
+    //            if (_smartReaderTagEventsListBatch.ContainsKey(tagEpcToRemove))
+    //            {
+    //                _smartReaderTagEventsListBatch.TryRemove(tagEpcToRemove, out expiredTagEvent);
+    //            }
+
+    //        }
+
+    //        _smartReaderTagEventsAbsence.Clear();
+    //    }
+    //    if (_stopwatchStopTagEventsListBatchOnChange.ElapsedMilliseconds >= _mqttPublishingConfiguration.BatchUpdateIntervalMs)
+    //    {
+    //        _stopwatchStopTagEventsListBatchOnChange.Reset();
+
+    //        // Check if we need to publish an empty event list - only if:
+    //        // 1. We currently have tags in the batch
+    //        // 2. No new updates
+    //        // 3. Haven't already published an empty event
+    //        bool shouldPublishEmptyEvent = _smartReaderTagEventsListBatch.Count == 0 &&
+    //                                        _smartReaderTagEventsAbsence.Count > 0 &&
+    //                                     !_emptyEventPublished;
+
+    //        // Process updates if we have any
+    //        if (_smartReaderTagEventsListBatchOnUpdate.Count > 0)
+    //        {
+    //            _logger.LogInformation($"Processing {_smartReaderTagEventsListBatchOnUpdate.Count} on-change updates");
+
+    //            // Reset empty event flag since we have new tags
+    //            _emptyEventPublished = false;
+
+    //            // Update main batch with changes
+    //            foreach (var kvp in _smartReaderTagEventsListBatchOnUpdate)
+    //            {
+    //                if(_smartReaderTagEventsListBatch.ContainsKey(kvp.Key))
+    //                {
+    //                    _smartReaderTagEventsListBatch[kvp.Key] = kvp.Value;
+    //                }
+    //                else
+    //                {
+    //                    _smartReaderTagEventsListBatch.TryAdd(kvp.Key, kvp.Value);
+    //                }
+
+    //            }
+
+    //            _smartReaderTagEventsListBatchOnUpdate.Clear();
+
+    //            // Aggregate events for publishing
+    //            AggregateEvents(_smartReaderTagEventsListBatch.Values,
+    //                ref smartReaderTagReadEventAggregated,
+    //                smartReaderTagReadEventsArray);
+    //        }
+    //        // Handle empty read zone case - only once when tags leave
+    //        else if (shouldPublishEmptyEvent)
+    //        {
+    //            _logger.LogInformation("Tags left read zone, publishing empty event list");
+
+    //            // Create empty event structure
+    //            var lastEvent = _smartReaderTagEventsAbsence.Values.FirstOrDefault();
+    //            if (lastEvent != null)
+    //            {
+    //                smartReaderTagReadEventAggregated = new JObject(lastEvent);
+    //                smartReaderTagReadEventAggregated["tag_reads"] = new JArray();
+
+    //                // Clear the batch since the zone is empty
+    //                _smartReaderTagEventsListBatch.Clear();
+    //                _smartReaderTagEventsAbsence.Clear();
+
+    //                // Set flag to prevent repeated empty events
+    //                _emptyEventPublished = true;
+
+    //                _logger.LogDebug("Empty event published, waiting for new tags");
+    //            }
+    //        }
+    //    }
+    //}
+
+
+    //private void ProcessOnChangeUpdates(ref JObject? smartReaderTagReadEventAggregated, JArray smartReaderTagReadEventsArray)
+    //{
+    //    bool hasBeenUpdated = false;
+
+    //    // Start the stopwatch if not already running
+    //    if (!_stopwatchStopTagEventsListBatchOnChange.IsRunning)
+    //    {
+    //        _stopwatchStopTagEventsListBatchOnChange.Start();
+    //    }
+
+    //    //// Remove tags that have left the reading zone and clear absence list
+    //    if (_standaloneConfigDTO.tagPresenceTimeoutEnabled == "1" &&
+    //        _smartReaderTagEventsAbsence.Count > 0 &&
+    //        _smartReaderTagEventsListBatch.Count > 0)
+    //    {
+    //        _logger.LogWarning("Removing tags due to presence timeout...");
+    //        foreach (var tagEpcToRemove in _smartReaderTagEventsAbsence.Keys)
+    //        {
+    //            _smartReaderTagEventsListBatch.TryRemove(tagEpcToRemove, out _);
+    //            hasBeenUpdated = true;
+    //        }
+
+    //        //_smartReaderTagEventsAbsence.Clear();
+    //    }
+
+    //    if (_mqttPublishingConfiguration.BatchListUpdateTagEventsOnChange)
+    //    {
+    //        // Check if an empty event should be published immediately when the reading zone becomes empty
+    //        if (_smartReaderTagEventsListBatch.Count == 0 &&
+    //            _smartReaderTagEventsAbsence.Count > 0 &&
+    //            !_emptyEventPublished)
+    //        {
+    //            _smartReaderTagEventsAbsence.Clear();
+    //            PublishEmptyEvent(ref smartReaderTagReadEventAggregated);
+    //            return; // Exit early since an empty event has been published
+    //        }
+
+    //        // Publish on-change updates immediately if there are updates
+    //        if (_smartReaderTagEventsListBatchOnUpdate.Count > 0)
+    //        {
+    //            _logger.LogInformation($"Processing {_smartReaderTagEventsListBatchOnUpdate.Count} immediately on-change updates");
+
+    //            // Reset empty event flag since new tags are being processed
+    //            _emptyEventPublished = false;
+
+    //            // Update the main batch with on-change updates
+    //            foreach (var kvp in _smartReaderTagEventsListBatchOnUpdate)
+    //            {
+    //                if(_smartReaderTagEventsListBatch.ContainsKey(kvp.Key))
+    //                {
+    //                    _smartReaderTagEventsListBatch[kvp.Key] = kvp.Value;
+    //                }
+    //                else
+    //                {
+    //                    _smartReaderTagEventsListBatch.TryAdd(kvp.Key, kvp.Value);
+    //                }
+                    
+    //            }
+
+    //            // Clear the on-change updates list after processing
+    //            _smartReaderTagEventsListBatchOnUpdate.Clear();
+
+    //            // Aggregate events for publishing
+    //            AggregateEvents(_smartReaderTagEventsListBatch.Values,
+    //                            ref smartReaderTagReadEventAggregated,
+    //                            smartReaderTagReadEventsArray);
+
+    //            return; // Exit early as on-change updates are published immediately
+    //        }
+    //    }
+        
+    //    // Run periodically batch list publishing
+    //    if(_mqttPublishingConfiguration.BatchListPublishingEnabled)
+    //    {
+    //        // Check if an empty event should be published immediately when the reading zone becomes empty
+    //        if (_smartReaderTagEventsListBatch.Count == 0 &&
+    //            _smartReaderTagEventsAbsence.Count > 0 &&
+    //            !_emptyEventPublished)
+    //        {
+    //            PublishEmptyEvent(ref smartReaderTagReadEventAggregated);
+    //            return; // Exit early since an empty event has been published
+    //        }
+
+    //        // Check if it is time to publish batch updates based on the stopwatch
+    //        if (_stopwatchStopTagEventsListBatchOnChange.ElapsedMilliseconds >= _mqttPublishingConfiguration.BatchUpdateIntervalMs)
+    //        {
+    //            // Reset the stopwatch for the next interval
+    //            _stopwatchStopTagEventsListBatchOnChange.Reset();
+
+    //            // Aggregate and publish batch updates
+    //            AggregateEvents(_smartReaderTagEventsListBatch.Values,
+    //                            ref smartReaderTagReadEventAggregated,
+    //                            smartReaderTagReadEventsArray);
+    //        }
+    //    }
+    //}
+
+    //private void PublishEmptyEvent(ref JObject? smartReaderTagReadEventAggregated)
+    //{
+    //    _logger.LogInformation("Tags left read zone, publishing empty event list");
+
+    //    var lastEvent = _smartReaderTagEventsAbsence.Values.FirstOrDefault();
+    //    if (lastEvent != null)
+    //    {
+    //        smartReaderTagReadEventAggregated = new JObject(lastEvent)
+    //        {
+    //            ["tag_reads"] = new JArray()
+    //        };
+
+    //        _smartReaderTagEventsListBatch.Clear();
+    //        _smartReaderTagEventsAbsence.Clear();
+
+    //        _emptyEventPublished = true;
+    //        _logger.LogDebug("Empty event published, waiting for new tags");
+    //    }
+    //}
+
+    //private void ProcessRegularIntervalPublishing(ref JObject? smartReaderTagReadEventAggregated,
+    //    JArray smartReaderTagReadEventsArray)
+    //{
+    //    if (!_mqttPublisherStopwatch.IsRunning)
+    //    {
+    //        _mqttPublisherStopwatch.Start();
+    //    }
+
+    //    if (_mqttPublisherStopwatch.ElapsedMilliseconds >= _mqttPublishingConfiguration.PublishIntervalMs)
+    //    {
+    //        _mqttPublisherStopwatch.Restart();
+    //        _logger.LogInformation($"Publishing batch of {_smartReaderTagEventsListBatch.Count} events");
+
+    //        AggregateEvents(_smartReaderTagEventsListBatch.Values,
+    //            ref smartReaderTagReadEventAggregated, smartReaderTagReadEventsArray);
+    //    }
+    //}
+
+    //private async Task PublishEvents(JObject smartReaderTagReadEventAggregated, JArray tagReadsArray)
+    //{
+    //    try
+    //    {
+    //        // Skip if no events to publish
+    //        if (smartReaderTagReadEventAggregated == null || tagReadsArray == null)
+    //        {
+    //            _logger.LogDebug("No events to publish - aggregated event or tag reads array is null");
+    //            return;
+    //        }
+
+    //        // Update the aggregated event with the collected tag reads
+    //        smartReaderTagReadEventAggregated["tag_reads"] = tagReadsArray;
+
+    //        // Log publishing attempt
+    //        _logger.LogDebug(
+    //            "Publishing MQTT event with {TagCount} tag reads",
+    //            tagReadsArray.Count);
+
+    //        try
+    //        {
+    //            // Process and publish the MQTT event
+    //            await PublishMqttJsonTagEventDataAsync(smartReaderTagReadEventAggregated);
+
+    //            _logger.LogDebug(
+    //                "Successfully published MQTT event with payload: {Payload}",
+    //                smartReaderTagReadEventAggregated.ToString(Formatting.None));
+    //        }
+    //        catch (Exception ex)
+    //        {
+    //            _logger.LogError(ex,
+    //                "Failed to publish MQTT event with {TagCount} tag reads",
+    //                tagReadsArray.Count);
+    //            throw; // Rethrow to be handled by caller
+    //        }
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        _logger.LogError(ex, "Error preparing MQTT event for publishing");
+    //        throw; // Rethrow to be handled by caller
+    //    }
+    //}
+
+    //private async Task ProcessImmediatePublishing()
+    //{
+    //    JObject? smartReaderTagReadEvent;
+    //    JObject? smartReaderTagReadEventAggregated = null;
+    //    var smartReaderTagReadEventsArray = new JArray();
+
+    //    if (!_mqttPublisherStopwatch.IsRunning)
+    //    {
+    //        _mqttPublisherStopwatch.Start();
+    //    }
+
+    //    // Process messages until publish interval is reached
+    //    while (_mqttPublisherStopwatch.ElapsedMilliseconds < _mqttPublishingConfiguration.PublishIntervalMs)
+    //    {
+    //        while (_messageQueueTagSmartReaderTagEventMqtt.TryDequeue(out smartReaderTagReadEvent))
+    //        {
+    //            try
+    //            {
+    //                ProcessTagEvent(smartReaderTagReadEvent,
+    //                    ref smartReaderTagReadEventAggregated,
+    //                    smartReaderTagReadEventsArray);
+    //            }
+    //            catch (Exception ex)
+    //            {
+    //                _logger.LogError(ex, "Error processing tag event");
+    //            }
+    //        }
+    //        await Task.Delay(10); // Small delay to prevent tight loop
+    //    }
+
+    //    _mqttPublisherStopwatch.Restart();
+
+    //    // Publish accumulated events
+    //    if (smartReaderTagReadEventAggregated != null && smartReaderTagReadEventsArray.Count > 0)
+    //    {
+    //        await PublishEvents(smartReaderTagReadEventAggregated, smartReaderTagReadEventsArray);
+    //    }
+    //}
+
+    //private JArray AggregateTagReads(IEnumerable<JObject> events)
+    //{
+    //    var tagReadsArray = new JArray();
+
+    //    foreach (var evt in events)
+    //    {
+    //        if (evt == null) continue;
+
+    //        var tagReads = evt.Property("tag_reads")?.Values();
+    //        if (tagReads == null || !tagReads.Any()) continue;
+
+    //        foreach (var tagRead in tagReads)
+    //        {
+    //            if (tagRead != null && IsValidTagRead(tagRead))
+    //            {
+    //                tagReadsArray.Add(tagRead);
+    //            }
+    //        }
+    //    }
+
+    //    return tagReadsArray;
+    //}
+
+    //private bool IsTimeToPublishBatch()
+    //{
+    //    var elapsedMs = _mqttPublisherStopwatch.ElapsedMilliseconds;
+    //    return elapsedMs >= _mqttPublishingConfiguration.PublishIntervalMs;
+    //}
+
+    //private bool IsBatchModeEnabled()
+    //{
+    //    // For debugging and monitoring
+    //    if (_mqttPublishingConfiguration.BatchListEnabled)
+    //    {
+    //        _logger.LogDebug("Tag Events List Batch Mode is enabled");
+    //    }
+
+    //    return _mqttPublishingConfiguration.BatchListEnabled;
+    //}
+
+    private void ValidateConfiguration()
+    {
+        if (_mqttPublishingConfiguration.PublishIntervalMs <= 0)
+        {
+            _logger.LogWarning("Invalid MQTT publish interval. Using default of 1 second.");
+            _mqttPublishingConfiguration.PublishIntervalMs = 1000;
+        }
+
+        // More validation as needed...
+    }
+
+
+    //            try
+    //            {
+    //                if (smartReaderTagReadEventAggregated != null && smartReaderTagReadEventsArray != null &&
+    //                    smartReaderTagReadEventsArray.Count > 0)
+    //                {
+    //                    smartReaderTagReadEventAggregated["tag_reads"] = smartReaderTagReadEventsArray;
+
+    //                    await ProcessMqttJsonTagEventDataAsync(smartReaderTagReadEventAggregated);
+    //                }
+    //            }
+    //            catch (Exception ex)
+    //            {
+    //                _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+    //            }
+
+    //        }
+    //        catch (Exception ex)
+    //        {
+    //            _logger.LogError(ex, "Unexpected error on OnRunPeriodicTagPublisherMqttTasksEvent " + ex.Message);
+    //        }
+
+
+    //        _timerTagPublisherMqtt.Enabled = true;
+    //        _timerTagPublisherMqtt.Start();
+    //#pragma warning restore CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
+    //    }
 
     //private async void OnRunPeriodicTagPublisherMqttTasksEvent(object sender, ElapsedEventArgs e)
     //{
@@ -6166,7 +7039,7 @@ ProcessKeepalive()
     //    _timerTagPublisherMqtt.Start();
     //}
 
-    private async Task ProcessMqttJsonTagEventDataAsync(JObject smartReaderTagEventData)
+    private async Task PublishMqttJsonTagEventDataAsync(JObject smartReaderTagEventData)
     {
         try
         {
@@ -6175,11 +7048,10 @@ ProcessKeepalive()
             var mqttDataTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}";
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
 
-            await _mqttClient.EnqueueAsync(mqttDataTopic, jsonParam);
-            // Wait until the queue is fully processed.
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-            SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
+            await _mqttService.PublishAsync(mqttDataTopic,
+                                jsonParam,
+                                _iotDeviceInterfaceClient.MacAddress);
+
 
             _logger.LogInformation($"Data sent: {jsonParam}");
             //_ = ProcessGpoErrorPortRecoveryAsync();
@@ -6201,11 +7073,7 @@ ProcessKeepalive()
             var mqttDataTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}";
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
 
-            await _mqttClient.EnqueueAsync(mqttDataTopic, jsonParam);
-            // Wait until the queue is fully processed.
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-            SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
+            await _mqttService.PublishAsync(mqttDataTopic, jsonParam, _iotDeviceInterfaceClient.MacAddress, MqttQualityOfServiceLevel.AtLeastOnce, false);
             _logger.LogInformation($"Data sent: {jsonParam}");
         }
         catch (Exception ex)
@@ -6961,12 +7829,13 @@ ProcessKeepalive()
             await UpdateReaderSerialAsync();
             await _configurationService.UpdateLicenseAndConfigAsync(DeviceId, _plugins);
             await UpdateReaderStatusAsync();
+            await ProcessReaderCommandsAsync();
 
             if (!IsOnPause())
             {
                 await HandleHttpPostTimeoutAsync();
                 await RefreshBearerTokenAsync();
-                await ProcessReaderCommandsAsync();
+                
             }
             
             await SendHeartbeatAsync();
@@ -6983,14 +7852,14 @@ ProcessKeepalive()
 
     private void DisablePeriodicTasks()
     {
-        PeriodicTasksTimerInventoryData.Enabled = false;
-        PeriodicTasksTimerInventoryData.Stop();
+        _timerPeriodicTasksJob.Enabled = false;
+        _timerPeriodicTasksJob.Stop();
     }
 
     private void EnablePeriodicTasks()
     {
-        PeriodicTasksTimerInventoryData.Enabled = true;
-        PeriodicTasksTimerInventoryData.Start();
+        _timerPeriodicTasksJob.Enabled = true;
+        _timerPeriodicTasksJob.Start();
     }
 
     private bool ValidateConfig()
@@ -7457,12 +8326,9 @@ ProcessKeepalive()
     private async Task InitializeReaderDeviceAsync()
     {
         var readPointIpAddress = _configuration.GetValue<string>("ReaderInfo:Address");
-        string buildConfiguration = "Release"; // Default to Debug if unable to determine
-#if DEBUG
-        buildConfiguration = "Debug";
-#endif
+
         // Get the value based on the build configuration
-        if ("Debug".Equals(buildConfiguration))
+        if ("Debug".Equals(_buildConfiguration))
         {
             readPointIpAddress = _configuration.GetValue<string>("ReaderInfo:DebugAddress") ?? readPointIpAddress;
         }
@@ -7644,7 +8510,19 @@ ProcessKeepalive()
             }
             try
             {
-                _standaloneConfigDTO.readerSerial = _iotDeviceInterfaceClient.GetStatusAsync().Result.SerialNumber;
+                try
+                {
+                    if(_standaloneConfigDTO == null)
+                    {
+                        _standaloneConfigDTO = _configurationService.LoadConfig();
+                    }
+                    _standaloneConfigDTO.readerSerial = _iotDeviceInterfaceClient.GetStatusAsync().Result.SerialNumber;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error retrieving SN");
+                }
+                
 
                 if (_standaloneConfigDTO.readerName.Equals("impinj-xx-xx-xx"))
                 {
@@ -7727,7 +8605,7 @@ ProcessKeepalive()
                     { "mac", _iotDeviceInterfaceClient.MacAddress },
                     { "timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now) }
                 };
-                    await PublishMqttManagementEventAsync(mqttManagementEvents);
+                    await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
                 }
             }
 
@@ -7922,29 +8800,6 @@ ProcessKeepalive()
                 }
             }
 
-            // Initialize MQTT authentication if enabled
-            if (string.Equals("1", _standaloneConfigDTO.mqttEnabled))
-            {
-                try
-                {
-                    await ConnectToMqttBrokerAsync(
-                        _standaloneConfigDTO.readerName,
-                        _standaloneConfigDTO.mqttBrokerAddress,
-                        int.Parse(_standaloneConfigDTO.mqttBrokerPort),
-                        _standaloneConfigDTO.mqttUsername,
-                        _standaloneConfigDTO.mqttPassword,
-                        _standaloneConfigDTO.mqttTagEventsTopic,
-                        int.Parse(_standaloneConfigDTO.mqttTagEventsQoS),
-                        _standaloneConfigDTO
-                    );
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error initializing MQTT authentication");
-                    await ProcessGpoErrorPortAsync();
-                }
-            }
-
             // Start the authentication token refresh timer if bearer token is used
             if (!string.IsNullOrEmpty(_standaloneConfigDTO.httpAuthenticationTokenApiValue))
             {
@@ -8014,7 +8869,7 @@ ProcessKeepalive()
         while (!stoppingToken.IsCancellationRequested)
         {
             await EnsureConnectionsAsync();
-            await ProcessPendingMessagesAsync();
+            // await ProcessPendingMessagesAsync();
             await UpdatePositioningDataAsync();
             await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
         }
@@ -8031,8 +8886,6 @@ ProcessKeepalive()
 
     private async Task CleanupResourcesAsync()
     {
-        if (_mqttClient != null)
-            _mqttClient.Dispose();
 
         _serialTty?.Dispose();
         // Cleanup other resources
@@ -8060,12 +8913,12 @@ ProcessKeepalive()
         }
     }
 
-    private async Task ProcessPendingMessagesAsync()
-    {
-        await ProcessQueuedMessagesAsync();
-        await ProcessMqttMessagesAsync();
-        //await ProcessSocketMessagesAsync();
-    }
+    //private async Task ProcessPendingMessagesAsync()
+    //{
+    //    // await ProcessQueuedMessagesAsync();
+    //    //await ProcessMqttMessagesAsync();
+    //    //await ProcessSocketMessagesAsync();
+    //}
 
     private void InitializeUdpServer()
     {
@@ -8151,7 +9004,8 @@ ProcessKeepalive()
     }
     private async Task InitializeMqttAsync()
     {
-        if (_standaloneConfigDTO == null || !string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
+        if (_standaloneConfigDTO == null || 
+            !string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
@@ -8166,16 +9020,12 @@ ProcessKeepalive()
 
         if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttTagEventsTopic))
         {
-            await ConnectToMqttBrokerAsync(
+            await _mqttService.ConnectToMqttBrokerAsync(
                 DeviceIdMqtt,
-                _standaloneConfigDTO.mqttBrokerAddress,
-                int.Parse(_standaloneConfigDTO.mqttBrokerPort),
-                _standaloneConfigDTO.mqttUsername,
-                _standaloneConfigDTO.mqttPassword,
-                _standaloneConfigDTO.mqttTagEventsTopic,
-                int.Parse(_standaloneConfigDTO.mqttTagEventsQoS),
                 _standaloneConfigDTO
             );
+            _mqttService.GpoErrorRequested += OnGpoErrorRequested;
+            _mqttService.MessageReceived += HandleMessageReceived;
         }
     }
 
@@ -8201,9 +9051,9 @@ ProcessKeepalive()
         {
             try
             {
-                if (_mqttClient?.IsConnected == true)
+                if (_mqttService?.CheckConnection() == true)
                 {
-                    await ProcessMqttJsonTagEventDataAsync(message);
+                    await PublishMqttJsonTagEventDataAsync(message);
                 }
                 else
                 {
@@ -8296,7 +9146,7 @@ ProcessKeepalive()
             { "timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now) },
             { "smartreader-status", "invalid-license-key" }
         };
-            await PublishMqttManagementEventAsync(mqttEvent);
+            await _mqttService.PublishMqttManagementEventAsync(mqttEvent);
             throw new InvalidOperationException("Invalid license key");
         }
     }
@@ -8447,14 +9297,14 @@ ProcessKeepalive()
         _timerTagPublisherRetry.Start();
     }
 
-    private async Task ProcessQueuedMessagesAsync()
-    {
-        await ProcessHttpMessages();
-        await ProcessMqttMessagesAsync();
-        //await _tcpSocketService.ProcessSocketMessagesAsync();
-        await ProcessUdpMessages();
-        await ProcessUsbDriveMessages();
-    }
+    //private async Task ProcessQueuedMessagesAsync()
+    //{
+    //    await ProcessHttpMessages();
+    //    // await ProcessMqttMessagesAsync();
+    //    //await _tcpSocketService.ProcessSocketMessagesAsync();
+    //    await ProcessUdpMessages();
+    //    await ProcessUsbDriveMessages();
+    //}
 
     private async Task ProcessHttpMessages()
     {
@@ -9055,11 +9905,11 @@ ProcessKeepalive()
 
                                         var mqttCommandResponseTopic =
                                             $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                                        await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                            mqttQualityOfServiceLevel, retain);
-                                        // Wait until the queue is fully processed.
-
-                                        SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                                        await _mqttService.PublishAsync(mqttCommandResponseTopic,
+                                            serializedData,
+                                            _iotDeviceInterfaceClient.MacAddress,
+                                            mqttQualityOfServiceLevel,
+                                            retain);
 
                                     }
 
@@ -9123,10 +9973,8 @@ ProcessKeepalive()
                             }
 
                             var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                            await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                mqttQualityOfServiceLevel, retain);
-                            SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
-
+                            await _mqttService.PublishAsync(mqttCommandResponseTopic, serializedData,
+                                _iotDeviceInterfaceClient.MacAddress, mqttQualityOfServiceLevel, retain);
                         }
 
                     }
@@ -9188,10 +10036,11 @@ ProcessKeepalive()
                             }
 
                             var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                            await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                mqttQualityOfServiceLevel, retain);
-
-                            SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                            await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                                serializedData,
+                                _iotDeviceInterfaceClient.MacAddress,
+                                mqttQualityOfServiceLevel, 
+                                retain);
 
                         }
 
@@ -9266,9 +10115,11 @@ ProcessKeepalive()
                             }
 
                             var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                            await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                mqttQualityOfServiceLevel, retain);
-                            SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100); 
+                            await _mqttService.PublishAsync(mqttCommandResponseTopic,
+                                serializedData,
+                                _iotDeviceInterfaceClient.MacAddress,
+                                mqttQualityOfServiceLevel,
+                                retain);
                         }
 
                     }
@@ -9342,9 +10193,12 @@ ProcessKeepalive()
                         }
 
                         var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                        await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                            mqttQualityOfServiceLevel, retain);
-                        SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                        await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                            serializedData,
+                            _iotDeviceInterfaceClient.MacAddress,
+                            mqttQualityOfServiceLevel, 
+                            retain);
+                        
                         //if ("success".Equals(commandStatus))
                         //{
                         //    // exits the app to reload the settings
@@ -9449,9 +10303,12 @@ ProcessKeepalive()
                             }
 
                             var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                            await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                mqttQualityOfServiceLevel, retain);
-                            SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                            await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                                serializedData,
+                                _iotDeviceInterfaceClient.MacAddress,
+                                mqttQualityOfServiceLevel, 
+                                retain);
+                            
 
                         }
 
@@ -9543,18 +10400,14 @@ ProcessKeepalive()
                             }
 
                             var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                            await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                mqttQualityOfServiceLevel, retain);
-                            SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                            await _mqttService.PublishAsync(mqttCommandResponseTopic,
+                                serializedData,
+                                _iotDeviceInterfaceClient.MacAddress,
+                                mqttQualityOfServiceLevel,
+                                retain);
+
 
                         }
-
-                        //if ("success".Equals(commandStatus))
-                        //{
-                        //    // exits the app to reload the settings
-                        //    Task.Delay(3000);
-                        //    Environment.Exit(0);
-                        //}
                     }
                     else if ("impinj_iot_device_interface".Equals(commandValue))
                     {
@@ -9683,10 +10536,13 @@ ProcessKeepalive()
                             }
 
                             var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                            await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                mqttQualityOfServiceLevel, retain);
+                            await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                                serializedData,
+                                _iotDeviceInterfaceClient.MacAddress,
+                                mqttQualityOfServiceLevel, 
+                                retain);
 
-                            SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                            
 
                         }
 
@@ -9808,9 +10664,12 @@ ProcessKeepalive()
 
                                                 var mqttCommandResponseTopic =
                                                     $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                                await _mqttClient.EnqueueAsync(mqttCommandResponseTopic,
-                                                    serializedData, mqttQualityOfServiceLevel, retain);
-                                                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                                                await _mqttService.PublishAsync(mqttCommandResponseTopic,
+                                                    serializedData,
+                                                    _iotDeviceInterfaceClient.MacAddress,
+                                                    mqttQualityOfServiceLevel, 
+                                                    retain);
+                                                
 
                                             }
 
@@ -9883,10 +10742,13 @@ ProcessKeepalive()
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
+                                await _mqttService.PublishAsync(mqttCommandResponseTopic,
+                                serializedData,
+                                _iotDeviceInterfaceClient.MacAddress,
+                                mqttQualityOfServiceLevel,
+                                retain);
 
-                                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+
 
                             }
 
@@ -9950,10 +10812,13 @@ ProcessKeepalive()
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
+                                await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                                    serializedData,
+                                    _iotDeviceInterfaceClient.MacAddress,
+                                    mqttQualityOfServiceLevel, 
+                                    retain);
 
-                                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                                
 
                             }
 
@@ -10014,10 +10879,13 @@ ProcessKeepalive()
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
+                                await _mqttService.PublishAsync(mqttCommandResponseTopic,
+                                serializedData,
+                                _iotDeviceInterfaceClient.MacAddress,
+                                mqttQualityOfServiceLevel,
+                                retain);
 
-                                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+
 
                             }
 
@@ -10079,10 +10947,13 @@ ProcessKeepalive()
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
+                                await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                                    serializedData,
+                                    _iotDeviceInterfaceClient.MacAddress,
+                                    mqttQualityOfServiceLevel, 
+                                    retain);
 
-                                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                                
 
                             }
 
@@ -10174,9 +11045,12 @@ ProcessKeepalive()
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
-                                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                                await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                                    serializedData,
+                                    _iotDeviceInterfaceClient.MacAddress,
+                                    mqttQualityOfServiceLevel, 
+                                    retain);
+                                
 
                             }
 
@@ -10264,11 +11138,11 @@ ProcessKeepalive()
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
-
-                                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
-
+                                await _mqttService.PublishAsync(mqttCommandResponseTopic,
+                                serializedData,
+                                _iotDeviceInterfaceClient.MacAddress,
+                                mqttQualityOfServiceLevel,
+                                retain);
                             }
 
 
@@ -10349,9 +11223,12 @@ ProcessKeepalive()
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
-                                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                                await _mqttService.PublishAsync(mqttCommandResponseTopic,
+                                    serializedData,
+                                    _iotDeviceInterfaceClient.MacAddress,
+                                    mqttQualityOfServiceLevel,
+                                    retain);
+
 
                             }
                         }
@@ -10427,14 +11304,11 @@ ProcessKeepalive()
                             }
 
                             var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                            await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                mqttQualityOfServiceLevel, retain);
-                            //if ("success".Equals(commandStatus))
-                            //{
-                            //    // exits the app to reload the settings
-                            //    Task.Delay(3000);
-                            //    Environment.Exit(0);
-                            //}
+                            await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                                serializedData,
+                                _iotDeviceInterfaceClient.MacAddress,
+                                mqttQualityOfServiceLevel, 
+                                retain);
                         }
                         else if ("retrieve-settings".Equals(commandValue))
                         {
@@ -10510,10 +11384,13 @@ ProcessKeepalive()
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
+                                await _mqttService.PublishAsync(mqttCommandResponseTopic,
+                                    serializedData,
+                                    _iotDeviceInterfaceClient.MacAddress,
+                                    mqttQualityOfServiceLevel,
+                                    retain);
 
-                                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+
 
                             }
                         }
@@ -10598,10 +11475,13 @@ ProcessKeepalive()
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
+                                await _mqttService.PublishAsync(mqttCommandResponseTopic,
+                                    serializedData,
+                                    _iotDeviceInterfaceClient.MacAddress,
+                                    mqttQualityOfServiceLevel,
+                                    retain);
 
-                                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+
 
                             }
                         }
@@ -10755,10 +11635,13 @@ ProcessKeepalive()
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
+                                await _mqttService.PublishAsync(mqttCommandResponseTopic,
+                                    serializedData,
+                                    _iotDeviceInterfaceClient.MacAddress,
+                                    mqttQualityOfServiceLevel,
+                                    retain);
 
-                                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+
 
                             }
                         }
@@ -10892,9 +11775,12 @@ ProcessKeepalive()
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData,
-                                    mqttQualityOfServiceLevel, retain);
-                                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                                await _mqttService.PublishAsync(mqttCommandResponseTopic,
+                                    serializedData,
+                                    _iotDeviceInterfaceClient.MacAddress,
+                                    mqttQualityOfServiceLevel,
+                                    retain);
+
 
                             }
                         }
@@ -11012,9 +11898,9 @@ ProcessKeepalive()
                 {
                     var serializedData = JsonConvert.SerializeObject(_standaloneConfigDTO);
                     var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
-                    await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData);
+                    await _mqttService.PublishAsync(mqttCommandResponseTopic, serializedData);
 
-                    SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                    
 
                 }
                 catch (Exception ex)
@@ -11030,8 +11916,8 @@ ProcessKeepalive()
                     var serial = GetSerialAsync();
                     var serializedData = JsonConvert.SerializeObject(serial.Result);
                     var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
-                    await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData);
-                    SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                    await _mqttService.PublishAsync(mqttCommandResponseTopic, serializedData);
+                    
 
                 }
                 catch (Exception ex)
@@ -11047,9 +11933,9 @@ ProcessKeepalive()
                     var status = GetReaderStatusAsync();
                     var serializedData = JsonConvert.SerializeObject(status.Result);
                     var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
-                    await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, serializedData);
+                    await _mqttService.PublishAsync(mqttCommandResponseTopic, serializedData);
 
-                    SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                    
 
                 }
                 catch (Exception ex)
@@ -11064,9 +11950,9 @@ ProcessKeepalive()
                 {
                     _ = StartTasksAsync();
                     var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
-                    await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, "OK");
+                    await _mqttService.PublishAsync(mqttCommandResponseTopic, "OK");
 
-                    SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                    
 
                 }
                 catch (Exception ex)
@@ -11081,9 +11967,9 @@ ProcessKeepalive()
                 {
                     _ = StopTasksAsync();
                     var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
-                    await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, "OK");
+                    await _mqttService.PublishAsync(mqttCommandResponseTopic, "OK");
 
-                    SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                    
 
                 }
                 catch (Exception ex)
@@ -11101,9 +11987,9 @@ ProcessKeepalive()
                     {
                         _ = SetGpoPortsAsync(deserializedData);
                         var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
-                        await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, "OK");
+                        await _mqttService.PublishAsync(mqttCommandResponseTopic, "OK");
 
-                        SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                        
 
                     }
                 }
@@ -11148,9 +12034,9 @@ ProcessKeepalive()
                 {
                     _logger.LogError(ex, "Unexpected error" + ex.Message);
                     //_mqttCommandClient.EnqueueAsync(_standaloneConfigDTO.mqttTopic, ex.Message);
-                    await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, ex.Message);
+                    await _mqttService.PublishAsync(mqttCommandResponseTopic, ex.Message);
 
-                    SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                    
 
                 }
             }
@@ -11954,7 +12840,7 @@ ProcessKeepalive()
     //    }
     //}
 
-    private static async Task<string> CallIotRestFulInterfaceAsync(string bodyRequest, string endpointString, string method,
+    private async Task<string> CallIotRestFulInterfaceAsync(string bodyRequest, string endpointString, string method,
         string mqttCommandResponseTopic, bool publish)
     {
         var requestResult = "";
@@ -12045,9 +12931,9 @@ ProcessKeepalive()
             requestResult = response.Result.Content.ReadAsStringAsync().Result;
             Log.Debug(requestResult);
             //_mqttCommandClient.EnqueueAsync(_standaloneConfigDTO.mqttTopic, requestResult);
-            await _mqttClient.EnqueueAsync(mqttCommandResponseTopic, requestResult);
+            await _mqttService.PublishAsync(mqttCommandResponseTopic, requestResult);
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
-            SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+            
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
         }
         else
@@ -12056,10 +12942,10 @@ ProcessKeepalive()
 
             if (!string.IsNullOrEmpty(requestResult) && publish)
             {
-                await _mqttClient.EnqueueAsync(mqttCommandResponseTopic,
+                await _mqttService.PublishAsync(mqttCommandResponseTopic,
                     response.Result.Content.ReadAsStringAsync().Result);
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
-                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 100);
+                
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
             }
 
@@ -12068,479 +12954,9 @@ ProcessKeepalive()
         return requestResult;
     }
 
-    private async Task ConnectToMqttBrokerAsync(string mqttClientId, string mqttBrokerAddress, int mqttBrokerPort,
-        string mqttUsername, string mqttPassword, string mqttTopic, int mqttQos,
-        StandaloneConfigDTO smartReaderSetupData)
-    {
-        try
-        {
-            var lastWillMessage = BuildMqttLastWillMessage();
-            int mqttKeepAlivePeriod = 30;
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-            int.TryParse(_standaloneConfigDTO.mqttBrokerKeepAlive, out mqttKeepAlivePeriod);
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
+    
 
-            //var mqttBrokerAddress = _configuration.GetValue<string>("MQTTInfo:Address");
-            //var mqttBrokerPort = _configuration.GetValue<int>("MQTTInfo:Port");
-            //var mqttBrokerUsername = _configuration.GetValue<string>("MQTTInfo:username");
-            //var mqttBrokerPassword = _configuration.GetValue<string>("MQTTInfo:password");
-            // Setup and start a managed MQTT client.
-            // 1 - The managed client is started once and will maintain the connection automatically including reconnecting etc.
-            // 2 - All MQTT application messages are added to an internal queue and processed once the server is available.
-            // 3 - All MQTT application messages can be stored to support sending them after a restart of the application
-            // 4 - All subscriptions are managed across server connections. There is no need to subscribe manually after the connection with the server is lost.
-
-
-            // Setup and start a managed MQTT client.
-            //ManagedMqttClientOptions localMqttClientOptions;
-
-
-            if (string.IsNullOrEmpty(mqttUsername))
-            {
-                //string localClientId = mqttClientId + "-" + DateTime.Now.ToFileTimeUtc();
-                var localClientId = mqttClientId; // + "-" + DateTime.Now.ToFileTimeUtc();
-
-
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerProtocol)
-                    && _standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("ws"))
-                {
-
-                    var mqttBrokerWebSocketPath = "/mqtt";
-                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerWebSocketPath))
-                    {
-                        mqttBrokerWebSocketPath = _standaloneConfigDTO.mqttBrokerWebSocketPath;
-                    }
-
-                    
-
-                    _mqttClientOptions = new ManagedMqttClientOptionsBuilder()                     
-                    .WithClientOptions(new MqttClientOptionsBuilder()
-                        //.WithCleanSession()
-                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                        .WithClientId(localClientId)
-                        .WithWebSocketServer(o => o.WithUri($"{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}"))
-                        .WithWillPayload(lastWillMessage.PayloadSegment)
-                        .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
-                        .WithWillTopic(lastWillMessage.Topic)
-                        .WithWillRetain(lastWillMessage.Retain)
-                        .WithWillContentType(lastWillMessage.ContentType)
-                        //.WithWillMessage(lastWillMessage)
-                        .Build())
-                    .Build();
-                }
-                else
-                {
-                    _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
-                    .WithClientOptions(new MqttClientOptionsBuilder()
-                        //.WithCleanSession()
-                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                        .WithClientId(localClientId)
-                        .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
-                                                //.WithWebSocketServer("wss://mymqttserver:443")
-                                                .WithWillPayload(lastWillMessage.PayloadSegment)
-                        .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
-                        .WithWillTopic(lastWillMessage.Topic)
-                        .WithWillRetain(lastWillMessage.Retain)
-                        .WithWillContentType(lastWillMessage.ContentType)
-                        //.WithWillMessage(lastWillMessage)
-                        .Build())
-                    .Build();
-                }
-
-            }
-            else
-            {
-                var localClientId = mqttClientId; // + "-" + DateTime.Now.ToFileTimeUtc();
-
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerProtocol)
-                    && _standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("ws"))
-                {
-                    var mqttBrokerWebSocketPath = "/mqtt";
-                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerWebSocketPath))
-                    {
-                        mqttBrokerWebSocketPath = _standaloneConfigDTO.mqttBrokerWebSocketPath;
-                    }
-                    if(_standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("wss"))
-                    {
-                        _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
-                    .WithClientOptions(new MqttClientOptionsBuilder()
-                        //.WithCleanSession()
-                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                        .WithClientId(localClientId)
-                         .WithWebSocketServer(o => o.WithUri($"{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}"))
-                        .WithCredentials(mqttUsername, mqttPassword)
-                                                .WithWillPayload(lastWillMessage.PayloadSegment)
-                        .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
-                        .WithWillTopic(lastWillMessage.Topic)
-                        .WithWillRetain(lastWillMessage.Retain)
-                        .WithWillContentType(lastWillMessage.ContentType)
-                        .WithTlsOptions(o =>
-                        {
-                            // The used public broker sometimes has invalid certificates. This sample accepts all
-                            // certificates. This should not be used in live environments.
-                            o.WithCertificateValidationHandler(_ => true);
-
-                            // The default value is determined by the OS. Set manually to force version.
-                            o.WithSslProtocols(SslProtocols.Tls12);
-                        })
-                        //.WithWillMessage(lastWillMessage)
-                        .Build())
-                    .Build();
-                    }
-                    else
-                    {
-                        _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
-                                            .WithClientOptions(new MqttClientOptionsBuilder()
-                                                //.WithCleanSession()
-                                                .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                                                //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                                                .WithClientId(localClientId)
-                                                 .WithWebSocketServer(o => o.WithUri($"{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}"))
-                                                .WithCredentials(mqttUsername, mqttPassword)
-                                                                        .WithWillPayload(lastWillMessage.PayloadSegment)
-                                                .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
-                                                .WithWillTopic(lastWillMessage.Topic)
-                                                .WithWillRetain(lastWillMessage.Retain)
-                                                .WithWillContentType(lastWillMessage.ContentType)
-                                                //.WithWillMessage(lastWillMessage)
-                                                .Build())
-                                            .Build();
-                    }
-                    _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
-                    .WithClientOptions(new MqttClientOptionsBuilder()
-                        //.WithCleanSession()
-                        .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                        //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                        .WithClientId(localClientId)
-                         .WithWebSocketServer(o => o.WithUri($"{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}"))
-                        .WithCredentials(mqttUsername, mqttPassword)
-                                                .WithWillPayload(lastWillMessage.PayloadSegment)
-                        .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
-                        .WithWillTopic(lastWillMessage.Topic)
-                        .WithWillRetain(lastWillMessage.Retain)
-                        .WithWillContentType(lastWillMessage.ContentType)
-                        //.WithWillMessage(lastWillMessage)
-                        .Build())
-                    .Build();
-                }
-                else
-                {
-                    if (_standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("mqtts"))
-                    {
-                        _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
-                            .WithClientOptions(new MqttClientOptionsBuilder()
-                                //.WithCleanSession()
-                                .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                                //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                                .WithClientId(localClientId)
-                                .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
-                                .WithCredentials(mqttUsername, mqttPassword)
-                                                        .WithWillPayload(lastWillMessage.PayloadSegment)
-                                .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
-                                .WithWillTopic(lastWillMessage.Topic)
-                                .WithWillRetain(lastWillMessage.Retain)
-                                .WithWillContentType(lastWillMessage.ContentType)
-                                .WithTlsOptions(o =>
-                                {
-                                    // The used public broker sometimes has invalid certificates. This sample accepts all
-                                    // certificates. This should not be used in live environments.
-                                    o.WithCertificateValidationHandler(_ => true);
-
-                                    // The default value is determined by the OS. Set manually to force version.
-                                    o.WithSslProtocols(SslProtocols.Tls12);
-                                })
-                                //.WithWillMessage(lastWillMessage)
-                                .Build())
-                            .Build();
-                    }
-                    else
-                    {
-                        _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
-                            .WithClientOptions(new MqttClientOptionsBuilder()
-                                //.WithCleanSession()
-                                .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                                //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                                .WithClientId(localClientId)
-                                .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
-                                .WithCredentials(mqttUsername, mqttPassword)
-                                                        .WithWillPayload(lastWillMessage.PayloadSegment)
-                                .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
-                                .WithWillTopic(lastWillMessage.Topic)
-                                .WithWillRetain(lastWillMessage.Retain)
-                                .WithWillContentType(lastWillMessage.ContentType)
-                                //.WithWillMessage(lastWillMessage)
-                                .Build())
-                            .Build();
-                    }
-                    
-                }
-            }
-
-
-            _mqttClient = new MqttFactory().CreateManagedMqttClient();
-            //_mqttClient = new MqttFactory().CreateMqttClient();
-
-
-            await _mqttClient.StartAsync(_mqttClientOptions);
-
-
-
-
-            //_mqttClient.UseApplicationMessageReceivedHandler(e => { });
-
-
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-            _mqttClient.ApplicationMessageReceivedAsync += async e =>
-            {
-                //e.AutoAcknowledge = false;
-
-                _logger.LogInformation("### RECEIVED APPLICATION MESSAGE ###");
-                _logger.LogInformation($"+ Topic = {e.ApplicationMessage.Topic}");
-                if (e.ApplicationMessage.PayloadSegment != null)
-                    _logger.LogInformation($"+ Payload = {Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment)}");
-
-                _logger.LogInformation($"+ QoS = {e.ApplicationMessage.QualityOfServiceLevel}");
-                _logger.LogInformation($"+ Retain = {e.ApplicationMessage.Retain}");
-                _logger.LogInformation($"+ ClientId = {e.ClientId}");
-
-                var payload = "";
-                if (e.ApplicationMessage.PayloadSegment != null)
-                    payload = Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment);
-                try
-                {
-                    ProcessMqttCommandMessage(e.ClientId, e.ApplicationMessage.Topic, payload);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError("ProcessMqttMessage: Unexpected error. " + ex.Message);
-                }
-
-                _logger.LogInformation(" ");
-            };
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
-
-
-
-            _mqttClient.ConnectedAsync += async e =>
-            {
-                Console.WriteLine("### CONNECTED WITH SERVER ###");
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
-                    _logger.LogInformation("### CONNECTED WITH SERVER ### " + _standaloneConfigDTO.mqttBrokerAddress,
-                        SeverityType.Debug);
-                var mqttManagementEvents = new Dictionary<string, object>();
-                mqttManagementEvents.Add("smartreader-mqtt-status", "connected");
-                mqttManagementEvents.Add("readerName", _standaloneConfigDTO.readerName);
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                mqttManagementEvents.Add("mac", _iotDeviceInterfaceClient.MacAddress);
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-                mqttManagementEvents.Add("timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now));
-                await PublishMqttManagementEventAsync(mqttManagementEvents);
-
-                try
-                {
-                    var mqttTopicFilters = _configurationService.BuildMqttTopicList(smartReaderSetupData);
-
-
-                    await _mqttClient.SubscribeAsync(mqttTopicFilters.ToArray());
-                    _logger.LogInformation("### Subscribed to topics. ### ");
-                    //_ = ProcessGpoErrorPortRecoveryAsync();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Subscribe: Unexpected error. " + ex.Message);
-                }
-                //if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementCommandTopic))
-                //    try
-                //    {
-                //        //TODO
-                //    }
-                //    catch (Exception ex)
-                //    {
-                //        _logger.LogError(ex, "UseConnectedHandler: Unexpected error. " + ex.Message);
-                //    }
-            };
-
-
-            _mqttClient.DisconnectedAsync += async e =>
-            {
-                Console.WriteLine("### DISCONNECTED FROM SERVER ###");
-
-
-
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
-                    _logger.LogInformation($"### DISCONNECTED FROM SERVER ### {_standaloneConfigDTO.mqttBrokerAddress}");
-
-                try
-                {
-                    var diconnectDetails = $"Disconnection: ConnectResult {e.ConnectResult} \n";
-                    diconnectDetails += $"Disconnection: Reason {e.Reason} \n";
-                    if(e.ConnectResult != null)
-                    {
-                        diconnectDetails += $" ResultCode {e.ConnectResult.ResultCode} \n";
-                    }
-                    diconnectDetails += $" ClientWasConnected {e.ClientWasConnected} \n";
-                    if(e.Exception != null && !string.IsNullOrEmpty(e.Exception.Message))
-                    {
-                        diconnectDetails += $" Message {e.Exception.Message} \n";
-                    }
-                    
-                    _logger.LogInformation($"### Details {diconnectDetails}");
-
-                    await ProcessGpoErrorPortAsync();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "MQTT Disconnected.");
-                }
-
-            };
-
-            _mqttClient.ConnectingFailedAsync += async e =>
-            {
-                Console.WriteLine("### CONNECTION FAILED ###");
-
-
-
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
-                    _logger.LogInformation($"### CONNECTION FAILED ### {_standaloneConfigDTO.mqttBrokerAddress}");
-
-                try
-                {
-                    var diconnectDetails = $"CONNECTION FAILED: ConnectResult {e.ConnectResult} \n";
-
-                    _logger.LogInformation($"### Details {diconnectDetails}");
-
-                    await ProcessGpoErrorPortAsync();
-                }
-                catch (Exception)
-                {
-
-                }
-
-            };
-
-            _mqttClient.ConnectionStateChangedAsync += async e =>
-            {
-                Console.WriteLine("### CONNECTION STATE CHANGED ###");
-
-
-
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
-                    _logger.LogInformation($"### CONNECTION STATE CHANGED ### {_standaloneConfigDTO.mqttBrokerAddress}");
-
-                try
-                {
-                    var diconnectDetails = $"CONNECTION STATE CHANGED: ConnectResult {e.ToString()} \n";
-
-                    _logger.LogInformation($"### Details {diconnectDetails}");
-
-                    await ProcessGpoErrorPortAsync();
-                }
-                catch (Exception)
-                {
-
-                }
-
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected error" + ex.Message);
-        }
-    }
-
-    private MqttApplicationMessage BuildMqttLastWillMessage()
-    {
-        var lwtTopic = "/events/";
-        var lwtRetainMessage = true;
-
-        if (_standaloneConfigDTO != null)
-        {
-            if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttLwtTopic))
-            {
-                lwtTopic = _standaloneConfigDTO.mqttLwtTopic;
-            }
-            if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttLwtQoS))
-            {
-                bool.TryParse(_standaloneConfigDTO.mqttLwtQoS, out lwtRetainMessage);
-            }
-
-        }
-        var mqttManagementEvents = new Dictionary<string, string>();
-        mqttManagementEvents.Add("smartreader-mqtt-status", "disconnected");
-        var jsonParam = JsonConvert.SerializeObject(mqttManagementEvents);
-
-        var lastWillMessage = new MqttApplicationMessageBuilder()
-            .WithTopic(lwtTopic)
-            .WithRetainFlag(lwtRetainMessage)
-            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
-            .WithPayload(Encoding.ASCII.GetBytes(jsonParam))
-            .Build();
-
-
-        return lastWillMessage;
-    }
-
-    private async Task PublishMqttManagementEventAsync(Dictionary<string, object> mqttManagementEvents)
-    {
-        if (_standaloneConfigDTO != null)
-        {
-            var mqttManagementEventsTopic = _standaloneConfigDTO.mqttManagementEventsTopic;
-            if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase)
-                && _mqttClient != null
-                && _mqttClient.IsConnected)
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttManagementEventsTopic))
-                {
-                    //Dictionary<string, string> mqttManagementEvents = new Dictionary<string, string>();
-                    //mqttManagementEvents.Add("smartreader-mqtt-status", "connected");
-                    var jsonParam = JsonConvert.SerializeObject(mqttManagementEvents);
-
-                    if (_standaloneConfigDTO.mqttManagementEventsTopic.Contains("{{deviceId}}"))
-                        mqttManagementEventsTopic =
-                            _standaloneConfigDTO.mqttControlResponseTopic.Replace("{{deviceId}}",
-                                _standaloneConfigDTO.readerName);
-                    try
-                    {
-                        var qos = 0;
-                        var retain = false;
-                        var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
-                        try
-                        {
-                            int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
-                            bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
-
-                            mqttQualityOfServiceLevel = qos switch
-                            {
-                                1 => MqttQualityOfServiceLevel.AtLeastOnce,
-                                2 => MqttQualityOfServiceLevel.ExactlyOnce,
-                                _ => MqttQualityOfServiceLevel.AtMostOnce
-                            };
-                        }
-                        catch (Exception)
-                        {
-                        }
-                        if (mqttManagementEvents.Count > 0)
-                        {
-                            _logger.LogInformation($"Publishing management event: {jsonParam}");
-                            var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                            await _mqttClient.EnqueueAsync(mqttManagementEventsTopic, jsonParam,
-                                mqttQualityOfServiceLevel, retain);
-                            // Wait until the queue is fully processed.
-                            SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 1000);
-                            //_ = ProcessGpoErrorPortRecoveryAsync();
-                        }
-
-                    }
-                    catch (Exception)
-                    {
-                        await ProcessGpoErrorPortAsync();
-                    }
-                }
-        }
-    }
+    
 
     private async Task ProcessHttpPostTagEventDataAsync(SmartReaderTagEventData smartReaderTagEventData)
     {
@@ -12596,7 +13012,7 @@ ProcessKeepalive()
                         mqttManagementEvents.Add("serial", _standaloneConfigDTO.readerSerial);
                         mqttManagementEvents.Add("timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now));
                         mqttManagementEvents.Add("smartreader-status", "invalid-license-key");
-                        await PublishMqttManagementEventAsync(mqttManagementEvents);
+                        await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
                         return;
                     }
                 }
@@ -12618,7 +13034,7 @@ ProcessKeepalive()
                     mqttManagementEvents.Add("serial", _standaloneConfigDTO.readerSerial);
                     mqttManagementEvents.Add("timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now));
                     mqttManagementEvents.Add("smartreader-status", "invalid-license-key");
-                    await PublishMqttManagementEventAsync(mqttManagementEvents);
+                    await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
                     return;
                 }
             }
@@ -13083,21 +13499,10 @@ ProcessKeepalive()
                 dataToPublish.Add(newPropertyData);
             }
 
-            if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch)
-                && string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch,
-                    StringComparison.OrdinalIgnoreCase))
+            if (_mqttPublishingConfiguration.BatchListEnabled 
+                || _mqttPublishingConfiguration.BatchListPublishingEnabled)
             {
-                var batchProcessor = new ThreadSafeBatchProcessor(
-                    _logger,
-                    _smartReaderTagEventsListBatch,
-                    _smartReaderTagEventsListBatchOnUpdate
-                );
-
-                await batchProcessor.ProcessEventBatchAsync(
-                    tagRead,
-                    dataToPublish,
-                    _standaloneConfigDTO
-                );
+                await _batchProcessor.ProcessEventBatchAsync(tagRead, dataToPublish);
             }
             else
             {

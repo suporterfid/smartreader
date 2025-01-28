@@ -372,6 +372,23 @@ public class Utils
         }
     }
 
+    public static bool TryParseBoolFromString(string input, out bool result)
+    {
+        if (input == "1")
+        {
+            result = true;
+            return true;
+        }
+        else if (input == "0")
+        {
+            result = false;
+            return true;
+        }
+
+        result = false; // Default value
+        return false; // Parsing failed
+    }
+
     public static string CreateMD5Hash(string input)
     {
         // Step 1, calculate MD5 hash from input

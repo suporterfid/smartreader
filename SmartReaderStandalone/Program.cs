@@ -110,7 +110,6 @@ builder.WebHost.ConfigureKestrel(opt =>
 });
 
 builder.Services.AddSingleton<IConfigurationService, ConfigurationService>();
-
 builder.Services.AddSingleton<ITcpSocketService, TcpSocketService>(serviceProvider =>
 {
     var configuration = serviceProvider.GetRequiredService<IConfiguration>();
@@ -118,7 +117,20 @@ builder.Services.AddSingleton<ITcpSocketService, TcpSocketService>(serviceProvid
     var configurationService = serviceProvider.GetRequiredService<IConfigurationService>();
 
     return new TcpSocketService(serviceProvider, configuration, logger, configurationService);
-}); ;
+});
+
+builder.Services.AddSingleton<IMqttService, MqttService>(serviceProvider =>
+{
+    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+    var logger = serviceProvider.GetRequiredService<ILogger<MqttService>>();
+    var configurationService = serviceProvider.GetRequiredService<IConfigurationService>();
+    var standoaloneConfigDTO = configurationService.LoadConfig();
+
+    return new MqttService(logger, standoaloneConfigDTO);
+});
+
+
+
 
 builder.Services.AddSingleton<IotInterfaceService>();
 builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvider =>
@@ -129,6 +141,8 @@ builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvid
     var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
     var configurationService = serviceProvider.GetRequiredService<IConfigurationService>();
     var tcpSocketService = serviceProvider.GetRequiredService<ITcpSocketService>();
+    var mqttService = serviceProvider.GetRequiredService<IMqttService>();
+
 
     return new IotInterfaceService(serviceProvider, 
         configuration, 
@@ -136,7 +150,8 @@ builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvid
         loggerFactory, 
         httpClientFactory, 
         configurationService, 
-        tcpSocketService);
+        tcpSocketService,
+        mqttService);
 });
 // builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvider => serviceProvider.GetService<IotInterfaceService>());
 builder.Services.AddScoped<ISummaryQueueBackgroundService, SummaryQueueBackgroundService>();

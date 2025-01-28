@@ -22,7 +22,6 @@ namespace SmartReaderStandalone.Services
 {
     public interface IConfigurationService
     {
-        List<MqttTopicFilter> BuildMqttTopicList(StandaloneConfigDTO smartReaderSetupData);
         HttpUtil CreateHttpUtil(IHttpClientFactory httpClientFactory);
         Task<StandaloneConfigDTO> GetConfigDtoFromDb();
         Task<string> GetLicenseFromDb();
@@ -74,6 +73,7 @@ namespace SmartReaderStandalone.Services
         public void Initialize()
         {
             // This method ensures initialization logic, if necessary
+            _standaloneConfigDTO = LoadConfig();
         }
 
         public StandaloneConfigDTO LoadConfig()
@@ -151,7 +151,7 @@ namespace SmartReaderStandalone.Services
         {
             try
             {
-                _logger.LogInformation("Starting UpdateLicenseAndConfigAsync...");
+                _logger.LogDebug("Starting UpdateLicenseAndConfigAsync...");
 
                 // Update license
                 await UpdateLicenseAsync(deviceId, plugins);
@@ -171,7 +171,7 @@ namespace SmartReaderStandalone.Services
             {
                 if (plugins?.ContainsKey("LICENSE") == false)
                 {
-                    _logger.LogInformation("License key not found in plugins. Updating license...");
+                    _logger.LogDebug("License key not found in plugins. Updating license...");
 
                     var expectedLicense = string.IsNullOrEmpty(deviceId)
                         ? throw new InvalidOperationException("DeviceId is null or empty. Cannot generate expected license.")
@@ -185,7 +185,7 @@ namespace SmartReaderStandalone.Services
                     }
 
                     SaveLicenseToDb(licenseToSet);
-                    _logger.LogInformation("License updated successfully: {License}", licenseToSet);
+                    _logger.LogDebug("License updated successfully: {License}", licenseToSet);
                 }
             }
             catch (Exception ex)
@@ -699,147 +699,7 @@ namespace SmartReaderStandalone.Services
             }
         }
 
-        public List<MqttTopicFilter> BuildMqttTopicList(StandaloneConfigDTO smartReaderSetupData)
-        {
-            try
-            {
-                var mqttTopicFilters = new List<MqttTopicFilter>();
-
-                var managementCommandQoslevel = 0;
-                var controlCommandQoslevel = 0;
-
-                int.TryParse(smartReaderSetupData.mqttManagementCommandQoS, out managementCommandQoslevel);
-                int.TryParse(smartReaderSetupData.mqttControlCommandQoS, out controlCommandQoslevel);
-
-                if (smartReaderSetupData != null)
-                {
-                    var mqttManagementCommandTopic = smartReaderSetupData.mqttManagementCommandTopic;
-                    if (!string.IsNullOrEmpty(mqttManagementCommandTopic))
-                    {
-                        if (mqttManagementCommandTopic.Contains("{{deviceId}}"))
-                            mqttManagementCommandTopic =
-                                mqttManagementCommandTopic.Replace("{{deviceId}}", smartReaderSetupData.readerName);
-
-                        var managementCommandsFilter = new MqttTopicFilter();
-                        managementCommandsFilter = new MqttTopicFilterBuilder().WithTopic($"{mqttManagementCommandTopic}/#")
-                            .Build();
-                        managementCommandsFilter.QualityOfServiceLevel = managementCommandQoslevel switch
-                        {
-                            1 => MqttQualityOfServiceLevel.AtLeastOnce,
-                            2 => MqttQualityOfServiceLevel.ExactlyOnce,
-                            _ => MqttQualityOfServiceLevel.AtMostOnce
-                        };
-
-                        if (string.Equals("true", smartReaderSetupData.mqttManagementCommandRetainMessages,
-                                StringComparison.OrdinalIgnoreCase))
-                            managementCommandsFilter.RetainHandling = MqttRetainHandling.SendAtSubscribe;
-                        mqttTopicFilters.Add(managementCommandsFilter);
-                    }
-
-                    var mqttControlCommandTopic = smartReaderSetupData.mqttControlCommandTopic;
-                    if (!string.IsNullOrEmpty(mqttControlCommandTopic))
-                    {
-                        if (mqttControlCommandTopic.Contains("{{deviceId}}"))
-                            mqttControlCommandTopic =
-                                mqttControlCommandTopic.Replace("{{deviceId}}", smartReaderSetupData.readerName);
-
-
-                        if (!string.Equals(mqttManagementCommandTopic, mqttControlCommandTopic,
-                                StringComparison.OrdinalIgnoreCase))
-                        {
-                            var controlCommandsFilter = new MqttTopicFilter();
-                            controlCommandsFilter = new MqttTopicFilterBuilder().WithTopic($"{mqttControlCommandTopic}/#")
-                                .Build();
-                            controlCommandsFilter.QualityOfServiceLevel = controlCommandQoslevel switch
-                            {
-                                1 => MqttQualityOfServiceLevel.AtLeastOnce,
-                                2 => MqttQualityOfServiceLevel.ExactlyOnce,
-                                _ => MqttQualityOfServiceLevel.AtMostOnce
-                            };
-
-
-                            if (string.Equals("true", smartReaderSetupData.mqttControlCommandRetainMessages,
-                                    StringComparison.OrdinalIgnoreCase))
-                                controlCommandsFilter.RetainHandling = MqttRetainHandling.SendAtSubscribe;
-
-                            mqttTopicFilters.Add(controlCommandsFilter);
-                        }
-                    }
-
-                    try
-                    {
-                        if (string.Equals("1", smartReaderSetupData.mqttEnableSmartreaderDefaultTopics,
-                                    StringComparison.OrdinalIgnoreCase))
-                        {
-                            switch (managementCommandQoslevel)
-                            {
-                                case 1:
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/settings/get").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/settings/post").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/getserial").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/getstatus").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/start-inventory").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtLeastOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/stop-inventory").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                        .WithTopic("smartreader/+/api/v1/#").Build());
-                                    break;
-                                case 2:
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/settings/get").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/settings/post").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/getserial").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/getstatus").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/start-inventory").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/stop-inventory").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                        .WithTopic("smartreader/+/api/v1/#").Build());
-                                    break;
-                                default:
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/settings/get").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/settings/post").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/getserial").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/getstatus").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/start-inventory").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithAtMostOnceQoS()
-                                        .WithTopic("smartreader/+/cmd/stop-inventory").Build());
-                                    mqttTopicFilters.Add(new MqttTopicFilterBuilder().WithExactlyOnceQoS()
-                                        .WithTopic("smartreader/+/api/v1/#").Build());
-                                    break;
-                            }
-                        }
-
-
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "BuildMqttTopicList: " + ex.Message);
-                    }
-                }
-
-                return mqttTopicFilters;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "BuildMqttTopicList: Unexpected error. " + ex.Message);
-                throw;
-            }
-        }
+       
 
         //public void ConfigureSocketServer(SimpleTcpServer server,
         //    EventHandler<ConnectionEventArgs> ClientConnected,

@@ -472,7 +472,7 @@ public class R700IotReader : IR700IotReader
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            _logger.LogInformation("TagInventoryEvent received: {@Event}", e);
+            _logger.LogDebug("TagInventoryEvent received: {@Event}", e);
 
             if (e == null)
             {
@@ -496,7 +496,7 @@ public class R700IotReader : IR700IotReader
         finally
         {
             stopwatch.Stop();
-            _logger.LogInformation("Processed TagInventoryEvent in {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
+            _logger.LogDebug("Processed TagInventoryEvent in {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
         }
     }
 
@@ -512,7 +512,7 @@ public class R700IotReader : IR700IotReader
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            _logger.LogInformation("InventoryStatusEvent received: {@Event}", e);
+            _logger.LogDebug("InventoryStatusEvent received: {@Event}", e);
 
             // Validate the event
             if (e == null)
@@ -537,7 +537,7 @@ public class R700IotReader : IR700IotReader
         finally
         {
             stopwatch.Stop();
-            _logger.LogInformation("Processed InventoryStatusEvent in {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
+            _logger.LogDebug("Processed InventoryStatusEvent in {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
         }
     }
 
@@ -552,7 +552,7 @@ public class R700IotReader : IR700IotReader
 
         try
         {
-            _logger.LogInformation("Processing DiagnosticEvent: {@Event}", e);
+            _logger.LogDebug("Processing DiagnosticEvent: {@Event}", e);
 
             // Invoke the OnDiagnosticEvent handler
             OnDiagnosticEvent(e);
@@ -590,7 +590,7 @@ public class R700IotReader : IR700IotReader
             var handler = StreamingErrorEvent; // Copy delegate to avoid race conditions
             if (handler != null)
             {
-                _logger.LogInformation("Raising StreamingErrorEvent: {@Exception}", e);
+                _logger.LogDebug("Raising StreamingErrorEvent: {@Exception}", e);
                 handler(this, e);
             }
             else
@@ -618,7 +618,7 @@ public class R700IotReader : IR700IotReader
             var handler = GpiTransitionEvent; // Copy delegate to avoid race conditions
             if (handler != null)
             {
-                _logger.LogInformation("Raising GpiTransitionEvent: {@Event}", e);
+                _logger.LogDebug("Raising GpiTransitionEvent: {@Event}", e);
                 handler(this, e);
             }
             else
@@ -646,7 +646,7 @@ public class R700IotReader : IR700IotReader
             var handler = DiagnosticEvent; // Copy delegate to avoid race conditions
             if (handler != null)
             {
-                _logger.LogInformation("Raising DiagnosticEvent: {@Event}", e);
+                _logger.LogDebug("Raising DiagnosticEvent: {@Event}", e);
                 handler(this, e);
             }
             else
@@ -673,13 +673,13 @@ public class R700IotReader : IR700IotReader
         try
         {
             // Log that the event is being processed
-            _logger.LogInformation("Processing InventoryStatusEvent: {@Event}", e);
+            _logger.LogDebug("Processing InventoryStatusEvent: {@Event}", e);
 
             // Thread-safe event invocation
             var handler = InventoryStatusEvent; // Copy delegate to avoid race conditions
             if (handler != null)
             {
-                _logger.LogInformation("Raising InventoryStatusEvent to subscribers.");
+                _logger.LogDebug("Raising InventoryStatusEvent to subscribers.");
                 handler(this, e);
             }
             else
@@ -695,7 +695,7 @@ public class R700IotReader : IR700IotReader
         finally
         {
             // Log completion of event processing
-            _logger.LogInformation("Completed processing InventoryStatusEvent.");
+            _logger.LogDebug("Completed processing InventoryStatusEvent.");
         }
     }
 
@@ -1010,7 +1010,7 @@ public class R700IotReader : IR700IotReader
                     }
                     catch (TaskCanceledException)
                     {
-                        _logger.LogInformation("Streaming operation was canceled.");
+                        _logger.LogDebug("Streaming operation was canceled.");
                         shouldRestart = false;
                     }
                     catch (Exception ex)
@@ -1136,7 +1136,7 @@ public class R700IotReader : IR700IotReader
             }
             catch (TaskCanceledException)
             {
-                _logger.LogInformation("IoT Interface Processor - Retry attempt {RetryCount} was canceled.", retryCount);
+                _logger.LogDebug("IoT Interface Processor - Retry attempt {RetryCount} was canceled.", retryCount);
             }
         }
 
@@ -1162,7 +1162,7 @@ public class R700IotReader : IR700IotReader
         //    catch (TaskCanceledException)
         //    {
         //        // Log if the retry was interrupted by cancellation
-        //        _logger.LogInformation("Retry attempt {RetryCount} was canceled.", retryCount);
+        //        _logger.LogDebug("Retry attempt {RetryCount} was canceled.", retryCount);
         //        throw;
         //    }
         //}
@@ -1510,12 +1510,12 @@ public class R700IotReader : IR700IotReader
                 var handler = TagInventoryEvent;
                 if (handler != null)
                 {
-                    _logger.LogInformation("Raising TagInventoryEvent: {@Event}", e);
+                    _logger.LogDebug("Raising TagInventoryEvent: {@Event}", e);
                     handler(this, e);
                 }
                 else
                 {
-                    _logger.LogWarning("No subscribers for TagInventoryEvent.");
+                    _logger.LogDebug("No subscribers for TagInventoryEvent.");
                 }
             }
             catch (Exception ex)
@@ -1526,7 +1526,7 @@ public class R700IotReader : IR700IotReader
             finally
             {
                 // Log completion of the event
-                _logger.LogInformation("Completed processing TagInventoryEvent.");
+                _logger.LogDebug("Completed processing TagInventoryEvent.");
             }
         }
 
@@ -1547,12 +1547,12 @@ public class R700IotReader : IR700IotReader
                 var handler = StreamingErrorEvent; // Copy the delegate to a local variable
                 if (handler != null)
                 {
-                    _logger.LogInformation("Raising StreamingErrorEvent: {@Exception}", e);
+                    _logger.LogDebug("Raising StreamingErrorEvent: {@Exception}", e);
                     handler(this, e);
                 }
                 else
                 {
-                    _logger.LogWarning("No subscribers for StreamingErrorEvent.");
+                    _logger.LogDebug("No subscribers for StreamingErrorEvent.");
                 }
             }
             catch (Exception ex)
@@ -1563,7 +1563,7 @@ public class R700IotReader : IR700IotReader
             finally
             {
                 // Log completion of the event
-                _logger.LogInformation("Completed processing StreamingErrorEvent.");
+                _logger.LogDebug("Completed processing StreamingErrorEvent.");
             }
         }
 
@@ -1584,7 +1584,7 @@ public class R700IotReader : IR700IotReader
                 var handler = GpiTransitionEvent; // Copy delegate to avoid race conditions
                 if (handler != null)
                 {
-                    _logger.LogInformation("Raising GpiTransitionEvent: {@Event}", e);
+                    _logger.LogDebug("Raising GpiTransitionEvent: {@Event}", e);
                     handler(this, e);
                 }
                 else
@@ -1600,7 +1600,7 @@ public class R700IotReader : IR700IotReader
             finally
             {
                 // Log that processing is complete
-                _logger.LogInformation("Completed processing GpiTransitionEvent.");
+                _logger.LogDebug("Completed processing GpiTransitionEvent.");
             }
         }
 
@@ -1621,7 +1621,7 @@ public class R700IotReader : IR700IotReader
                 var handler = DiagnosticEvent; // Copy the delegate to avoid race conditions
                 if (handler != null)
                 {
-                    _logger.LogInformation("Raising DiagnosticEvent: {@Event}", e);
+                    _logger.LogDebug("Raising DiagnosticEvent: {@Event}", e);
                     handler(this, e);
                 }
                 else
@@ -1637,7 +1637,7 @@ public class R700IotReader : IR700IotReader
             finally
             {
                 // Log that event processing is complete
-                _logger.LogInformation("Completed processing DiagnosticEvent.");
+                _logger.LogDebug("Completed processing DiagnosticEvent.");
             }
         }
 
@@ -1658,7 +1658,7 @@ public class R700IotReader : IR700IotReader
                 var handler = InventoryStatusEvent; // Copy the delegate to avoid race conditions
                 if (handler != null)
                 {
-                    _logger.LogInformation("Raising InventoryStatusEvent: {@Event}", e);
+                    _logger.LogDebug("Raising InventoryStatusEvent: {@Event}", e);
                     handler(this, e);
                 }
                 else
@@ -1674,7 +1674,7 @@ public class R700IotReader : IR700IotReader
             finally
             {
                 // Log that processing is complete
-                _logger.LogInformation("Completed processing InventoryStatusEvent.");
+                _logger.LogDebug("Completed processing InventoryStatusEvent.");
             }
         }
 

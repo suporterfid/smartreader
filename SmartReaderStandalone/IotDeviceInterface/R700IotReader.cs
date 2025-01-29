@@ -9,6 +9,8 @@
 //****************************************************************************************************
 #endregion
 using Impinj.Atlas;
+using Microsoft.Extensions.Logging;
+using plugin_contract.ViewModel.Gpi;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Net;
@@ -318,7 +320,7 @@ public class R700IotReader : IR700IotReader
 
     public event EventHandler<IotDeviceInterfaceException>? StreamingErrorEvent;
 
-    public event EventHandler<Impinj.Atlas.GpiTransitionEvent>? GpiTransitionEvent;
+    public event EventHandler<GpiTransitionVm>? GpiTransitionEvent;
 
     public event EventHandler<DiagnosticEvent>? DiagnosticEvent;
 
@@ -452,6 +454,12 @@ public class R700IotReader : IR700IotReader
         return _r700IotEventProcessor.DeviceGetInventoryPresetsSchemaAsync();
     }
 
+
+    public Task UpdateReaderGpiAsync(GpiConfigRoot gpiConfiguration)
+    {
+        return _r700IotEventProcessor.UpdateReaderGpiAsync(gpiConfiguration);
+    }
+
     public Task UpdateReaderGpoAsync(GpoConfigurations gpoConfiguration)
     {
         return _r700IotEventProcessor.UpdateReaderGpoAsync(gpoConfiguration);
@@ -502,7 +510,7 @@ public class R700IotReader : IR700IotReader
 
 
 
-    private void R700IotEventProcessorOnGpiTransitionEvent(object?sender, Impinj.Atlas.GpiTransitionEvent e)
+    private void R700IotEventProcessorOnGpiTransitionEvent(object?sender, GpiTransitionVm e)
     {
         OnGpiTransitionEvent(e);
     }
@@ -605,7 +613,7 @@ public class R700IotReader : IR700IotReader
     }
 
 
-    private void OnGpiTransitionEvent(Impinj.Atlas.GpiTransitionEvent e)
+    private void OnGpiTransitionEvent(GpiTransitionVm e)
     {
         if (e == null)
         {
@@ -1082,8 +1090,19 @@ public class R700IotReader : IR700IotReader
                 ReaderEvent? readerEvent = null;
 
                 // Determine the type of event
-                if (!str.Contains("GpiTransitionEvent"))
+                if (str.Contains("gpiTransitionEvent"))
                 {
+                    _logger.LogInformation($"IoT Interface Processor: GpiTransitionEvent: \n {str}");
+                    //readerEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<ReaderEvent>(str);
+                    var gpiTransitionVm = Newtonsoft.Json.JsonConvert.DeserializeObject<GpiTransitionVm>(str);
+                    _logger.LogInformation(gpiTransitionVm.ToString());
+                    OnGpiTransitionEvent(gpiTransitionVm);
+                    return;
+                }
+
+                if (!str.Contains("gpiTransitionEvent"))
+                {
+                    _logger.LogInformation($"IoT Interface Processor: ReaderEvent: \n {str}");
                     readerEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<ReaderEvent>(str);
                 }
 
@@ -1283,6 +1302,31 @@ public class R700IotReader : IR700IotReader
         public Task<GpoConfigurations> DeviceGposGetAsync()
         {
             return _iotDeviceInterfaceClient.DeviceGposGetAsync();
+        }
+
+        public Task UpdateReaderGpiAsync(GpiConfigRoot gpiConfiguration)
+        {
+
+            var endpoint = "device/gpis ";
+            var completeUri = _httpClient.BaseAddress + endpoint;
+            try
+            {
+                string json = JsonSerializer.Serialize(gpiConfiguration);
+                var request_ = new HttpRequestMessage();
+                var stringContent = new StringContent(json);
+                stringContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/json");
+                //request_.Content = (HttpContent)stringContent;
+                request_.Method = new HttpMethod("PUT");
+                request_.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                //request_.RequestUri = new Uri(completeUri, UriKind.RelativeOrAbsolute);
+                //task = (Task)_httpClient.SendAsync(request_, HttpCompletionOption.ResponseHeadersRead);
+                return _httpClient.PutAsync(completeUri, stringContent);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Unexpected error: " + ex.Message);
+                return Task.CompletedTask;
+            }
         }
 
         public Task UpdateReaderGpoAsync(GpoConfigurations gpoConfiguration)
@@ -1568,9 +1612,9 @@ public class R700IotReader : IR700IotReader
         }
 
 
-        internal event EventHandler<Impinj.Atlas.GpiTransitionEvent>? GpiTransitionEvent;
+        internal event EventHandler<GpiTransitionVm>? GpiTransitionEvent;
 
-        private void OnGpiTransitionEvent(Impinj.Atlas.GpiTransitionEvent e)
+        private void OnGpiTransitionEvent(GpiTransitionVm e)
         {
             if (e == null)
             {

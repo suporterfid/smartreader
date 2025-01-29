@@ -21,6 +21,7 @@ using MQTTnet.Packets;
 using MQTTnet.Protocol;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using plugin_contract.ViewModel.Gpi;
 using Serilog;
 using Serilog.Events;
 using SmartReader.Infrastructure.Database;
@@ -322,9 +323,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private static bool gpi2HasChanged = false;
 
-    private readonly PeriodicTimer _gpiTimer;
+    // private readonly PeriodicTimer _gpiTimer;
 
-    private readonly Task _gpiTimerTask;
+    // private readonly Task _gpiTimerTask;
 
     private readonly HttpUtil _httpUtil;
 
@@ -549,8 +550,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _timerTagPublisherOpcUa = new Timer(100);
 
         _gpiCts = new CancellationTokenSource();
-        _gpiTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
-        _gpiTimerTask = HandleGpiTimerAsync(_gpiTimer, _gpiCts.Token);
+        // _gpiTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+        // _gpiTimerTask = HandleGpiTimerAsync(_gpiTimer, _gpiCts.Token);
 
         _httpTimerStopwatch = new Stopwatch();
 
@@ -617,273 +618,273 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _gpiCts.Cancel();
     }
 
-    private async Task HandleGpiTimerAsync(PeriodicTimer timer, CancellationToken cancel = default)
-    {
-        try
-        {
-            if (_standaloneConfigDTO == null)
-            {
-                _standaloneConfigDTO = ConfigFileHelper.ReadFile();
-            }
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-            if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent,
-                                             StringComparison.OrdinalIgnoreCase))
-            {
-                while (await timer.WaitForNextTickAsync(cancel)) await Task.Run(() => QueryGpiStatus(cancel), cancel);
-            }
-            else
-            {
-                await Task.Delay(100);
-            }
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
+//    private async Task HandleGpiTimerAsync(PeriodicTimer timer, CancellationToken cancel = default)
+//    {
+//        try
+//        {
+//            if (_standaloneConfigDTO == null)
+//            {
+//                _standaloneConfigDTO = ConfigFileHelper.ReadFile();
+//            }
+//#pragma warning disable CS8602 // Dereference of a possibly null reference.
+//            if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent,
+//                                             StringComparison.OrdinalIgnoreCase))
+//            {
+//                while (await timer.WaitForNextTickAsync(cancel)) await Task.Run(() => QueryGpiStatus(cancel), cancel);
+//            }
+//            else
+//            {
+//                await Task.Delay(100);
+//            }
+//#pragma warning restore CS8602 // Dereference of a possibly null reference.
 
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine("QueryGpiStatus - " + ex.Message);
-        }
-    }
+//        }
+//        catch (Exception ex)
+//        {
+//            Console.WriteLine("QueryGpiStatus - " + ex.Message);
+//        }
+//    }
 
 #pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-    private async Task QueryGpiStatus(CancellationToken cancel = default)
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
-    {
-        try
-        {
+//    private async Task QueryGpiStatus(CancellationToken cancel = default)
+//#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
+//    {
+//        try
+//        {
 
 
-            var gpi1File = @"/dev/gpio/ext-gpi-0/value";
-            var gpi2File = @"/dev/gpio/ext-gpi-1/value";
-            var fileContent1 = "";
-            var fileContent2 = "";
-            if (File.Exists(gpi1File))
-                fileContent1 = File.ReadAllText(gpi1File);
-            if (File.Exists(gpi2File))
-                fileContent2 = File.ReadAllText(gpi2File);
+//            var gpi1File = @"/dev/gpio/ext-gpi-0/value";
+//            var gpi2File = @"/dev/gpio/ext-gpi-1/value";
+//            var fileContent1 = "";
+//            var fileContent2 = "";
+//            if (File.Exists(gpi1File))
+//                fileContent1 = File.ReadAllText(gpi1File);
+//            if (File.Exists(gpi2File))
+//                fileContent2 = File.ReadAllText(gpi2File);
 
-            if (!_gpiPortStates.ContainsKey(0)) _gpiPortStates.TryAdd(0, false);
-            if (!_gpiPortStates.ContainsKey(1)) _gpiPortStates.TryAdd(1, false);
+//            if (!_gpiPortStates.ContainsKey(0)) _gpiPortStates.TryAdd(0, false);
+//            if (!_gpiPortStates.ContainsKey(1)) _gpiPortStates.TryAdd(1, false);
 
-            if (!string.IsNullOrEmpty(fileContent1) && fileContent1.Contains("1"))
-            {
-                _gpiPortStates[0] = true;
-                if (previousGpi1.HasValue)
-                {
-                    if (_gpiPortStates[0] != previousGpi1.Value)
-                    {
-                        gpi1HasChanged = true;
-                    }
-                    else
-                    {
-                        gpi1HasChanged = false;
-                    }
-                }
-                else
-                {
-                    gpi1HasChanged = true;
-                }
+//            if (!string.IsNullOrEmpty(fileContent1) && fileContent1.Contains("1"))
+//            {
+//                _gpiPortStates[0] = true;
+//                if (previousGpi1.HasValue)
+//                {
+//                    if (_gpiPortStates[0] != previousGpi1.Value)
+//                    {
+//                        gpi1HasChanged = true;
+//                    }
+//                    else
+//                    {
+//                        gpi1HasChanged = false;
+//                    }
+//                }
+//                else
+//                {
+//                    gpi1HasChanged = true;
+//                }
 
-                previousGpi1 = _gpiPortStates[0];
-            }
-            else
-            {
-                _gpiPortStates[0] = false;
-                if (previousGpi1.HasValue)
-                {
-                    if (_gpiPortStates[0] != previousGpi1.Value)
-                    {
-                        gpi1HasChanged = true;
-                    }
-                    else
-                    {
-                        gpi1HasChanged = false;
-                    }
-                }
-                else
-                {
-                    gpi1HasChanged = true;
-                }
-                previousGpi1 = _gpiPortStates[0];
-            }
+//                previousGpi1 = _gpiPortStates[0];
+//            }
+//            else
+//            {
+//                _gpiPortStates[0] = false;
+//                if (previousGpi1.HasValue)
+//                {
+//                    if (_gpiPortStates[0] != previousGpi1.Value)
+//                    {
+//                        gpi1HasChanged = true;
+//                    }
+//                    else
+//                    {
+//                        gpi1HasChanged = false;
+//                    }
+//                }
+//                else
+//                {
+//                    gpi1HasChanged = true;
+//                }
+//                previousGpi1 = _gpiPortStates[0];
+//            }
 
-            if (!string.IsNullOrEmpty(fileContent2) && fileContent2.Contains("1"))
-            {
-                _gpiPortStates[1] = true;
-                if (previousGpi2.HasValue)
-                {
-                    if (_gpiPortStates[1] != previousGpi2.Value)
-                    {
-                        gpi2HasChanged = true;
-                    }
-                    else
-                    {
-                        gpi2HasChanged = false;
-                    }
-                }
-                else
-                {
-                    gpi2HasChanged = true;
-                }
+//            if (!string.IsNullOrEmpty(fileContent2) && fileContent2.Contains("1"))
+//            {
+//                _gpiPortStates[1] = true;
+//                if (previousGpi2.HasValue)
+//                {
+//                    if (_gpiPortStates[1] != previousGpi2.Value)
+//                    {
+//                        gpi2HasChanged = true;
+//                    }
+//                    else
+//                    {
+//                        gpi2HasChanged = false;
+//                    }
+//                }
+//                else
+//                {
+//                    gpi2HasChanged = true;
+//                }
 
-                previousGpi2 = _gpiPortStates[1];
-            }
-            else
-            {
-                _gpiPortStates[1] = false;
-                if (previousGpi2.HasValue)
-                {
-                    if (_gpiPortStates[1] != previousGpi2.Value)
-                    {
-                        gpi2HasChanged = true;
-                    }
-                    else
-                    {
-                        gpi2HasChanged = false;
-                    }
-                }
-                else
-                {
-                    gpi2HasChanged = true;
-                }
-                previousGpi2 = _gpiPortStates[1];
-            }
-
-
-
-            //if (File.Exists(gpi1File))
-            //{
-            //    if (!_gpiPortStates.ContainsKey(0)) _gpiPortStates.TryAdd(0, false);
-            //    // read file content into a string
-            //    var fileContent = File.ReadAllText(gpi1File);
-
-            //    // compare TextBox content with file content
-            //    if (fileContent.Contains("1"))
-            //    {
-            //        _gpiPortStates[0] = true;
-            //        if (previousGpi1.HasValue)
-            //        {
-            //            if (_gpiPortStates[0] != previousGpi1.Value)
-            //            {
-            //                gpi1HasChanged = true;
-            //            }
-            //            else
-            //            {
-            //                gpi1HasChanged = false;
-            //            }
-            //        }
-            //        else
-            //        {
-            //            gpi1HasChanged = true;
-            //        }
-
-            //        previousGpi1 = _gpiPortStates[0];
-            //    }
-            //    else
-            //    {
-            //        _gpiPortStates[0] = false;
-            //        if (previousGpi1.HasValue)
-            //        {
-            //            if (_gpiPortStates[0] != previousGpi1.Value)
-            //            {
-            //                gpi1HasChanged = true;
-            //            }
-            //            else
-            //            {
-            //                gpi1HasChanged = false;
-            //            }
-            //        }
-            //        else
-            //        {
-            //            gpi1HasChanged = true;
-            //        }
-
-            //        //gpi1HasChanged = true;                    
-
-            //        previousGpi1 = _gpiPortStates[0];
-            //    }
-
-            //}
-
-            //if (File.Exists(gpi2File))
-            //{
-            //    if (!_gpiPortStates.ContainsKey(1)) _gpiPortStates.TryAdd(1, false);
-            //    // read file content into a string
-            //    var fileContent = File.ReadAllText(gpi2File);
-
-            //    // compare TextBox content with file content
-            //    //if (fileContent.Contains("1"))
-            //    //    _gpiPortStates[1] = true;
-            //    //else
-            //    //    _gpiPortStates[1] = false;
-
-            //    if (fileContent.Contains("1"))
-            //    {
-            //        _gpiPortStates[1] = true;
-            //        if (previousGpi2.HasValue)
-            //        {
-            //            if (_gpiPortStates[1] != previousGpi2.Value)
-            //            {
-            //                gpi2HasChanged = true;
-            //            }
-            //            else
-            //            {
-            //                gpi2HasChanged = false;
-            //            }
-            //        }
-            //        else
-            //        {
-            //            gpi2HasChanged = true;
-            //        }
-
-            //        previousGpi2 = _gpiPortStates[0];
-            //    }
-            //    else
-            //    {
-            //        _gpiPortStates[1] = false;
-            //        if (previousGpi2.HasValue)
-            //        {
-            //            if (_gpiPortStates[1] != previousGpi2.Value)
-            //            {
-            //                gpi2HasChanged = true;
-            //            }
-            //            else
-            //            {
-            //                gpi2HasChanged = false;
-            //            }
-            //        }
-            //        else
-            //        {
-            //            gpi2HasChanged = true;
-            //        }
-            //        //gpi1HasChanged = true;
-
-            //        previousGpi2 = _gpiPortStates[1];
-            //    }
-            //}
-
-            try
-            {
-                if (gpi1HasChanged || gpi2HasChanged)
-                {
-                    //fileContent1
-                    _logger.LogInformation($"GPI status: gpi1: {fileContent1}, gpi2: {fileContent2}");
-                    //_logger.LogInformation($"GPI status: gpi1HasChanged: {gpi1HasChanged}, gpi2HasChanged: {gpi2HasChanged}");
-                    ProcessGpiStatus();
-                }
-
-            }
-            catch (Exception)
-            {
+//                previousGpi2 = _gpiPortStates[1];
+//            }
+//            else
+//            {
+//                _gpiPortStates[1] = false;
+//                if (previousGpi2.HasValue)
+//                {
+//                    if (_gpiPortStates[1] != previousGpi2.Value)
+//                    {
+//                        gpi2HasChanged = true;
+//                    }
+//                    else
+//                    {
+//                        gpi2HasChanged = false;
+//                    }
+//                }
+//                else
+//                {
+//                    gpi2HasChanged = true;
+//                }
+//                previousGpi2 = _gpiPortStates[1];
+//            }
 
 
-            }
 
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine("QueryGpiStatus - " + ex.Message);
-        }
-    }
+//            //if (File.Exists(gpi1File))
+//            //{
+//            //    if (!_gpiPortStates.ContainsKey(0)) _gpiPortStates.TryAdd(0, false);
+//            //    // read file content into a string
+//            //    var fileContent = File.ReadAllText(gpi1File);
+
+//            //    // compare TextBox content with file content
+//            //    if (fileContent.Contains("1"))
+//            //    {
+//            //        _gpiPortStates[0] = true;
+//            //        if (previousGpi1.HasValue)
+//            //        {
+//            //            if (_gpiPortStates[0] != previousGpi1.Value)
+//            //            {
+//            //                gpi1HasChanged = true;
+//            //            }
+//            //            else
+//            //            {
+//            //                gpi1HasChanged = false;
+//            //            }
+//            //        }
+//            //        else
+//            //        {
+//            //            gpi1HasChanged = true;
+//            //        }
+
+//            //        previousGpi1 = _gpiPortStates[0];
+//            //    }
+//            //    else
+//            //    {
+//            //        _gpiPortStates[0] = false;
+//            //        if (previousGpi1.HasValue)
+//            //        {
+//            //            if (_gpiPortStates[0] != previousGpi1.Value)
+//            //            {
+//            //                gpi1HasChanged = true;
+//            //            }
+//            //            else
+//            //            {
+//            //                gpi1HasChanged = false;
+//            //            }
+//            //        }
+//            //        else
+//            //        {
+//            //            gpi1HasChanged = true;
+//            //        }
+
+//            //        //gpi1HasChanged = true;                    
+
+//            //        previousGpi1 = _gpiPortStates[0];
+//            //    }
+
+//            //}
+
+//            //if (File.Exists(gpi2File))
+//            //{
+//            //    if (!_gpiPortStates.ContainsKey(1)) _gpiPortStates.TryAdd(1, false);
+//            //    // read file content into a string
+//            //    var fileContent = File.ReadAllText(gpi2File);
+
+//            //    // compare TextBox content with file content
+//            //    //if (fileContent.Contains("1"))
+//            //    //    _gpiPortStates[1] = true;
+//            //    //else
+//            //    //    _gpiPortStates[1] = false;
+
+//            //    if (fileContent.Contains("1"))
+//            //    {
+//            //        _gpiPortStates[1] = true;
+//            //        if (previousGpi2.HasValue)
+//            //        {
+//            //            if (_gpiPortStates[1] != previousGpi2.Value)
+//            //            {
+//            //                gpi2HasChanged = true;
+//            //            }
+//            //            else
+//            //            {
+//            //                gpi2HasChanged = false;
+//            //            }
+//            //        }
+//            //        else
+//            //        {
+//            //            gpi2HasChanged = true;
+//            //        }
+
+//            //        previousGpi2 = _gpiPortStates[0];
+//            //    }
+//            //    else
+//            //    {
+//            //        _gpiPortStates[1] = false;
+//            //        if (previousGpi2.HasValue)
+//            //        {
+//            //            if (_gpiPortStates[1] != previousGpi2.Value)
+//            //            {
+//            //                gpi2HasChanged = true;
+//            //            }
+//            //            else
+//            //            {
+//            //                gpi2HasChanged = false;
+//            //            }
+//            //        }
+//            //        else
+//            //        {
+//            //            gpi2HasChanged = true;
+//            //        }
+//            //        //gpi1HasChanged = true;
+
+//            //        previousGpi2 = _gpiPortStates[1];
+//            //    }
+//            //}
+
+//            try
+//            {
+//                if (gpi1HasChanged || gpi2HasChanged)
+//                {
+//                    //fileContent1
+//                    _logger.LogInformation($"GPI status: gpi1: {fileContent1}, gpi2: {fileContent2}");
+//                    //_logger.LogInformation($"GPI status: gpi1HasChanged: {gpi1HasChanged}, gpi2HasChanged: {gpi2HasChanged}");
+//                    ProcessGpiStatus();
+//                }
+
+//            }
+//            catch (Exception)
+//            {
+
+
+//            }
+
+//        }
+//        catch (Exception ex)
+//        {
+//            Console.WriteLine("QueryGpiStatus - " + ex.Message);
+//        }
+//    }
 
     private void StartUdpServer()
     {
@@ -2194,6 +2195,49 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
+    public async Task SetGpiPortsAsync()
+    {
+        //_isStarted = false;
+        if (_iotDeviceInterfaceClient == null)
+        {
+            if (_readerAddress != null)
+            {
+                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
+            }
+            else
+            {
+                // Handle the null case, e.g., log an error, throw an exception, or use a default value
+                throw new InvalidOperationException("Reader address cannot be null when initializing the IoT reader interface.");
+            }
+        }
+
+
+        try
+        {
+            ProcessGpiStatus();
+
+            var gpiConfig = new GpiConfigRoot
+            {
+                GpiConfigurations = new List<GpiConfiguration>
+            {
+                new GpiConfiguration { DebounceMilliseconds = 20, Enabled = true, Gpi = 1, State = "low" },
+                new GpiConfiguration { DebounceMilliseconds = 20, Enabled = true, Gpi = 2, State = "low" }
+            },
+                GpiTransitionEvents = "enabled"
+            };
+
+            _logger.LogInformation("Configuring GPI ports.");
+            _logger.LogInformation(gpiConfig.ToString());
+
+            await _iotDeviceInterfaceClient.UpdateReaderGpiAsync(gpiConfig);
+            _logger.LogInformation("GPI ports set.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error configuring GPIs. " + ex.Message);
+        }
+    }
+
     public async Task SetGpoPortAsync(int port, bool state)
     {
         //_isStarted = false;
@@ -2566,46 +2610,51 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             var jsonData = JsonConvert.SerializeObject(gpiStatusEvent);
             var dataToPublish = JObject.Parse(jsonData);
 
-            try
+            if(IsMqttEnabled())
             {
-                var mqttManagementEventsTopic = _standaloneConfigDTO.mqttManagementEventsTopic;
-                if (!string.IsNullOrEmpty(mqttManagementEventsTopic))
-                    if (mqttManagementEventsTopic.Contains("{{deviceId}}"))
-                        mqttManagementEventsTopic =
-                            mqttManagementEventsTopic.Replace("{{deviceId}}", _standaloneConfigDTO.readerName);
-                var qos = 0;
-                var retain = false;
-                var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                 try
                 {
-                    int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
-                    bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
-
-                    mqttQualityOfServiceLevel = qos switch
+                    var mqttManagementEventsTopic = _standaloneConfigDTO.mqttManagementEventsTopic;
+                    if (!string.IsNullOrEmpty(mqttManagementEventsTopic))
+                        if (mqttManagementEventsTopic.Contains("{{deviceId}}"))
+                            mqttManagementEventsTopic =
+                                mqttManagementEventsTopic.Replace("{{deviceId}}", _standaloneConfigDTO.readerName);
+                    var qos = 0;
+                    var retain = false;
+                    var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
+                    try
                     {
-                        1 => MqttQualityOfServiceLevel.AtLeastOnce,
-                        2 => MqttQualityOfServiceLevel.ExactlyOnce,
-                        _ => MqttQualityOfServiceLevel.AtMostOnce
-                    };
+                        int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
+                        bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
+
+                        mqttQualityOfServiceLevel = qos switch
+                        {
+                            1 => MqttQualityOfServiceLevel.AtLeastOnce,
+                            2 => MqttQualityOfServiceLevel.ExactlyOnce,
+                            _ => MqttQualityOfServiceLevel.AtMostOnce
+                        };
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+
+                    //_messageQueueTagSmartReaderTagEventMqtt.Enqueue(dataToPublish);
+                    var mqttCommandResponseTopic = $"{mqttManagementEventsTopic}";
+                    var serializedData = JsonConvert.SerializeObject(dataToPublish);
+                    if (gpiStatusEvent.Count > 0)
+                    {
+                        _logger.LogInformation($"Publishing gpi status event: {serializedData}");
+                        await _mqttService.PublishAsync(mqttCommandResponseTopic, serializedData, _iotDeviceInterfaceClient.MacAddress, mqttQualityOfServiceLevel, retain);
+                    }
+
                 }
                 catch (Exception)
                 {
                 }
-
-
-                //_messageQueueTagSmartReaderTagEventMqtt.Enqueue(dataToPublish);
-                var mqttCommandResponseTopic = $"{mqttManagementEventsTopic}";
-                var serializedData = JsonConvert.SerializeObject(dataToPublish);
-                if (gpiStatusEvent.Count > 0)
-                {
-                    _logger.LogInformation($"Publishing gpi status event: {serializedData}");
-                    await _mqttService.PublishAsync(mqttCommandResponseTopic, serializedData, _iotDeviceInterfaceClient.MacAddress, mqttQualityOfServiceLevel, retain);
-                }
-
             }
-            catch (Exception)
-            {
-            }
+
+            
         }
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
 
@@ -3053,7 +3102,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
 
 
-        if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent, StringComparison.OrdinalIgnoreCase))
+        if (IsGpiEnabled())
         {
             if (_gpiPortStates.ContainsKey(0))
             {
@@ -3365,7 +3414,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
 
 
-        if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent, StringComparison.OrdinalIgnoreCase))
+        if (IsGpiEnabled())
         {
             if (_gpiPortStates.ContainsKey(0))
             {
@@ -3662,15 +3711,30 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             tagRead.IsHeartBeat = true;
             smartReaderTagReadEvent.TagReads.Add(tagRead);
 
-            if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent, StringComparison.OrdinalIgnoreCase))
+            if (IsGpiEnabled())
             {
                 if (_gpiPortStates.ContainsKey(0))
                 {
-                    tagRead.Gpi1Status = _gpiPortStates[0] ? "high" : "low";
+                    if(_gpiPortStates[0])
+                    {
+                        tagRead.Gpi1Status = "high";
+                    }
+                    else
+                    {
+                        tagRead.Gpi1Status = "low";
+                    }
                 }
                 if (_gpiPortStates.ContainsKey(1))
                 {
-                    tagRead.Gpi2Status = _gpiPortStates[1] ? "high" : "low";
+                    // tagRead.Gpi2Status = _gpiPortStates[1] ? "high" : "low";
+                    if (_gpiPortStates[1])
+                    {
+                        tagRead.Gpi2Status = "high";
+                    }
+                    else
+                    {
+                        tagRead.Gpi2Status = "low";
+                    }
                 }
             }
         }
@@ -3725,7 +3789,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             try
             {
-                _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(dataToPublish);
+                if(_tcpSocketService.IsSocketServerConnectedToClients())
+                {
+                    _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(dataToPublish);
+                } 
             }
             catch (Exception)
             {
@@ -4138,24 +4205,48 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     }
 
 #pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-    private async void OnGpiTransitionEvent(object sender, Impinj.Atlas.GpiTransitionEvent gpiEvent)
+    private async void OnGpiTransitionEvent(object sender, GpiTransitionVm gpiEvent)
 #pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
     {
         try
         {
             var currentGpiStatus = false;
-            _logger.LogInformation("Gpi Transition : " + gpiEvent.Gpi + " - " + gpiEvent.Transition,
-                SeverityType.Debug);
-            if (gpiEvent.Transition == GpiTransitionEventTransition.HighToLow)
-                currentGpiStatus = false;
-            else if (gpiEvent.Transition == GpiTransitionEventTransition.LowToHigh) currentGpiStatus = true;
-            if(gpiEvent != null && gpiEvent.Gpi.HasValue)
+            _logger.LogInformation("Gpi Transition : " + gpiEvent.GpiTransitionEvent);
+            int gpiInternalPort = gpiEvent.GpiTransitionEvent.Gpi - 1;
+
+            if (gpiEvent.GpiTransitionEvent.Transition == TransitionType.HighToLow)
             {
-                if (_gpiPortStates.ContainsKey(gpiEvent.Gpi.Value))
-                    _gpiPortStates[gpiEvent.Gpi.Value] = currentGpiStatus;
-                else
-                    _gpiPortStates.TryAdd(gpiEvent.Gpi.Value, currentGpiStatus);
+                currentGpiStatus = false;
+                _logger.LogInformation($"Setting Gpi {gpiInternalPort} to [{currentGpiStatus}]");
+            }   
+            else if (gpiEvent.GpiTransitionEvent.Transition == TransitionType.LowToHigh)
+            {
+                currentGpiStatus = true;
+                _logger.LogInformation($"Setting Gpi {gpiInternalPort} to [{currentGpiStatus}]");
             }
+                
+            
+            if(gpiInternalPort == 0 || gpiInternalPort == 1)
+            {
+                if (_gpiPortStates.ContainsKey(gpiInternalPort))
+                {
+                    _gpiPortStates[gpiInternalPort] = currentGpiStatus;
+                    _logger.LogInformation($"Gpi {gpiInternalPort} updated to [{_gpiPortStates[gpiInternalPort]}]");
+                }
+                else
+                {
+                    _gpiPortStates.TryAdd(gpiInternalPort, currentGpiStatus);
+                    _logger.LogInformation($"Gpi {gpiInternalPort} updated to [{_gpiPortStates[gpiInternalPort]}]");
+                }
+            }
+            else
+            {
+                _logger.LogWarning($"Gpi port number not supported: {gpiInternalPort}");
+            }
+            
+                
+
+
 
         }
         catch (Exception exOnGpiStatusEvent)
@@ -6406,6 +6497,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         var config = new MqttPublishingConfiguration();
 
         double mqttPublishIntervalInSec = 1;
+        if(_standaloneConfigDTO == null)
+        {
+            _standaloneConfigDTO = _configurationService.LoadConfig();
+        }
         if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttPuslishIntervalSec))
         {
             double.TryParse(_standaloneConfigDTO.mqttPuslishIntervalSec,
@@ -6617,6 +6712,18 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         if (!isEnabled)
         {
             _logger.LogDebug("UDP server is disabled");
+        }
+        return isEnabled;
+    }
+
+    private bool IsGpiEnabled()
+    {
+        bool isEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.includeGpiEvent) &&
+            string.Equals("1", _standaloneConfigDTO.includeGpiEvent, StringComparison.OrdinalIgnoreCase);
+
+        if (!isEnabled)
+        {
+            _logger.LogDebug("GPI event is disabled");
         }
         return isEnabled;
     }
@@ -7477,7 +7584,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
 
 
-                if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent, StringComparison.OrdinalIgnoreCase))
+                if (IsGpiEnabled())
                 {
                     var gpi1Status = (string)tagReads["gpi1Status"];
                     if (!string.IsNullOrEmpty(gpi1Status))
@@ -9090,7 +9197,21 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 _logger.LogError(ex, "Unexpected error starting inventory");
                 await ProcessGpoErrorPortAsync();
             }
+
+            try
+            {
+                if(IsGpiEnabled())
+                {
+                    await SetGpiPortsAsync();
+                }
+                
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error setting GPI ports");
+            }
         }
+
 
         _logger.LogInformation("App started. ");
         UpdateSystemImageFallbackFlag();
@@ -13540,7 +13661,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             //    smartReaderTagEventData.VistoUltimaVez = tagInventoryEvent.LastSeenTime.Value.ToString("o");
             tagRead.Tid = tagInventoryEvent.TidHex;
 
-            if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent, StringComparison.OrdinalIgnoreCase))
+            if (IsGpiEnabled())
             {
                 if (_gpiPortStates.ContainsKey(0))
                 {
@@ -13967,29 +14088,52 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
 
 
-            if (string.Equals("1", _standaloneConfigDTO.socketServer, StringComparison.OrdinalIgnoreCase))
+            if (IsSocketServerEnabled())
                 try
                 {
-                    const int MaxQueueSize = 1000;
-                    if (_messageQueueTagSmartReaderTagEventSocketServer.Count < MaxQueueSize)
+                    if (_tcpSocketService.IsHealthy())
                     {
-                        _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(dataToPublish);
-                        if (_messageQueueTagSmartReaderTagEventSocketServer.Count > (MaxQueueSize * 0.8))
+                        try
                         {
-                            _logger.LogWarning($"Socket queue filling up: {_messageQueueTagSmartReaderTagEventSocketServer.Count}/{MaxQueueSize}");
+                            if (_tcpSocketService.IsSocketServerConnectedToClients())
+                            {
+                                const int MaxQueueSize = 1000;
+                                if (_messageQueueTagSmartReaderTagEventSocketServer.Count < MaxQueueSize)
+                                {
+                                    _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(dataToPublish);
+                                    if (_messageQueueTagSmartReaderTagEventSocketServer.Count > (MaxQueueSize * 0.8))
+                                    {
+                                        _logger.LogWarning($"Socket queue filling up: {_messageQueueTagSmartReaderTagEventSocketServer.Count}/{MaxQueueSize}");
+                                    }
+                                }
+                                else
+                                {
+                                    _logger.LogError($"Socket queue full ({MaxQueueSize}), dropping message");
+                                    _logger.LogWarning($"Cleaning up Socket queue due to full Socket queue.");
+                                    _messageQueueTagSmartReaderTagEventSocketServer.Clear();
+                                }
+                            }
+                            else
+                            {
+                                _logger.LogWarning($"Cleaning up Socket queue due to lack of socket clients.");
+                                _messageQueueTagSmartReaderTagEventSocketServer.Clear();
+
+                            }
+                        }
+                        catch (Exception)
+                        {
+                            _logger.LogWarning($"Error enqueuing keepalive event. Cleaning up Socket queue.");
+                            _messageQueueTagSmartReaderTagEventSocketServer.Clear();
                         }
                     }
-                    else
-                    {
-                        _logger.LogError($"Socket queue full ({MaxQueueSize}), dropping message");
-                    }
+                    
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to enqueue socket message");
                 }
 
-            if (string.Equals("1", _standaloneConfigDTO.usbFlashDrive, StringComparison.OrdinalIgnoreCase))
+            if (IsUsbFlashDriveEnabled())
                 try
                 {
                     if (_messageQueueTagSmartReaderTagEventUsbDrive.Count < 1000)
@@ -14000,7 +14144,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
 
 
-            if (string.Equals("1", _standaloneConfigDTO.udpServer, StringComparison.OrdinalIgnoreCase))
+            if (IsUdpServerEnabled())
                 try
                 {
                     if (_messageQueueTagSmartReaderTagEventUdpServer.Count < 1000)
@@ -14010,7 +14154,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                 }
 
-            if (string.Equals("1", _standaloneConfigDTO.httpPostEnabled, StringComparison.OrdinalIgnoreCase))
+            if (IsHttpPostEnabled())
                 try
                 {
                     if (!string.IsNullOrEmpty(_standaloneConfigDTO.httpPostURL))
@@ -14024,19 +14168,26 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                 }
 
-            if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase)
+            if (IsMqttEnabled()
                 && !string.Equals("127.0.0.1", _standaloneConfigDTO.mqttBrokerAddress, StringComparison.OrdinalIgnoreCase))
                 try
                 {
-                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttTagEventsTopic))
+                    if(_mqttService.CheckConnection())
                     {
-                        if (_messageQueueTagSmartReaderTagEventMqtt.Count < 1000)
-                            _messageQueueTagSmartReaderTagEventMqtt.Enqueue(dataToPublish);
+                        if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttTagEventsTopic))
+                        {
+                            if (_messageQueueTagSmartReaderTagEventMqtt.Count < 1000)
+                                _messageQueueTagSmartReaderTagEventMqtt.Enqueue(dataToPublish);
+                        }
                     }
-
+                    else
+                    {
+                        _logger.LogWarning("Unable to check if the MQTT connection is active, dropping message.");
+                    }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    _logger.LogWarning(ex, "Error enqueuing message to MQTT.");
                 }
 
             if (string.Equals("1", _standaloneConfigDTO.serialPort, StringComparison.OrdinalIgnoreCase))
@@ -14081,7 +14232,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     _logger.LogError(ex1, "ProcessTagInventoryEventAsync: error processing serial port " + ex1.Message);
                 }
 
-            if (string.Equals("1", _standaloneConfigDTO.enableOpcUaClient, StringComparison.OrdinalIgnoreCase))
+            if (IsOpcUaClientEnabled())
                 try
                 {
                     if (_messageQueueTagSmartReaderTagEventOpcUa.Count < 1000)

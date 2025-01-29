@@ -9,6 +9,7 @@
 //****************************************************************************************************
 #endregion
 using Impinj.Atlas;
+using plugin_contract.ViewModel.Gpi;
 using System.Collections.ObjectModel;
 
 namespace SmartReader.IotDeviceInterface;
@@ -63,7 +64,7 @@ public interface IR700IotReader : IDisposable
 
     event EventHandler<TagInventoryEvent> TagInventoryEvent;
 
-    event EventHandler<Impinj.Atlas.GpiTransitionEvent> GpiTransitionEvent;
+    event EventHandler<GpiTransitionVm> GpiTransitionEvent;
 
     event EventHandler<InventoryStatusEvent> InventoryStatusEvent;
 
@@ -110,4 +111,6 @@ public interface IR700IotReader : IDisposable
     Task<object> DeviceGetInventoryPresetsSchemaAsync();
 
     Task UpdateReaderGpoAsync(GpoConfigurations gpoConfiguration);
+
+    Task UpdateReaderGpiAsync(GpiConfigRoot gpiConfiguration);
 }

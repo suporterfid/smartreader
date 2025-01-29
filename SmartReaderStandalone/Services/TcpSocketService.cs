@@ -16,6 +16,8 @@ namespace SmartReaderStandalone.Services
         Task EnsureSocketServerConnectionAsync();
         bool IsHealthy();
         bool IsSocketServerHealthy();
+        bool IsSocketServerConnectedToClients();
+
         Task<int> ProcessMessageBatchAsync(ConcurrentQueue<JObject> messageQueue, int batchSize, int maxQueueSize);
         void InitializeSocketServer();
         void Start(int port);
@@ -181,7 +183,7 @@ namespace SmartReaderStandalone.Services
                 var clients = _tcpServer.GetClients();
                 if (clients == null || !clients.Any())
                 {
-                    _logger.LogWarning("Socket server has no connected clients.");
+                    _logger.LogWarning("IsSocketServerHealthy: Socket server has no connected clients.");
                 }
                 else
                 {
@@ -217,6 +219,43 @@ namespace SmartReaderStandalone.Services
                 _logger.LogError(ex, "Error while checking socket server health.");
                 return false;
             }
+        }
+
+        public bool IsSocketServerConnectedToClients()
+        {
+            bool isConnected = false;
+            // Ensure server exists and is listening
+            if (_tcpServer == null || !_tcpServer.IsListening)
+            {
+                _logger.LogWarning("Socket server is null or not listening.");
+                isConnected = false;
+                return isConnected;
+            }
+
+            try
+            {
+                // Retrieve the list of connected clients
+                var clients = _tcpServer.GetClients();
+                if (clients == null || !clients.Any())
+                {
+                    _logger.LogWarning("Check for connections could not detect Socket clients connected.");
+                    isConnected = false;
+                }
+                else
+                {
+                    isConnected = true;
+                                     
+                }
+                
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while checking socket server health.");
+                isConnected = false;
+            }
+
+            // If all checks pass, the server is healthy
+            return isConnected;
         }
 
 
@@ -410,6 +449,8 @@ namespace SmartReaderStandalone.Services
                     {
                         if (_tcpServer?.GetClients()?.Any() ?? false)
                         {
+                            var clientCount = _tcpServer?.GetClients().Count();
+                            _logger.LogInformation($"Publishing data to {clientCount} clients. Queue size [{messageQueue.Count()}]");
                             string jsonMessage = message.ToString(Newtonsoft.Json.Formatting.None);
                             // Extract data once to avoid repeated processing
                             var line = SmartReaderJobs.Utils.Utils.ExtractLineFromJsonObject(message, _standaloneConfigDTO, _logger);
@@ -484,7 +525,7 @@ namespace SmartReaderStandalone.Services
                     }
                 }
                 if(processedCount > 0)
-                    _logger.LogInformation($"Processed {processedCount} socket messages.");
+                    _logger.LogInformation($"Processed {processedCount} socket message(s).");
 
                 return processedCount;
             }

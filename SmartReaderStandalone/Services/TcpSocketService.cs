@@ -196,7 +196,7 @@ namespace SmartReaderStandalone.Services
                         // try sending a lightweight message or ping to confirm client health
                         try
                         {
-                            byte[] messageBytes = Encoding.UTF8.GetBytes("");
+                            byte[] messageBytes = Encoding.UTF8.GetBytes("\n");
                             _tcpServer.Send(client, messageBytes);
                         }
                         catch (Exception exSocketTest)

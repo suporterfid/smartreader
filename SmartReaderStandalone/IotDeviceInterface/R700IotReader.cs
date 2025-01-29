@@ -1060,17 +1060,17 @@ public class R700IotReader : IR700IotReader
                 }
                 catch (IOException ioEx)
                 {
-                    _logger.LogError(ioEx, "IoT Interface Processor: I/O error while reading the stream.");
+                    _logger.LogWarning("IoT Interface Processor: I/O error while reading the stream.");
                     throw;
                 }
                 catch (JsonException jsonEx)
                 {
-                    _logger.LogError(jsonEx, "IoT Interface Processor: Failed to deserialize a line from the stream.");
+                    _logger.LogWarning("IoT Interface Processor: Failed to deserialize a line from the stream.");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "IoT Interface Processor: Unexpected error while processing the stream.");
-                    throw;
+                    _logger.LogWarning("IoT Interface Processor: Unexpected error while processing the stream.");
+                    //throw;
                 }
             }
         }
@@ -1223,7 +1223,7 @@ public class R700IotReader : IR700IotReader
 
         private void HandleStreamingError(Exception ex)
         {
-            _logger.LogError(ex, "Critical error in streaming: {Message}", ex.Message);
+            _logger.LogWarning("Unable to read streaming: {Message}", ex.Message);
             OnStreamingErrorEvent(new IotDeviceInterfaceException("Streaming error detected", ex));
         }
 

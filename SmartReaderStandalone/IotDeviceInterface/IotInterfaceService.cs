@@ -556,8 +556,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         try
         {
-
-
             _mqttPublishingConfiguration = LoadMqttPublishingConfiguration();
         }
         catch (Exception)
@@ -889,9 +887,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private void StartUdpServer()
     {
-        if (_standaloneConfigDTO != null && !string.IsNullOrEmpty(_standaloneConfigDTO.udpServer)
-                                         && string.Equals("1", _standaloneConfigDTO.udpServer,
-                                             StringComparison.OrdinalIgnoreCase))
+        if (IsUdpServerEnabled())
             try
             {
                 _udpSocketServer = new UDPSocket();
@@ -906,9 +902,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private void StopUdpServer()
     {
-        if (_standaloneConfigDTO != null && !string.IsNullOrEmpty(_standaloneConfigDTO.udpServer)
-                                         && string.Equals("1", _standaloneConfigDTO.udpServer,
-                                             StringComparison.OrdinalIgnoreCase))
+        if (IsUdpServerEnabled())
             try
             {
                 if (_udpSocketServer != null) _udpSocketServer.Close();
@@ -1000,9 +994,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private void StartTcpBarcodeClient()
     {
-        if (_standaloneConfigDTO != null && !string.IsNullOrEmpty(_standaloneConfigDTO.enableBarcodeTcp)
-                                         && string.Equals("1", _standaloneConfigDTO.enableBarcodeTcp,
-                                             StringComparison.OrdinalIgnoreCase))
+        if (IsBarcodeTcpEnabled())
             try
             {
                 if (_socketBarcodeClient == null)
@@ -1342,14 +1334,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     }
 
 
-
-
-
     private void StartTcpSocketCommandServer()
     {
-        if (_standaloneConfigDTO != null && !string.IsNullOrEmpty(_standaloneConfigDTO.socketCommandServer)
-                                         && string.Equals("1", _standaloneConfigDTO.socketCommandServer,
-                                             StringComparison.OrdinalIgnoreCase))
+        if (IsSocketCommandServerEnabled())
             try
             {
                 if (_socketCommandServer == null)
@@ -1399,18 +1386,18 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
-    private void LoadConfig()
-    {
-        try
-        {
-            _standaloneConfigDTO = _configurationService.LoadConfig();
-            _logger.LogInformation($"Configuration loaded: ReaderName = {_standaloneConfigDTO.readerName}");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "An error occurred in IotInterfaceService loading the config.");
-        }
-    }
+    //private void LoadConfig()
+    //{
+    //    try
+    //    {
+    //        _standaloneConfigDTO = _configurationService.LoadConfig();
+    //        _logger.LogInformation($"Configuration loaded: ReaderName = {_standaloneConfigDTO.readerName}");
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        _logger.LogError(ex, "An error occurred in IotInterfaceService loading the config.");
+    //    }
+    //}
 
     
 
@@ -1855,6 +1842,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             try
             {
                 await _iotDeviceInterfaceClient.StartAsync("SmartReader");
+                _isStarted = true;
                 //await _iotDeviceInterfaceClient.StartPresetAsync("SmartReader");
             }
             catch (Exception ex)
@@ -1920,9 +1908,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         try
         {
-            var mqttManagementEvents = new Dictionary<string, object>();
-            mqttManagementEvents.Add("smartreader-status", "started");
-            await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
+            if (IsMqttEnabled())
+            {
+                var mqttManagementEvents = new Dictionary<string, object>();
+                mqttManagementEvents.Add("smartreader-status", "started");
+                await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
+            }
+
+            
         }
         catch (Exception ex)
         {
@@ -1992,9 +1985,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         StopUdpServer();
         StopTcpSocketCommandServer();
 
-        var mqttManagementEvents = new Dictionary<string, object>();
-        mqttManagementEvents.Add("smartreader-status", "stopped");
-        await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
+        if (IsMqttEnabled())
+        {
+            var mqttManagementEvents = new Dictionary<string, object>();
+            mqttManagementEvents.Add("smartreader-status", "stopped");
+            await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
+        }
     }
 
     public async Task ApplySettingsAsync()
@@ -2041,9 +2037,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     _logger.LogError(exClientReturn, "Unexpected saving preset (ApplySettingsAsync).");
             }
 
-            var mqttManagementEvents = new Dictionary<string, object>();
-            mqttManagementEvents.Add("smartreader-status", "settings-applied");
-            await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
+            if (IsMqttEnabled())
+            {
+                var mqttManagementEvents = new Dictionary<string, object>();
+                mqttManagementEvents.Add("smartreader-status", "settings-applied");
+                await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
+            }
 
             await _iotDeviceInterfaceClient.GetReaderInventoryPresetListAsync();
         }
@@ -3642,22 +3641,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     }
 
-    private async 
-    Task
-ProcessKeepalive()
+    private JObject CreateSmartReaderTagReadEvent(bool addEmptytagRead)
     {
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-        if (string.Equals("0", _standaloneConfigDTO.heartbeatEnabled, StringComparison.OrdinalIgnoreCase)) return;
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-
         var smartReaderTagReadEvent = new SmartReaderTagReadEvent();
-        smartReaderTagReadEvent.TagReads = new List<TagRead>();
-        var tagRead = new TagRead();
-
-        tagRead.FirstSeenTimestamp = Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now);
-
+        smartReaderTagReadEvent.TagReads = new List<TagRead>();     
         smartReaderTagReadEvent.ReaderName = _standaloneConfigDTO.readerName;
-
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
         smartReaderTagReadEvent.Mac = _iotDeviceInterfaceClient.MacAddress;
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
@@ -3665,96 +3653,105 @@ ProcessKeepalive()
         if (string.Equals("1", _standaloneConfigDTO.siteEnabled, StringComparison.OrdinalIgnoreCase))
             smartReaderTagReadEvent.Site = _standaloneConfigDTO.site;
 
-        tagRead.Epc = "*****";
-        tagRead.IsHeartBeat = true;
-        if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent, StringComparison.OrdinalIgnoreCase))
+        
+        if(addEmptytagRead)
         {
-            if (_gpiPortStates.ContainsKey(0))
-            {
-                if (_gpiPortStates[0])
-                    tagRead.Gpi1Status = "high";
-                else
-                    tagRead.Gpi1Status = "low";
-            }
+            var tagRead = new TagRead();
+            tagRead.FirstSeenTimestamp = Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now);
+            tagRead.Epc = "*****";
+            tagRead.IsHeartBeat = true;
+            smartReaderTagReadEvent.TagReads.Add(tagRead);
 
-            if (_gpiPortStates.ContainsKey(1))
+            if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent, StringComparison.OrdinalIgnoreCase))
             {
-                if (_gpiPortStates[1])
-                    tagRead.Gpi2Status = "high";
-                else
-                    tagRead.Gpi2Status = "low";
+                if (_gpiPortStates.ContainsKey(0))
+                {
+                    tagRead.Gpi1Status = _gpiPortStates[0] ? "high" : "low";
+                }
+                if (_gpiPortStates.ContainsKey(1))
+                {
+                    tagRead.Gpi2Status = _gpiPortStates[1] ? "high" : "low";
+                }
             }
         }
-
-        smartReaderTagReadEvent.TagReads.Add(tagRead);
-
+        
         var jsonData = JsonConvert.SerializeObject(smartReaderTagReadEvent);
         var dataToPublish = JObject.Parse(jsonData);
 
-        if (!string.IsNullOrEmpty(_standaloneConfigDTO.customField1Enabled)
-            && string.Equals("1", _standaloneConfigDTO.customField1Enabled, StringComparison.OrdinalIgnoreCase))
+        // Add custom fields if enabled
+        for (int i = 1; i <= 4; i++)
         {
-            var newPropertyData = new JProperty(_standaloneConfigDTO.customField1Name,
-                _standaloneConfigDTO.customField1Value);
-            dataToPublish.Add(newPropertyData);
+            var enabledProperty = $"customField{i}Enabled";
+            var nameProperty = $"customField{i}Name";
+            var valueProperty = $"customField{i}Value";
+
+            if (!string.IsNullOrEmpty(_standaloneConfigDTO.GetType().GetProperty(enabledProperty)?.GetValue(_standaloneConfigDTO)?.ToString())
+                && string.Equals("1", _standaloneConfigDTO.GetType().GetProperty(enabledProperty)?.GetValue(_standaloneConfigDTO)?.ToString(),
+                StringComparison.OrdinalIgnoreCase))
+            {
+                var name = _standaloneConfigDTO.GetType().GetProperty(nameProperty)?.GetValue(_standaloneConfigDTO)?.ToString();
+                var value = _standaloneConfigDTO.GetType().GetProperty(valueProperty)?.GetValue(_standaloneConfigDTO)?.ToString();
+
+                if (name != null && value != null)
+                {
+                    var newPropertyData = new JProperty(name, value);
+                    dataToPublish.Add(newPropertyData);
+                }
+            }
         }
 
-        if (!string.IsNullOrEmpty(_standaloneConfigDTO.customField2Enabled)
-            && string.Equals("1", _standaloneConfigDTO.customField2Enabled, StringComparison.OrdinalIgnoreCase))
-        {
-            var newPropertyData = new JProperty(_standaloneConfigDTO.customField2Name,
-                _standaloneConfigDTO.customField2Value);
-            dataToPublish.Add(newPropertyData);
-        }
+        return dataToPublish;
+    }
+    private async Task ProcessKeepalive()
+    {
+        if (!IsHeartbeatEnabled()) return;
 
-        if (!string.IsNullOrEmpty(_standaloneConfigDTO.customField3Enabled)
-            && string.Equals("1", _standaloneConfigDTO.customField3Enabled, StringComparison.OrdinalIgnoreCase))
-        {
-            var newPropertyData = new JProperty(_standaloneConfigDTO.customField3Name,
-                _standaloneConfigDTO.customField3Value);
-            dataToPublish.Add(newPropertyData);
-        }
+        var dataToPublish = CreateSmartReaderTagReadEvent(true);
 
-        if (!string.IsNullOrEmpty(_standaloneConfigDTO.customField4Enabled)
-            && string.Equals("1", _standaloneConfigDTO.customField4Enabled, StringComparison.OrdinalIgnoreCase))
+        if (IsHttpPostEnabled())
         {
-            var newPropertyData = new JProperty(_standaloneConfigDTO.customField4Name,
-                _standaloneConfigDTO.customField4Value);
-            dataToPublish.Add(newPropertyData);
-        }
-
-        if (string.Equals("1", _standaloneConfigDTO.httpPostEnabled, StringComparison.OrdinalIgnoreCase)
-            && !string.IsNullOrEmpty(_standaloneConfigDTO.httpPostURL))
             try
             {
                 _messageQueueTagSmartReaderTagEventHttpPost.Enqueue(dataToPublish);
             }
             catch (Exception)
             {
+                _logger.LogWarning($"Error enqueuing keepalive event.");
             }
+        }
+            
 
-        if (string.Equals("1", _standaloneConfigDTO.socketServer, StringComparison.OrdinalIgnoreCase))
+        if (IsSocketServerEnabled())
+        {
             try
             {
                 _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(dataToPublish);
             }
             catch (Exception)
             {
+                _logger.LogWarning($"Error enqueuing keepalive event.");
             }
+        }
 
-        if (string.Equals("1", _standaloneConfigDTO.usbFlashDrive, StringComparison.OrdinalIgnoreCase))
+            
+
+        if (IsUsbFlashDriveEnabled())
+        {
             try
             {
                 _messageQueueTagSmartReaderTagEventUsbDrive.Enqueue(dataToPublish);
             }
             catch (Exception)
             {
-
+                _logger.LogWarning($"Error enqueuing keepalive event.");
             }
+        }
+            
 
 
         if (dataToPublish != null 
-            && _standaloneConfigDTO.mqttEnabled == "1")
+            && IsMqttEnabled())
+        {
             try
             {
                 var mqttManagementEventsTopic = _standaloneConfigDTO.mqttManagementEventsTopic;
@@ -3785,7 +3782,7 @@ ProcessKeepalive()
                 //_messageQueueTagSmartReaderTagEventMqtt.Enqueue(dataToPublish);
                 var mqttCommandResponseTopic = $"{mqttManagementEventsTopic}";
                 var serializedData = JsonConvert.SerializeObject(dataToPublish);
-                if (smartReaderTagReadEvent != null && smartReaderTagReadEvent.TagReads.Any())
+                if (serializedData != null)
                 {
                     _logger.LogInformation($"Publishing tag event: {serializedData}");
                     await _mqttService.PublishAsync(mqttCommandResponseTopic, serializedData, _iotDeviceInterfaceClient.MacAddress, mqttQualityOfServiceLevel, retain);
@@ -3796,6 +3793,8 @@ ProcessKeepalive()
             {
                 await ProcessGpoErrorPortAsync();
             }
+        }
+            
     }
 
     private async void OnInventoryStatusEvent(object sender, InventoryStatusEvent eventStatus)
@@ -3951,7 +3950,7 @@ ProcessKeepalive()
                     }
                     try
                     {
-                        if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
+                        if (IsMqttEnabled())
                         {
                             var mqttManagementEvents = new Dictionary<string, object>();
                             if (eventStatus.Status == InventoryStatusEventStatus.Running)
@@ -4050,7 +4049,7 @@ ProcessKeepalive()
 
                     try
                     {
-                        if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
+                        if (IsMqttEnabled())
                         {
                             var mqttManagementEvents = new Dictionary<string, object>();
                             if (eventStatus.Status == null || eventStatus.Status == InventoryStatusEventStatus.Idle)
@@ -5664,13 +5663,14 @@ ProcessKeepalive()
     private async void OnRunPeriodicKeepaliveCheck(object sender, ElapsedEventArgs e)
 #pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
     {
-        //_timerKeepalive.Enabled = false;
-        //_timerKeepalive.Stop();
+        _timerKeepalive.Enabled = false;
+        _timerKeepalive.Stop();
 
         try
         {
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
-            if (string.Equals("1", _standaloneConfigDTO.heartbeatEnabled, StringComparison.OrdinalIgnoreCase))
+            if (_isStarted &&
+                string.Equals("1", _standaloneConfigDTO.heartbeatEnabled, StringComparison.OrdinalIgnoreCase))
             {
                 if (_stopwatchKeepalive.Elapsed.TotalMilliseconds > double.Parse(_standaloneConfigDTO.heartbeatPeriodSec) * 1000)
                 {
@@ -5679,7 +5679,7 @@ ProcessKeepalive()
                     //_stopwatchKeepalive.Reset();
                     _stopwatchKeepalive.Restart();
                     //ProcessKeepalive();
-                    await ProcessKeepalive();
+                    await SendHeartbeatAsync();
                 }
             }
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
@@ -5691,8 +5691,8 @@ ProcessKeepalive()
                     "Unexpected error running keepalive manager on OnRunPeriodicKeepaliveCheck. " + ex.Message);
         }
 
-        //_timerKeepalive.Enabled = true;
-        //_timerKeepalive.Start();
+        _timerKeepalive.Enabled = true;
+        _timerKeepalive.Start();
     }
 
 #pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
@@ -6369,7 +6369,15 @@ ProcessKeepalive()
 
             try
             {
-                await ProcessTagPublishingMqtt();
+                if (IsMqttEnabled())
+                {
+                    await ProcessTagPublishingMqtt();
+                }
+                else
+                {
+                    Task.Delay(100);
+                }
+                
             }
             catch (Exception ex)
             {
@@ -6458,6 +6466,232 @@ ProcessKeepalive()
         return config;
     }
 
+    private bool IsSoftwareFilterReadCountTimeoutEnabled()
+    {
+        bool isEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled) &&
+            string.Equals("1", _standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled, StringComparison.OrdinalIgnoreCase);
+
+        if (!isEnabled)
+        {
+            _logger.LogDebug("Software filter read count timeout is disabled");
+        }
+        return isEnabled;
+    }
+
+    private bool IsHttpPostEnabled()
+    {
+        bool isHttpPostEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.httpPostEnabled) &&
+            string.Equals("1", _standaloneConfigDTO.httpPostEnabled, StringComparison.OrdinalIgnoreCase);
+
+        if (!isHttpPostEnabled)
+        {
+            _logger.LogDebug("HTTP POST is disabled");
+        }
+        return isHttpPostEnabled;
+    }
+
+    private bool IsBarcodeTcpEnabled()
+    {
+        bool isEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.enableBarcodeTcp) &&
+            string.Equals("1", _standaloneConfigDTO.enableBarcodeTcp, StringComparison.OrdinalIgnoreCase);
+
+        if (!isEnabled)
+        {
+            _logger.LogDebug("Barcode TCP is disabled");
+        }
+        return isEnabled;
+    }
+
+    private bool IsSocketServerEnabled()
+    {
+        bool isSocketServerEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.socketServer) &&
+            string.Equals("1", _standaloneConfigDTO.socketServer, StringComparison.OrdinalIgnoreCase);
+
+        if (!isSocketServerEnabled)
+        {
+            _logger.LogDebug("Socket Server is disabled");
+        }
+        return isSocketServerEnabled;
+    }
+
+    private bool IsSocketCommandServerEnabled()
+    {
+        bool isSocketCommandServerEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.socketCommandServer) &&
+            string.Equals("1", _standaloneConfigDTO.socketCommandServer, StringComparison.OrdinalIgnoreCase);
+
+        if (!isSocketCommandServerEnabled)
+        {
+            _logger.LogDebug("Socket Server is disabled");
+        }
+        return isSocketCommandServerEnabled;
+    }
+
+    private bool IsAdvancedGpoEnabled()
+    {
+        bool isAdvancedGpoEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoEnabled) &&
+            string.Equals("1", _standaloneConfigDTO.advancedGpoEnabled, StringComparison.OrdinalIgnoreCase);
+
+        if (!isAdvancedGpoEnabled)
+        {
+            _logger.LogDebug("Advanced GPO is disabled");
+        }
+        return isAdvancedGpoEnabled;
+    }
+
+    private bool IsHeartbeatEnabled()
+    {
+        bool isHeartbeatEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.heartbeatEnabled) &&
+            string.Equals("1", _standaloneConfigDTO.heartbeatEnabled, StringComparison.OrdinalIgnoreCase);
+
+        if (!isHeartbeatEnabled)
+        {
+            _logger.LogDebug("Heartbeat is disabled");
+        }
+        return isHeartbeatEnabled;
+    }
+
+    private bool IsC1g2FilterEnabled()
+    {
+        bool isC1g2FilterEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.c1g2FilterEnabled) &&
+            string.Equals("1", _standaloneConfigDTO.c1g2FilterEnabled, StringComparison.OrdinalIgnoreCase);
+
+        if (!isC1g2FilterEnabled)
+        {
+            _logger.LogDebug("C1G2 filtering is disabled");
+        }
+        return isC1g2FilterEnabled;
+    }
+
+    private bool IsBackupToFlashDriveOnGpiEventEnabled()
+    {
+        bool isEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.backupToFlashDriveOnGpiEventEnabled) &&
+            string.Equals("1", _standaloneConfigDTO.backupToFlashDriveOnGpiEventEnabled, StringComparison.OrdinalIgnoreCase);
+
+        if (!isEnabled)
+        {
+            _logger.LogDebug("Backup to flash drive on GPI event is disabled");
+        }
+        return isEnabled;
+    }
+
+    private bool IsUsbFlashDriveEnabled()
+    {
+        bool isEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.usbFlashDrive) &&
+            string.Equals("1", _standaloneConfigDTO.usbFlashDrive, StringComparison.OrdinalIgnoreCase);
+
+        if (!isEnabled)
+        {
+            _logger.LogDebug("USB Flash Drive disabled");
+        }
+        return isEnabled;
+    }
+
+    private bool IsBackupToInternalFlashEnabled()
+    {
+        bool isEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.backupToInternalFlashEnabled) &&
+            string.Equals("1", _standaloneConfigDTO.backupToInternalFlashEnabled, StringComparison.OrdinalIgnoreCase);
+
+        if (!isEnabled)
+        {
+            _logger.LogDebug("Backup to internal flash is disabled");
+        }
+        return isEnabled;
+    }
+
+    private bool IsUsbHidEnabled()
+    {
+        bool isEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.usbHid) &&
+            string.Equals("1", _standaloneConfigDTO.usbHid, StringComparison.OrdinalIgnoreCase);
+
+        if (!isEnabled)
+        {
+            _logger.LogDebug("USB HID is disabled");
+        }
+        return isEnabled;
+    }
+    private bool IsUdpServerEnabled()
+    {
+        bool isEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.udpServer) &&
+            string.Equals("1", _standaloneConfigDTO.udpServer, StringComparison.OrdinalIgnoreCase);
+
+        if (!isEnabled)
+        {
+            _logger.LogDebug("UDP server is disabled");
+        }
+        return isEnabled;
+    }
+
+    private bool IsOpcUaClientEnabled()
+    {
+        bool isEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.enableOpcUaClient) &&
+            string.Equals("1", _standaloneConfigDTO.enableOpcUaClient, StringComparison.OrdinalIgnoreCase);
+
+        if (!isEnabled)
+        {
+            _logger.LogDebug("OPC UA is disabled");
+        }
+        return isEnabled;
+    }
+
+    private bool IsSummaryStreamEnabled()
+    {
+        bool isEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.enableSummaryStream) &&
+            string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase);
+
+        if (!isEnabled)
+        {
+            _logger.LogDebug("Summary Stream is disabled");
+        }
+        return isEnabled;
+    }
+
+    private bool IsTagValidationEnabled()
+    {
+        bool isTagValidationEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.tagValidationEnabled) &&
+            string.Equals("1", _standaloneConfigDTO.tagValidationEnabled, StringComparison.OrdinalIgnoreCase);
+
+        if (!isTagValidationEnabled)
+        {
+            _logger.LogDebug("Tag validation is disabled");
+        }
+        return isTagValidationEnabled;
+    }
+
+    private bool IsLogFileEnabled()
+    {
+        bool isLogFileEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.isLogFileEnabled) &&
+            string.Equals("1", _standaloneConfigDTO.isLogFileEnabled, StringComparison.OrdinalIgnoreCase);
+
+        if (!isLogFileEnabled)
+        {
+            _logger.LogDebug("Log file is disabled");
+        }
+        return isLogFileEnabled;
+    }
+
+    private bool IsTagPresenceTimeoutEnabled()
+    {
+        bool isEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.tagPresenceTimeoutEnabled) &&
+            string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled, StringComparison.OrdinalIgnoreCase);
+
+        if (!isEnabled)
+        {
+            _logger.LogDebug("Tag presence timeout is disabled");
+        }
+        return isEnabled;
+    }
+
+    private bool IsSmartreaderEnabledForManagementOnly()
+    {
+        bool isEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.smartreaderEnabledForManagementOnly) &&
+            string.Equals("1", _standaloneConfigDTO.smartreaderEnabledForManagementOnly, StringComparison.OrdinalIgnoreCase);
+
+        if (!isEnabled)
+        {
+            _logger.LogDebug("Smartreader is not enabled for management only");
+        }
+        return isEnabled;
+    }
     private bool IsMqttEnabled()
     {
         // Check if MQTT is enabled in configuration
@@ -7837,8 +8071,6 @@ ProcessKeepalive()
                 await RefreshBearerTokenAsync();
                 
             }
-            
-            await SendHeartbeatAsync();
         }
         catch (Exception ex)
         {
@@ -8282,11 +8514,9 @@ ProcessKeepalive()
 
     private async Task SendHeartbeatAsync()
     {
-        if (string.Equals("1", _standaloneConfigDTO.heartbeatEnabled, StringComparison.OrdinalIgnoreCase) &&
-            _stopwatchKeepalive.Elapsed.Seconds > int.Parse(_standaloneConfigDTO.heartbeatPeriodSec))
+        if (IsHeartbeatEnabled())
         {
             await ProcessKeepalive();
-            _stopwatchKeepalive.Restart();
         }
     }
 
@@ -8595,16 +8825,15 @@ ProcessKeepalive()
                 _logger.LogInformation("Reader interface successfully configured");
 
                 // Publish initial status if MQTT is enabled
-                if (_standaloneConfigDTO != null &&
-                    string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
+                if (IsMqttEnabled())
                 {
                     var mqttManagementEvents = new Dictionary<string, object>
-                {
-                    { "smartreader-status", "initialized" },
-                    { "readerName", _standaloneConfigDTO.readerName },
-                    { "mac", _iotDeviceInterfaceClient.MacAddress },
-                    { "timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now) }
-                };
+                    {
+                        { "smartreader-status", "initialized" },
+                        { "readerName", _standaloneConfigDTO.readerName },
+                        { "mac", _iotDeviceInterfaceClient.MacAddress },
+                        { "timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now) }
+                    };
                     await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
                 }
             }
@@ -9139,14 +9368,17 @@ ProcessKeepalive()
             !_expectedLicense.Equals(_standaloneConfigDTO.licenseKey.Trim()))
         {
             _logger.LogError("Invalid license key");
-            var mqttEvent = new Dictionary<string, object>
-        {
-            { "readerName", _standaloneConfigDTO.readerName },
-            { "mac", _iotDeviceInterfaceClient.MacAddress },
-            { "timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now) },
-            { "smartreader-status", "invalid-license-key" }
-        };
-            await _mqttService.PublishMqttManagementEventAsync(mqttEvent);
+            if (IsMqttEnabled())
+            {
+                var mqttEvent = new Dictionary<string, object>
+                {
+                    { "readerName", _standaloneConfigDTO.readerName },
+                    { "mac", _iotDeviceInterfaceClient.MacAddress },
+                    { "timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now) },
+                    { "smartreader-status", "invalid-license-key" }
+                };
+                await _mqttService.PublishMqttManagementEventAsync(mqttEvent);
+            }
             throw new InvalidOperationException("Invalid license key");
         }
     }
@@ -9222,16 +9454,49 @@ ProcessKeepalive()
         
         ConfigureTimer(_timerPeriodicTasksJob, OnRunPeriodicTasksJobManagerEvent, 1000);
         ConfigureTimer(_timerTagFilterLists, OnRunPeriodicTagFilterListsEvent, 100);
-        ConfigureTimer(_timerKeepalive, OnRunPeriodicKeepaliveCheck, 100);
+        if(IsHeartbeatEnabled())
+        {
+            ConfigureTimer(_timerKeepalive, OnRunPeriodicKeepaliveCheck, 100);
+        }
+        
         ConfigureTimer(_timerStopTriggerDuration, OnRunPeriodicStopTriggerDurationEvent, 100);
-        ConfigureTimer(_timerTagPublisherHttp, OnRunPeriodicTagPublisherHttpTasksEvent, 100);
-        ConfigureTimer(_timerTagPublisherSocket, OnRunPeriodicTagPublisherSocketTasksEvent, 10);
-        ConfigureTimer(_timerSummaryStreamPublisher, OnRunPeriodicSummaryStreamPublisherTasksEvent, 10);
-        ConfigureTimer(_timerTagPublisherUsbDrive, OnRunPeriodicUsbDriveTasksEvent, 100);
-        ConfigureTimer(_timerTagPublisherUdpServer, OnRunPeriodicTagPublisherUdpTasksEvent, 500);
-        ConfigureTimer(_timerTagPublisherRetry, OnRunPeriodicTagPublisherRetryTasksEvent, 500);
-        ConfigureTimer(_timerTagPublisherMqtt, OnRunPeriodicTagPublisherMqttTasksEvent, 10);
-        ConfigureTimer(_timerTagPublisherOpcUa, OnRunPeriodicTagPublisherOpcUaTasksEvent, 500);
+
+        if(IsHttpPostEnabled())
+        {
+            ConfigureTimer(_timerTagPublisherHttp, OnRunPeriodicTagPublisherHttpTasksEvent, 100);
+            ConfigureTimer(_timerTagPublisherRetry, OnRunPeriodicTagPublisherRetryTasksEvent, 500);
+        }
+
+        if(IsSocketServerEnabled())
+        {
+            ConfigureTimer(_timerTagPublisherSocket, OnRunPeriodicTagPublisherSocketTasksEvent, 10);
+        }
+
+        if (IsSummaryStreamEnabled())
+        {
+            ConfigureTimer(_timerSummaryStreamPublisher, OnRunPeriodicSummaryStreamPublisherTasksEvent, 10);
+        }
+
+        if(IsBackupToInternalFlashEnabled() ||
+            IsBackupToFlashDriveOnGpiEventEnabled() ||
+            IsUsbFlashDriveEnabled())
+        {
+            ConfigureTimer(_timerTagPublisherUsbDrive, OnRunPeriodicUsbDriveTasksEvent, 100);
+        }
+        if(IsUdpServerEnabled())
+        {
+            ConfigureTimer(_timerTagPublisherUdpServer, OnRunPeriodicTagPublisherUdpTasksEvent, 500);
+        }
+        
+
+        if(IsMqttEnabled())
+        {
+            ConfigureTimer(_timerTagPublisherMqtt, OnRunPeriodicTagPublisherMqttTasksEvent, 10);
+        }
+        if (IsOpcUaClientEnabled())
+        {
+            ConfigureTimer(_timerTagPublisherOpcUa, OnRunPeriodicTagPublisherOpcUaTasksEvent, 500);
+        }
     }
 
     private void ConfigureTimer(Timer timer, ElapsedEventHandler handler, double interval)
@@ -9246,11 +9511,24 @@ ProcessKeepalive()
         _timerPeriodicTasksJob.Start();
         _timerTagFilterLists.Start();
 
-        if (_standaloneConfigDTO == null) return;
+        if (_standaloneConfigDTO == null)
+        {
+            try
+            {
+                _standaloneConfigDTO = _configurationService.LoadConfig();
+            }
+            catch (Exception)
+            {
+                _logger.LogError("Error loading _standaloneConfigDTO to trigger timers.");
+            }
+            
+        }
 
-        if (_standaloneConfigDTO.heartbeatEnabled == "1")
+
+        if (IsHeartbeatEnabled())
         {
             _timerKeepalive.Start();
+            _stopwatchKeepalive.Start();
         }
 
         if (_standaloneConfigDTO.stopTriggerDuration != "0")
@@ -9258,37 +9536,37 @@ ProcessKeepalive()
             _timerStopTriggerDuration.Start();
         }
 
-        if (_standaloneConfigDTO.socketServer == "1")
+        if (IsSocketServerEnabled())
         {
             _timerTagPublisherSocket.Start();
         }
 
-        if (_standaloneConfigDTO.httpPostEnabled == "1")
+        if (IsHttpPostEnabled())
         {
             _timerTagPublisherHttp.Start();
         }
 
-        if (_standaloneConfigDTO.udpServer == "1")
+        if (IsUdpServerEnabled())
         {
             _timerTagPublisherUdpServer.Start();
         }
 
-        if (_standaloneConfigDTO.usbHid == "1")
+        if (IsUsbHidEnabled())
         {
             _timerTagPublisherUsbDrive.Start();
         }
 
-        if (_standaloneConfigDTO.mqttEnabled == "1")
+        if (IsMqttEnabled())
         {
             _timerTagPublisherMqtt.Start();
         }
 
-        if (_standaloneConfigDTO.enableSummaryStream == "1")
+        if (IsSummaryStreamEnabled())
         {
             _timerSummaryStreamPublisher.Start();
         }
 
-        if (_standaloneConfigDTO.enableOpcUaClient == "1")
+        if (IsOpcUaClientEnabled())
         {
             _timerTagPublisherOpcUa.Start();
         }
@@ -13005,14 +13283,17 @@ ProcessKeepalive()
                     {
                         Console.WriteLine(_standaloneConfigDTO.licenseKey.Trim());
                         _logger.LogInformation("Invalid license key. ");
-                        var mqttManagementEvents = new Dictionary<string, object>();
-                        mqttManagementEvents.Add("readerName", _standaloneConfigDTO.readerName);
-                        mqttManagementEvents.Add("mac", _iotDeviceInterfaceClient.MacAddress);
-                        mqttManagementEvents.Add("ip", _iotDeviceInterfaceClient.IpAddresses);
-                        mqttManagementEvents.Add("serial", _standaloneConfigDTO.readerSerial);
-                        mqttManagementEvents.Add("timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now));
-                        mqttManagementEvents.Add("smartreader-status", "invalid-license-key");
-                        await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
+                        if (IsMqttEnabled())
+                        {
+                            var mqttManagementEvents = new Dictionary<string, object>();
+                            mqttManagementEvents.Add("readerName", _standaloneConfigDTO.readerName);
+                            mqttManagementEvents.Add("mac", _iotDeviceInterfaceClient.MacAddress);
+                            mqttManagementEvents.Add("ip", _iotDeviceInterfaceClient.IpAddresses);
+                            mqttManagementEvents.Add("serial", _standaloneConfigDTO.readerSerial);
+                            mqttManagementEvents.Add("timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now));
+                            mqttManagementEvents.Add("smartreader-status", "invalid-license-key");
+                            await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
+                        }
                         return;
                     }
                 }
@@ -13025,16 +13306,19 @@ ProcessKeepalive()
                 {
                     Console.WriteLine(_standaloneConfigDTO.licenseKey.Trim());
                     _logger.LogInformation("Invalid license key. ");
-                    var mqttManagementEvents = new Dictionary<string, object>();
-                    mqttManagementEvents.Add("readerName", _standaloneConfigDTO.readerName);
+                    if (IsMqttEnabled())
+                    {
+                        var mqttManagementEvents = new Dictionary<string, object>();
+                        mqttManagementEvents.Add("readerName", _standaloneConfigDTO.readerName);
 
-                    mqttManagementEvents.Add("mac", _iotDeviceInterfaceClient.MacAddress);
+                        mqttManagementEvents.Add("mac", _iotDeviceInterfaceClient.MacAddress);
 
-                    mqttManagementEvents.Add("ip", _iotDeviceInterfaceClient.IpAddresses);
-                    mqttManagementEvents.Add("serial", _standaloneConfigDTO.readerSerial);
-                    mqttManagementEvents.Add("timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now));
-                    mqttManagementEvents.Add("smartreader-status", "invalid-license-key");
-                    await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
+                        mqttManagementEvents.Add("ip", _iotDeviceInterfaceClient.IpAddresses);
+                        mqttManagementEvents.Add("serial", _standaloneConfigDTO.readerSerial);
+                        mqttManagementEvents.Add("timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now));
+                        mqttManagementEvents.Add("smartreader-status", "invalid-license-key");
+                        await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
+                    }
                     return;
                 }
             }

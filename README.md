@@ -1,43 +1,309 @@
 https://support.impinj.com/hc/en-us/articles/360000468370-Software-Tools-License-Disclaimer
 
-PLEASE READ THE FOLLOWING LICENSE & DISCLAIMER (“AGREEMENT”) CAREFULLY BEFORE USING ANY SOFTWARE TOOLS (AS DEFINED BELOW) MADE AVAILABLE TO YOU (“LICENSEE”) BY IMPINJ, INC. (“IMPINJ”). BY USING THE SOFTWARE TOOLS, YOU ACKNOWLEDGE THAT YOU HAVE READ AND UNDERSTOOD ALL THE TERMS AND CONDITIONS OF THE AGREEMENT, YOU WILL BE CONSENTING TO BE BOUND BY THEM, AND YOU ARE AUTHORIZED TO DO SO. IF YOU DO NOT ACCEPT THESE TERMS AND CONDITIONS, DO NOT USE THE SOFTWARE TOOLS.
+PLEASE READ THE FOLLOWING LICENSE & DISCLAIMER ("AGREEMENT") CAREFULLY BEFORE USING ANY SOFTWARE TOOLS (AS DEFINED BELOW) MADE AVAILABLE TO YOU ("LICENSEE") BY IMPINJ, INC. ("IMPINJ"). BY USING THE SOFTWARE TOOLS, YOU ACKNOWLEDGE THAT YOU HAVE READ AND UNDERSTOOD ALL THE TERMS AND CONDITIONS OF THE AGREEMENT, YOU WILL BE CONSENTING TO BE BOUND BY THEM, AND YOU ARE AUTHORIZED TO DO SO. IF YOU DO NOT ACCEPT THESE TERMS AND CONDITIONS, DO NOT USE THE SOFTWARE TOOLS.
 
- =======
- # SmartReader
+=======
 
- ## Building the Project
+# SmartReader R700
 
- To build the project and generate the .upgx file for the R700 reader:
+## Overview
 
- ### Windows
- Run the build script:
- ```cmd
- cd SmartReaderStandalone
- build-upgx-docker.bat
+SmartReader R700 is a sophisticated Custom Application (CAP) reference design specifically developed for Impinj R700 RAIN RFID Readers. It provides an integrated solution for configuring and managing RFID operations while offering flexible data publishing options through the Impinj IoT Interface.
+
+The application combines intuitive user interface design with robust backend processing, making it ideal for both simple deployments and complex industrial environments. While not intended as a complete inventory management solution, it serves as a powerful tool for RFID data collection and distribution.
+
+## Key Features
+
+### Data Output Capabilities
+
+SmartReader R700 supports multiple data output channels, allowing flexible integration with existing systems:
+
+- Local HTTP streams directly on the reader
+- MQTT broker communication (supporting both TCP and WebSocket protocols)
+- HTTP POST endpoints
+- TCP/IP socket connections
+- UDP socket communication
+- Serial port over USB interface
+- Direct writing to USB Flash Drive
+
+### RFID Operations
+
+The application provides comprehensive RFID tag reading capabilities:
+
+- EPC (Electronic Product Code) reading
+- TID (Tag Identifier) collection
+- User Memory data access
+- Timestamp recording
+- Antenna port number tracking
+- Antenna zone name management
+- GTIN/SGTIN Decoding support
+
+### Hardware Integration
+
+- Barcode scanner integration (USB and Network variants)
+- Smart shelf/cabinet support
+- Batch list reporting for monitoring tag additions/removals
+- Antenna zone group management
+
+## Hardware Compatibility
+
+### Supported Reader Models
+- IPJ-R700-241 (including Antenna Hub functionality)
+- IPJ-R700-341 (including Antenna Hub functionality)
+
+### Firmware Requirements
+- Compatible with firmware version 8.4.0.240 and newer
+- Regular firmware updates recommended for optimal performance
+
+## Configuration Interface
+
+The graphical user interface provides intuitive access to:
+
+1. Reader Settings
+   - Basic configuration parameters
+   - Direct-to-memory configuration saving
+   - Antenna zone grouping
+   - Power level adjustment
+   - Frequency settings
+
+2. Data Collection
+   - Tag memory bank selection
+   - Reading mode configuration
+   - Filtering options
+   - Report formatting
+
+3. Output Management
+   - Protocol selection
+   - Connection parameters
+   - Data format configuration
+   - Buffer settings
+
+### Enhanced Stream Processing
+
+SmartReader implements advanced timeout detection and recovery mechanisms for HTTP stream processing, ensuring reliable operation even in challenging network conditions. The system maintains data integrity while gracefully handling various error scenarios that commonly occur in industrial IoT deployments.
+
+Key capabilities include:
+
+1. **Timeout Management**
+   - Configurable timeout thresholds with a default of 10 seconds
+   - CancellationTokenSource integration for precise operation control
+   - Automatic retry mechanism with exponential backoff
+   - Thread-safe operation handling
+
+2. **Error Recovery**
+   - Specialized recovery paths for different error types
+   - Automatic stream state validation
+   - Comprehensive error logging with context preservation
+   - Non-blocking recovery operations
+
+3. **Stream Processing**
+   - Real-time data validation
+   - Structured logging with correlation IDs
+   - Configurable processing parameters
+   - Memory-efficient operation
+
+### Dynamic Logging Management
+
+The application provides sophisticated runtime log level control through a secure REST API, enabling authorized users to adjust logging verbosity without service interruption. This feature is particularly valuable for production troubleshooting and performance optimization.
+
+Key features include:
+
+1. **REST API Integration**
+   - Endpoint: `/api/logging/level`
+   - Secure access through basic authentication
+   - Support for DEBUG, INFORMATION, WARNING, and ERROR levels
+   - Real-time level switching using Serilog
+
+2. **Windows Automation**
+   - Command-line management script: `set-log-level.bat`
+   - Case-insensitive input handling
+   - Clear operation feedback
+   - Exit code support for automation
+
+3. **Security**
+   - Integration with existing authentication layer
+   - Audit logging for level changes
+   - Thread-safe operations
+   - Role-based access control ready
+   
+## Smart Features
+
+### Batch List Reporting
+The system implements intelligent tag state tracking:
+
+1. Zone Monitoring
+   - Real-time tag presence detection
+   - Addition/subtraction tracking
+   - Zone-based filtering
+   - Customizable reporting intervals
+
+2. Smart Shelf Integration
+   - Shelf occupancy monitoring
+   - Product movement tracking
+   - Alert generation capabilities
+   - Zone-based inventory management
+
+### Advanced Data Processing
+
+1. GTIN/SGTIN Decoding
+   - Automatic format detection
+   - Standards compliance checking
+   - Error correction
+   - Filtered reporting
+
+2. Multi-Source Integration
+   - Barcode scanner data fusion
+   - RFID tag correlation
+   - Timestamp synchronization
+   - Unified data output
+
+## Building the Project
+
+The project uses Docker for consistent builds across different environments. The build process generates an .upgx file compatible with R700 readers.
+
+### Windows Build
+
+```cmd
+cd SmartReaderStandalone
+build-upgx-docker.bat
 ```
 
- ###  Linux
- Run the build script:
- ```bash
- cd SmartReaderStandalone
- chmod +x build-upgx-docker.sh
- ./build-upgx-docker.sh
- ```
+### Linux Build
 
- ## The scripts will:
+```bash
+cd SmartReaderStandalone
+chmod +x build-upgx-docker.sh
+./build-upgx-docker.sh
+```
 
- - 1 Clean up Docker system
- - 2 Build the Docker image using Dockerfile
- - 3 Run a container from the image
- - 4 Copy the generated .upgx file to cap_deploy/ directory
- - 5 Remove the temporary container
+### Build Process Details
 
- ## Requirements:
+The build scripts perform these operations:
 
-- Docker must be installed and running
-- docker-compose.yml and Dockerfile must be present in the project directory
+1. Clean up Docker system
+2. Build the Docker image using Dockerfile
+3. Run a container from the image
+4. Copy the generated .upgx file to cap_deploy/
+5. Remove the temporary container
 
-The generated .upgx file will be available in the cap_deploy/ directory after successful build.
+## System Requirements
+
+### Development Environment
+- Docker Engine 20.10 or newer
+- docker-compose 1.29 or newer
+- 4GB RAM minimum
+- 10GB free disk space
+
+### Runtime Requirements
+- .NET 6.0 Runtime or newer
+- Windows Server 2019/2022 or Linux with systemd
+- Network access to RFID readers
+- HTTPS certificate for secure communication
+
+## Configuration
+
+### Stream Processing Settings
+
+Configure timeout and retry behavior in appsettings.json:
+
+```json
+{
+  "StreamProcessing": {
+    "DefaultTimeoutSeconds": 10,
+    "MaxRetryAttempts": 3,
+    "RetryDelayMilliseconds": 1000,
+    "MaxConcurrentStreams": 5
+  }
+}
+```
+
+### Logging Configuration
+
+Manage logging through the REST API:
+
+```bash
+# Set log level to DEBUG
+curl -X POST https://your-server/api/logging/level \
+  -H "Authorization: Basic your-credentials" \
+  -H "Content-Type: application/json" \
+  -d '{"level": "DEBUG"}'
+
+# Get current log level
+curl -X GET https://your-server/api/logging/level \
+  -H "Authorization: Basic your-credentials"
+```
+
+Or use the Windows command-line tool:
+
+```cmd
+set-log-level.bat DEBUG
+```
+
+## Deployment
+
+1. Build the application using the provided scripts
+2. Locate the .upgx file in cap_deploy/ directory
+3. Deploy using standard R700 reader upgrade procedures
+4. Verify deployment through reader management interface
+
+## Security Considerations
+
+1. **Authentication**
+   - All management endpoints require authentication
+   - Use HTTPS for API communication
+   - Regular credential rotation recommended
+
+2. **Logging**
+   - Sensitive data is automatically redacted
+   - Log level changes are audited
+   - File system permissions are enforced
+
+3. **Network**
+   - Firewall rules should restrict access to management API
+   - Reader communication uses secure protocols
+   - Rate limiting prevents DoS attacks
+
+## Troubleshooting
+
+Common issues and solutions:
+
+1. **Stream Timeouts**
+   - Verify network connectivity
+   - Check reader firmware version
+   - Review timeout settings
+   - Examine error logs
+
+2. **Authentication Failures**
+   - Verify credentials
+   - Check certificate validity
+   - Confirm proper authorization headers
+
+3. **Build Issues**
+   - Ensure Docker is running
+   - Verify disk space
+   - Check network access to repositories
+
+## Future Roadmap
+
+Planned enhancements include:
+
+1. **Stream Processing**
+   - Enhanced performance metrics
+   - Advanced retry strategies
+   - Custom timeout policies
+   - Improved error recovery
+
+2. **Logging**
+   - Persistent configuration
+   - Enhanced role-based access
+   - Advanced monitoring integration
+   - Custom log formatting
+
+3. **Security**
+   - OAuth2 support
+   - Enhanced audit logging
+   - Certificate management
+   - Security scanning integration
 
 # License 
 

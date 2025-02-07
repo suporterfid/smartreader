@@ -53,6 +53,9 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
     .CreateBootstrapLogger();
 
+var levelSwitch = new LoggingLevelSwitch();
+levelSwitch.MinimumLevel = LogEventLevel.Information; // Default level
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -67,7 +70,7 @@ builder.Services.AddSingleton(builder.Configuration);
 builder.Host.UseSerilog((ctx, lc) => lc
     .WriteTo.Console()
     .ReadFrom.Configuration(ctx.Configuration)
-    .MinimumLevel.Information()
+    .MinimumLevel.ControlledBy(levelSwitch)
     .WriteTo.File("/customer/wwwroot/logs/log.txt", LogEventLevel.Debug,
         "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}",
         fileSizeLimitBytes: 102400, rollOnFileSizeLimit: true, retainedFileCountLimit: 2));
@@ -108,6 +111,10 @@ builder.WebHost.ConfigureKestrel(opt =>
 {
     opt.ListenAnyIP(8443, listOpt => { listOpt.UseHttps(@"/customer/localhost.pfx", "r700"); });
 });
+
+// Register the LoggingService
+builder.Services.AddSingleton(levelSwitch);
+builder.Services.AddSingleton<LoggingService>();
 
 builder.Services.AddSingleton<IConfigurationService, ConfigurationService>();
 builder.Services.AddSingleton<ITcpSocketService, TcpSocketService>(serviceProvider =>
@@ -2331,6 +2338,47 @@ async (HttpRequest request, RuntimeDb db) =>
         File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
         return Results.BadRequest(requestResult);
     }
+});
+
+app.MapPost("/api/logging/level", [AuthorizeBasicAuth] async (
+    [FromBody] LogLevelRequest request,
+    LoggingService loggingService) =>
+{
+    if (string.IsNullOrEmpty(request.Level))
+    {
+        return Results.BadRequest(new LogLevelResponse
+        {
+            Success = false,
+            Message = "Log level cannot be empty",
+            CurrentLevel = loggingService.GetCurrentLogLevel().ToString()
+        });
+    }
+
+    var success = loggingService.SetLogLevel(request.Level);
+    return success
+        ? Results.Ok(new LogLevelResponse
+        {
+            Success = true,
+            Message = $"Log level changed to {request.Level}",
+            CurrentLevel = loggingService.GetCurrentLogLevel().ToString()
+        })
+        : Results.BadRequest(new LogLevelResponse
+        {
+            Success = false,
+            Message = $"Failed to change log level to {request.Level}",
+            CurrentLevel = loggingService.GetCurrentLogLevel().ToString()
+        });
+});
+
+// Add an endpoint to get current log level
+app.MapGet("/api/logging/level", [AuthorizeBasicAuth] (LoggingService loggingService) =>
+{
+    return Results.Ok(new LogLevelResponse
+    {
+        Success = true,
+        CurrentLevel = loggingService.GetCurrentLogLevel().ToString(),
+        Message = "Current log level retrieved successfully"
+    });
 });
 
 app.UseSwagger();

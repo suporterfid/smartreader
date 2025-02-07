@@ -9,8 +9,10 @@
 //****************************************************************************************************
 #endregion
 using Impinj.Atlas;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using plugin_contract.ViewModel.Gpi;
+using plugin_contract.ViewModel.Stream;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Net;
@@ -463,6 +465,11 @@ public class R700IotReader : IR700IotReader
     public Task UpdateReaderGpoAsync(GpoConfigurations gpoConfiguration)
     {
         return _r700IotEventProcessor.UpdateReaderGpoAsync(gpoConfiguration);
+    }
+
+    public Task UpdateHttpStreamConfigAsync(HttpStreamConfig streamConfiguration)
+    {
+        return _r700IotEventProcessor.UpdateHttpStreamConfigAsync(streamConfiguration);
     }
 
     public Task SystemImageUpgradePostAsync(string file)
@@ -1044,42 +1051,183 @@ public class R700IotReader : IR700IotReader
             CleanupAfterStreaming();
         }
 
-        private async Task ProcessStream(StreamReader streamReader)
+        //private async Task ProcessStream(StreamReader streamReader)
+        //{
+        //    while (!_cancelSource.IsCancellationRequested)
+        //    {
+        //        try
+        //        {
+        //            if (streamReader.EndOfStream)
+        //            {
+        //                throw new IOException("IoT Interface Processor: End of stream reached unexpectedly.");
+        //            }
+
+        //            var str = await streamReader.ReadLineAsync();
+        //            if (string.IsNullOrWhiteSpace(str))
+        //            {
+        //                _logger.LogWarning("IoT Interface Processor: Received an empty or whitespace-only line.");
+        //                continue;
+        //            }
+
+        //            _logger.LogDebug("IoT Interface Processor: Processing received line: {Line}", str);
+
+        //            await ProcessStreamedData(str);
+        //        }
+        //        catch (IOException ioEx)
+        //        {
+        //            _logger.LogWarning($"IoT Interface Processor: I/O error while reading the stream. {ioEx.Message}");
+        //            throw;
+        //        }
+        //        catch (JsonException jsonEx)
+        //        {
+        //            _logger.LogWarning($"IoT Interface Processor: Failed to deserialize a line from the stream. {jsonEx.Message}");
+        //        }
+        //        catch (Exception ex)
+        //        {
+        //            _logger.LogWarning($"IoT Interface Processor: Unexpected error while processing the stream. {ex.Message}");
+        //            //throw;
+        //        }
+        //    }
+        //}
+
+        private async Task ProcessStream(StreamReader streamReader, TimeSpan timeout = default)
         {
+            // If no timeout specified, default to 10 seconds
+            timeout = timeout == default ? TimeSpan.FromSeconds(10) : timeout;
+
             while (!_cancelSource.IsCancellationRequested)
             {
                 try
                 {
+                    // Create a task to read the next line with timeout
+                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(_cancelSource.Token);
+                    timeoutCts.CancelAfter(timeout);
+
+                    // Check stream state before attempting to read
+                    if (streamReader.BaseStream?.CanRead != true)
+                    {
+                        throw new InvalidOperationException("IoT Interface Processor: Stream is not readable or has been disposed.");
+                    }
+
                     if (streamReader.EndOfStream)
                     {
                         throw new IOException("IoT Interface Processor: End of stream reached unexpectedly.");
                     }
 
-                    var str = await streamReader.ReadLineAsync();
+                    // Read with timeout using the combined cancellation token
+                    var readTask = streamReader.ReadLineAsync();
+                    var str = await ExecuteWithTimeout(readTask, timeoutCts.Token)
+                        .ConfigureAwait(false);
+
                     if (string.IsNullOrWhiteSpace(str))
                     {
-                        _logger.LogWarning("IoT Interface Processor: Received an empty or whitespace-only line.");
+                        _logger.LogDebug("IoT Interface Processor: Received an empty or whitespace-only line (stream keepalive).");
                         continue;
                     }
 
                     _logger.LogDebug("IoT Interface Processor: Processing received line: {Line}", str);
 
-                    await ProcessStreamedData(str);
+                    // Process the data with timeout as well
+                    var processTask = ProcessStreamedData(str);
+                    await ExecuteWithTimeout(processTask, timeoutCts.Token)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException ocEx) when (!_cancelSource.Token.IsCancellationRequested)
+                {
+                    // This catch block handles timeouts specifically
+                    _logger.LogError("IoT Interface Processor: Operation timed out. {Message}", ocEx.Message);
+                    await HandleTimeout().ConfigureAwait(false);
                 }
                 catch (IOException ioEx)
                 {
-                    _logger.LogWarning("IoT Interface Processor: I/O error while reading the stream.");
-                    throw;
+                    _logger.LogError("IoT Interface Processor: I/O error while reading the stream. {Message}", ioEx.Message);
+                    throw; // Rethrow as this indicates a critical connection issue
                 }
                 catch (JsonException jsonEx)
                 {
-                    _logger.LogWarning("IoT Interface Processor: Failed to deserialize a line from the stream.");
+                    _logger.LogWarning("IoT Interface Processor: Failed to deserialize a line from the stream. {Message}", jsonEx.Message);
+                    // Continue processing as this is a non-critical error
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    _logger.LogWarning("IoT Interface Processor: Unexpected error while processing the stream.");
-                    //throw;
+                    _logger.LogError(ex, "IoT Interface Processor: Unexpected error while processing the stream.");
+                    // Consider implementing a retry policy here
+                    await HandleUnexpectedError(ex).ConfigureAwait(false);
                 }
+            }
+        }
+
+        // Helper method to execute a task with timeout
+        private static async Task<T> ExecuteWithTimeout<T>(Task<T> task, CancellationToken cancellationToken)
+        {
+            try
+            {
+                return await task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException("Operation timed out.");
+            }
+        }
+
+        private static async Task ExecuteWithTimeout(Task task, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException("Operation timed out.");
+            }
+        }
+
+        private async Task HandleTimeout()
+        {
+            // Implement timeout recovery logic
+            _logger.LogInformation("IoT Interface Processor: Attempting to recover from timeout...");
+
+            try
+            {
+                // Add a small delay before retrying to prevent tight loops
+                await Task.Delay(TimeSpan.FromSeconds(1), _cancelSource.Token)
+                    .ConfigureAwait(false);
+
+                await StopPresetAsync();
+
+                await Task.Delay(TimeSpan.FromSeconds(1), _cancelSource.Token)
+                    .ConfigureAwait(false);
+
+                await StartPresetAsync("SmartReader");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "HandleTimeout: Unexpected error while processing the stream.");
+            }
+            
+        }
+
+        private async Task HandleUnexpectedError(Exception ex)
+        {
+            // Implement error recovery logic
+            _logger.LogInformation("IoT Interface Processor: Attempting to recover from unexpected error...");
+
+            try
+            {
+                // Add a small delay before retrying to prevent tight loops
+                await Task.Delay(TimeSpan.FromSeconds(1), _cancelSource.Token)
+                    .ConfigureAwait(false);
+
+                await StopPresetAsync();
+
+                await Task.Delay(TimeSpan.FromSeconds(1), _cancelSource.Token)
+                    .ConfigureAwait(false);
+
+                await StartPresetAsync("SmartReader");
+            }
+            catch (Exception exInternal)
+            {
+                _logger.LogError(exInternal, "HandleTimeout: Unexpected error while processing the stream.");
             }
         }
 
@@ -1315,11 +1463,8 @@ public class R700IotReader : IR700IotReader
                 var request_ = new HttpRequestMessage();
                 var stringContent = new StringContent(json);
                 stringContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/json");
-                //request_.Content = (HttpContent)stringContent;
                 request_.Method = new HttpMethod("PUT");
                 request_.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                //request_.RequestUri = new Uri(completeUri, UriKind.RelativeOrAbsolute);
-                //task = (Task)_httpClient.SendAsync(request_, HttpCompletionOption.ResponseHeadersRead);
                 return _httpClient.PutAsync(completeUri, stringContent);
             }
             catch (Exception ex)
@@ -1340,6 +1485,28 @@ public class R700IotReader : IR700IotReader
             {
                 Console.WriteLine("Unexpected error: " + ex.Message);
                 throw;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Unexpected error: " + ex.Message);
+                return Task.CompletedTask;
+            }
+        }
+
+        public Task UpdateHttpStreamConfigAsync(HttpStreamConfig streamConfiguration)
+        {
+            var endpoint = "http-stream";
+            var completeUri = _httpClient.BaseAddress + endpoint;
+
+            try
+            {
+                string json = JsonSerializer.Serialize(streamConfiguration);
+                var request_ = new HttpRequestMessage();
+                var stringContent = new StringContent(json);
+                stringContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/json");
+                request_.Method = new HttpMethod("PUT");
+                request_.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                return _httpClient.PutAsync(completeUri, stringContent);
             }
             catch (Exception ex)
             {

@@ -22,6 +22,7 @@ using MQTTnet.Protocol;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using plugin_contract.ViewModel.Gpi;
+using plugin_contract.ViewModel.Stream;
 using Serilog;
 using Serilog.Events;
 using SmartReader.Infrastructure.Database;
@@ -8919,6 +8920,23 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             // Initialize GPI port states
             if (!_gpiPortStates.ContainsKey(0)) _gpiPortStates.TryAdd(0, false);
             if (!_gpiPortStates.ContainsKey(1)) _gpiPortStates.TryAdd(1, false);
+
+            // Initialize the HTTP Stream
+            try
+            {
+                _logger.LogInformation("Initializing the HTTP Stream setup.");
+                var httpStreamConfig = new HttpStreamConfig();
+                httpStreamConfig.EventBufferSize = 0;
+                httpStreamConfig.EventPerSecondLimit = 50;
+                httpStreamConfig.EventAgeLimitMinutes = 1;
+                httpStreamConfig.KeepAliveIntervalSeconds = 1;
+                await _iotDeviceInterfaceClient.UpdateHttpStreamConfigAsync(httpStreamConfig);
+                
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Non-critical error while initializing the HTTP Stream setup.");
+            }
 
             // Verify network connectivity
             if (!_iotDeviceInterfaceClient.IsNetworkConnected)

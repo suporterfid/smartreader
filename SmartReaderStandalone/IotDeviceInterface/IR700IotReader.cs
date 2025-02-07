@@ -10,6 +10,7 @@
 #endregion
 using Impinj.Atlas;
 using plugin_contract.ViewModel.Gpi;
+using plugin_contract.ViewModel.Stream;
 using System.Collections.ObjectModel;
 
 namespace SmartReader.IotDeviceInterface;
@@ -113,4 +114,6 @@ public interface IR700IotReader : IDisposable
     Task UpdateReaderGpoAsync(GpoConfigurations gpoConfiguration);
 
     Task UpdateReaderGpiAsync(GpiConfigRoot gpiConfiguration);
+
+    Task UpdateHttpStreamConfigAsync(HttpStreamConfig streamConfiguration);
 }

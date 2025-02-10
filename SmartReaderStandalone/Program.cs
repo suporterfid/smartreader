@@ -126,6 +126,15 @@ builder.Services.AddSingleton<ITcpSocketService, TcpSocketService>(serviceProvid
     return new TcpSocketService(serviceProvider, configuration, logger, configurationService);
 });
 
+builder.Services.AddSingleton<IWebSocketService, WebSocketService>(serviceProvider =>
+{
+    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+    var logger = serviceProvider.GetRequiredService<ILogger<WebSocketService>>();
+    var configurationService = serviceProvider.GetRequiredService<IConfigurationService>();
+
+    return new WebSocketService(serviceProvider, configuration, logger, configurationService);
+});
+
 builder.Services.AddSingleton<IMqttService, MqttService>(serviceProvider =>
 {
     var configuration = serviceProvider.GetRequiredService<IConfiguration>();
@@ -149,6 +158,8 @@ builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvid
     var configurationService = serviceProvider.GetRequiredService<IConfigurationService>();
     var tcpSocketService = serviceProvider.GetRequiredService<ITcpSocketService>();
     var mqttService = serviceProvider.GetRequiredService<IMqttService>();
+    var webSocketService = serviceProvider.GetRequiredService<IWebSocketService>();
+
 
 
     return new IotInterfaceService(serviceProvider, 
@@ -158,7 +169,8 @@ builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvid
         httpClientFactory, 
         configurationService, 
         tcpSocketService,
-        mqttService);
+        mqttService,
+        webSocketService);
 });
 // builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvider => serviceProvider.GetService<IotInterfaceService>());
 builder.Services.AddScoped<ISummaryQueueBackgroundService, SummaryQueueBackgroundService>();

@@ -360,6 +360,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventSocketServer = new();
 
+    private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventWebSocketServer = new();
+
     private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventUdpServer = new();
 
     private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventUsbDrive = new();
@@ -410,6 +412,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     private readonly Timer _timerTagPublisherRetry;
 
     private readonly Timer _timerTagPublisherSocket;
+
+    private readonly Timer _timerTagPublisherWebSocket;
 
     private readonly Timer _timerSummaryStreamPublisher;
 
@@ -462,6 +466,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     private readonly ITcpSocketService _tcpSocketService;
 
     private readonly IMqttService _mqttService;
+    private readonly IWebSocketService _webSocketService;
 
     //private double _mqttPublishIntervalInSec = 1;
     //private double _mqttPublishIntervalInMs = 10;
@@ -486,7 +491,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         IHttpClientFactory httpClientFactory, 
         IConfigurationService configurationService,
         ITcpSocketService tcpSocketService,
-        IMqttService mqttService)
+        IMqttService mqttService,
+        IWebSocketService webSocketService)
     {
         _configuration = configuration;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -506,6 +512,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _tcpSocketService = tcpSocketService;
 
         _mqttService = mqttService;
+
+        _webSocketService = webSocketService;
 
 #if DEBUG
         _buildConfiguration = "Debug";
@@ -537,6 +545,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _timerTagPublisherHttp = new Timer(100);
 
         _timerTagPublisherSocket = new Timer(100);
+
+        _timerTagPublisherWebSocket = new Timer(100);
 
         _timerSummaryStreamPublisher = new Timer(100);
 
@@ -1888,6 +1898,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         try
         {
+            _webSocketService.Start(0);
+        }
+        catch (Exception ex)
+        {
+
+            _logger.LogError(ex, "Error starting web socket server. " + ex.Message);
+        }
+
+        try
+        {
             StartUdpServer();
         }
         catch (Exception ex)
@@ -1983,7 +2003,24 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
 
         StopTcpBarcodeClient();
-        _tcpSocketService.Stop();
+        try
+        {
+            _tcpSocketService.Stop();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInformation("Unable to stop TCP Socket Server. " + ex.Message);
+        }
+        
+        try
+        {
+            _webSocketService.Stop();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInformation("Unable to stop Web Socket Server. " + ex.Message);
+        }
+        
         StopUdpServer();
         StopTcpSocketCommandServer();
 
@@ -3801,7 +3838,22 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
         }
 
-            
+        try
+        {
+            if (_webSocketService.IsSocketServerConnectedToClients())
+            {
+                _messageQueueTagSmartReaderTagEventWebSocketServer.Enqueue(dataToPublish);
+            }
+        }
+        catch (Exception)
+        {
+            _logger.LogWarning($"Error enqueuing keepalive event.");
+        }
+
+
+
+
+
 
         if (IsUsbFlashDriveEnabled())
         {
@@ -6071,6 +6123,32 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
+    private async void OnRunPeriodicTagPublisherWebSocketTasksEvent(object sender, ElapsedEventArgs e)
+    {
+        const int BatchSize = 100;
+        const int MaxQueueSize = 1000;
+
+        try
+        {
+            _timerTagPublisherWebSocket.Enabled = false;
+
+            // Delegate batch processing to TcpSocketService
+            await _webSocketService.ProcessMessageBatchAsync(
+                _messageQueueTagSmartReaderTagEventWebSocketServer,
+                BatchSize,
+                MaxQueueSize
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in periodic web socket task.");
+        }
+        finally
+        {
+            _timerTagPublisherWebSocket.Enabled = true;
+        }
+    }
+
 
 
     //private void HandleQueueOverflow()
@@ -6463,7 +6541,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 if (IsMqttEnabled())
                 {
-                    await ProcessTagPublishingMqtt();
+                    if(IsMqttBatchListsEnabled())
+                    {
+                        await ProcessTagPublishingMqtt();
+                    }
+                    else
+                    {
+                        await ProcessMqttMessagesAsync();
+                    }                    
                 }
                 else
                 {
@@ -6813,6 +6898,21 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
 
         return isMqttEnabled;
+    }
+
+    private bool IsMqttBatchListsEnabled()
+    {
+        // Check if MQTT is enabled in configuration
+        bool isMqttBatchListsEnabled = !string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch) &&
+            string.Equals("1", _standaloneConfigDTO.enableTagEventsListBatch, StringComparison.OrdinalIgnoreCase);
+
+        // Log the MQTT status for debugging
+        if (!isMqttBatchListsEnabled)
+        {
+            _logger.LogDebug("MQTT batch list publishing is disabled");
+        }
+
+        return isMqttBatchListsEnabled;
     }
 
     private async Task ProcessTagPublishingMqtt()
@@ -9425,6 +9525,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
                 else
                 {
+                    _logger.LogDebug("_mqttService is not connected.");
                     _messageQueueTagSmartReaderTagEventMqtt.Enqueue(message);
                     await Task.Delay(1000); // Back off if disconnected
                 }
@@ -9611,6 +9712,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             ConfigureTimer(_timerTagPublisherSocket, OnRunPeriodicTagPublisherSocketTasksEvent, 10);
         }
 
+        ConfigureTimer(_timerTagPublisherWebSocket, OnRunPeriodicTagPublisherWebSocketTasksEvent, 10);
+        
         if (IsSummaryStreamEnabled())
         {
             ConfigureTimer(_timerSummaryStreamPublisher, OnRunPeriodicSummaryStreamPublisherTasksEvent, 10);

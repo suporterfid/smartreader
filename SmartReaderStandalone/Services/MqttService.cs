@@ -130,7 +130,7 @@ namespace SmartReaderStandalone.Services
                                 StringComparison.OrdinalIgnoreCase))
                         {
                             var controlCommandsFilter = new MqttTopicFilter();
-                            controlCommandsFilter = new MqttTopicFilterBuilder().WithTopic($"{mqttControlCommandTopic}/#")
+                            controlCommandsFilter = new MqttTopicFilterBuilder().WithTopic($"{mqttControlCommandTopic}")
                                 .Build();
                             controlCommandsFilter.QualityOfServiceLevel = controlCommandQoslevel switch
                             {

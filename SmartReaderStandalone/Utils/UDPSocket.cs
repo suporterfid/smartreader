@@ -51,7 +51,7 @@ public class UDPSocket
             {
                 //var clientData = client.Split(":");
                 var data = Encoding.ASCII.GetBytes(text);
-                _socket.BeginSend(data, 0, data.Length, SocketFlags.None, ar =>
+                _ = _socket.BeginSend(data, 0, data.Length, SocketFlags.None, ar =>
                 {
                     var so = (State)ar.AsyncState;
                     var bytes = _socket.EndSend(ar);
@@ -104,14 +104,14 @@ public class UDPSocket
 
     private void Receive()
     {
-        _socket.BeginReceiveFrom(state.buffer, 0, bufSize, SocketFlags.None, ref epFrom, recv = ar =>
+        _ = _socket.BeginReceiveFrom(state.buffer, 0, bufSize, SocketFlags.None, ref epFrom, recv = ar =>
         {
             try
             {
                 var so = (State)ar.AsyncState;
                 var bytes = _socket.EndReceiveFrom(ar, ref epFrom);
 
-                _socket.BeginReceiveFrom(so.buffer, 0, bufSize, SocketFlags.None, ref epFrom, recv, so);
+                _ = _socket.BeginReceiveFrom(so.buffer, 0, bufSize, SocketFlags.None, ref epFrom, recv, so);
                 Console.WriteLine("RECV: {0}: {1}, {2}", epFrom, bytes, Encoding.ASCII.GetString(so.buffer, 0, bytes));
 
                 try
@@ -119,7 +119,7 @@ public class UDPSocket
                     var endPoint = epFrom.ToString().Split(':');
                     Console.WriteLine("endPoint: {0}, {1}", endPoint[0], endPoint[1]);
                     if (!_udpClients.ContainsKey(endPoint[0]))
-                        _udpClients.TryAdd(endPoint[0], int.Parse(endPoint[1]));
+                        _ = _udpClients.TryAdd(endPoint[0], int.Parse(endPoint[1]));
                     else
                         _udpClients[endPoint[0]] = int.Parse(endPoint[1]);
                 }

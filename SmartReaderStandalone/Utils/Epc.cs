@@ -20,13 +20,13 @@ public class Epc : IEquatable<Epc>, IComparable<Epc>, IComparable, IEnumerable<u
 
     public Epc(IEnumerable<ushort> epcEnumerable)
     {
-        _epcArray = (epcEnumerable != null ? epcEnumerable.ToArray() : null) ??
+        _epcArray = (epcEnumerable?.ToArray()) ??
                     throw new ArgumentNullException(nameof(epcEnumerable));
     }
 
     public Epc(IEnumerable<byte> epcEnumerable)
     {
-        var numArray = (epcEnumerable != null ? epcEnumerable.ToArray() : null) ??
+        var numArray = (epcEnumerable?.ToArray()) ??
                        throw new ArgumentNullException(nameof(epcEnumerable));
         _epcArray = new ushort[numArray.Length / 2];
         for (var index = 0; index < numArray.Length; index += 2)
@@ -98,7 +98,7 @@ public class Epc : IEquatable<Epc>, IComparable<Epc>, IComparable, IEnumerable<u
     {
         var num = _epcArray.Length;
         foreach (var epc in _epcArray)
-            num = num * 397 + epc.GetHashCode();
+            num = (num * 397) + epc.GetHashCode();
         return num;
     }
 
@@ -140,11 +140,11 @@ public class Epc : IEquatable<Epc>, IComparable<Epc>, IComparable, IEnumerable<u
             var num1 = _epcArray[index] >> 12;
             chArray[index * 4] = (char)(55 + num1 + (((num1 - 10) >> 31) & -7));
             var num2 = (_epcArray[index] >> 8) & 15;
-            chArray[index * 4 + 1] = (char)(55 + num2 + (((num2 - 10) >> 31) & -7));
+            chArray[(index * 4) + 1] = (char)(55 + num2 + (((num2 - 10) >> 31) & -7));
             var num3 = (_epcArray[index] >> 4) & 15;
-            chArray[index * 4 + 2] = (char)(55 + num3 + (((num3 - 10) >> 31) & -7));
+            chArray[(index * 4) + 2] = (char)(55 + num3 + (((num3 - 10) >> 31) & -7));
             var num4 = _epcArray[index] & 15;
-            chArray[index * 4 + 3] = (char)(55 + num4 + (((num4 - 10) >> 31) & -7));
+            chArray[(index * 4) + 3] = (char)(55 + num4 + (((num4 - 10) >> 31) & -7));
         }
 
         return new string(chArray);

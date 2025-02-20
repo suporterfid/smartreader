@@ -48,7 +48,7 @@ public class UserService : IUserService
 
         }
     }
-    private readonly List<User> _users = new();
+    private readonly List<User> _users = [];
     //{
     //    new User {Id = 1, FirstName = "Admin", LastName = "User", Username = "admin", Password = "admin"}
     //};

@@ -9,72 +9,83 @@
 //****************************************************************************************************
 #endregion
 using Impinj.Atlas;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using plugin_contract.ViewModel.Gpi;
 using plugin_contract.ViewModel.Stream;
+using SmartReaderStandalone.IotDeviceInterface;
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Net;
-using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.NetworkInformation;
 using System.Net.Security;
-using System.Net.Sockets;
-using System.Reflection.PortableExecutable;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading.Channels;
+using HealthStatus = SmartReaderStandalone.IotDeviceInterface.HealthStatus;
 using NetworkInterface = Impinj.Atlas.NetworkInterface;
 
 namespace SmartReader.IotDeviceInterface;
 
 public class R700IotReader : IR700IotReader
 {
+    private readonly IReaderConfiguration _configuration;
+
+    private readonly IEventManager _eventManager;
+
+    private readonly IHealthMonitor _healthMonitor;
+
+    private readonly SemaphoreSlim _operationSemaphore = new(1, 1);
+
     private readonly IotDeviceInterfaceEventProcessor _r700IotEventProcessor;
 
     private readonly ILogger<R700IotReader> _logger;
 
     private readonly ILoggerFactory _loggerFactory;
 
+    private bool _disposed;
+
     internal R700IotReader(
         string hostname,
-        string nickname = "",
-        bool useHttpAlways = false,
-        bool useBasicAuthAlways = false,
-        string uname = "root",
-        string pwd = "impinj",
-        int hostPort = 0,
-        string? proxy = "",
-        int proxyPort = 8080,
+        IReaderConfiguration configuration,
         ILogger<R700IotReader>? eventProcessorLogger = null,
-        ILoggerFactory loggerFactory = null
+        ILoggerFactory? loggerFactory = null,
+        IHealthMonitor? healthMonitor = null
         )
     {
-        _logger = (eventProcessorLogger ?? throw new ArgumentNullException(nameof(eventProcessorLogger)));
+        _logger = eventProcessorLogger ?? throw new ArgumentNullException(nameof(eventProcessorLogger));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
 
         if (string.IsNullOrWhiteSpace(hostname))
             throw new ArgumentNullException(nameof(hostname));
 
+        _healthMonitor = healthMonitor ?? new HealthMonitor(_logger);
+        _operationSemaphore = new SemaphoreSlim(1, 1);
+        _eventManager = new EventManager(_logger);
+
+        _configuration = configuration;
+
         _r700IotEventProcessor = new IotDeviceInterfaceEventProcessor(
                 hostname,
-                useHttpAlways,
-                useBasicAuthAlways,
-                uname,
-                pwd,
-                hostPort,
-                proxy ?? "",
-                proxyPort,
+                configuration,
+                eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(),
                 _loggerFactory.CreateLogger<IotDeviceInterfaceEventProcessor>(),
                 _loggerFactory,
-                () => IsNetworkConnected // Pass delegate
+                () => IsNetworkConnected, // Pass delegate
+                this
             );
 
         Hostname = hostname;
-        Nickname = nickname;
+        Nickname = "nickname";
+
+        // Subscribe to events through the event manager
+        InitializeEventSubscriptions();
     }
+
+
 
     public List<int> RxSensitivitiesInDbm { get; set; }
     public string UniqueId { get; set; }
@@ -98,6 +109,23 @@ public class R700IotReader : IR700IotReader
 
     public bool IsNetworkConnected { get; private set; }
 
+    private void InitializeEventSubscriptions()
+    {
+        // Unsubscribe from events first to avoid multiple subscriptions
+        _r700IotEventProcessor.TagInventoryEvent -= R700IotEventProcessorOnTagInventoryEvent;
+        _r700IotEventProcessor.StreamingErrorEvent -= R700IotEventProcessorOnStreamingErrorEvent;
+        _r700IotEventProcessor.GpiTransitionEvent -= R700IotEventProcessorOnGpiTransitionEvent;
+        _r700IotEventProcessor.InventoryStatusEvent -= R700IotEventProcessorOnInventoryStatusEvent;
+        _r700IotEventProcessor.DiagnosticEvent -= R700IotEventProcessorOnDiagnosticEvent;
+
+        // Subscribe to events
+        _r700IotEventProcessor.TagInventoryEvent += R700IotEventProcessorOnTagInventoryEvent;
+        _r700IotEventProcessor.StreamingErrorEvent += R700IotEventProcessorOnStreamingErrorEvent;
+        _r700IotEventProcessor.GpiTransitionEvent += R700IotEventProcessorOnGpiTransitionEvent;
+        _r700IotEventProcessor.InventoryStatusEvent += R700IotEventProcessorOnInventoryStatusEvent;
+        _r700IotEventProcessor.DiagnosticEvent += R700IotEventProcessorOnDiagnosticEvent;
+    }
+
     public void Dispose()
     {
         if (_r700IotEventProcessor != null)
@@ -115,6 +143,29 @@ public class R700IotReader : IR700IotReader
 
 
         GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!_disposed)
+        {
+            if (disposing)
+            {
+                _operationSemaphore.Dispose();
+                _eventManager.Dispose();
+                _r700IotEventProcessor.Dispose();
+                _healthMonitor.Dispose();
+            }
+            _disposed = true;
+        }
+    }
+
+    private void ThrowIfDisposed()
+    {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(R700IotReader));
+        }
     }
 
     public async Task<ReaderStatus> GetStatusAsync()
@@ -138,7 +189,7 @@ public class R700IotReader : IR700IotReader
 
             if (IpAddresses == null)
             {
-                IpAddresses = new List<string>();
+                IpAddresses = [];
             }
             else
             {
@@ -230,23 +281,58 @@ public class R700IotReader : IR700IotReader
         return systemInfoAsync;
     }
 
-    public Task StartAsync(string presetId)
+    public async Task StartAsync(string presetId, CancellationToken cancellationToken = default)
     {
-        _r700IotEventProcessor.TagInventoryEvent += R700IotEventProcessorOnTagInventoryEvent;
-        _r700IotEventProcessor.StreamingErrorEvent += R700IotEventProcessorOnStreamingErrorEvent;
-        _r700IotEventProcessor.GpiTransitionEvent += R700IotEventProcessorOnGpiTransitionEvent;
-        _r700IotEventProcessor.InventoryStatusEvent += R700IotEventProcessorOnInventoryStatusEvent;
-        _r700IotEventProcessor.DiagnosticEvent += R700IotEventProcessorOnDiagnosticEvent;
+        ThrowIfDisposed();
 
-        return _r700IotEventProcessor.StartAsync(presetId);
+        try
+        {
+            await _operationSemaphore.WaitAsync(cancellationToken);
+
+            InitializeEventSubscriptions();
+
+            // Start monitoring health
+            //_ = Task.Run(() => _healthMonitor.StartMonitoring(cancellationToken), cancellationToken)
+            //    .ContinueWith(task =>
+            //    {
+            //        if (task.IsFaulted)
+            //        {
+            //            // Handle or log the exception
+            //            var exception = task.Exception;
+            //            // Log the exception or take other appropriate actions
+            //            _logger.LogError(exception, "Error starting the monitoring health task.");
+            //        }
+            //    }, TaskScheduler.Default);
+
+            // Start the event processor
+            _ = Task.Run(() => _r700IotEventProcessor.StartStreamingAsync(presetId), cancellationToken)
+                .ContinueWith(task =>
+                {
+                    if (task.IsFaulted)
+                    {
+                        // Handle or log the exception
+                        var exception = task.Exception;
+                        // Log the exception or take other appropriate actions
+                        _logger.LogError(exception, "Error starting the event processor task.");
+                    }
+                }, TaskScheduler.Default);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to start reader operations");
+            throw;
+        }
+        finally
+        {
+            _ = _operationSemaphore.Release();
+        }
     }
+
 
     public Task StartPresetAsync(string presetId)
     {
         return _r700IotEventProcessor.StartPresetAsync(presetId);
     }
-
-    //private void R700IotEventProcessorOnTagInventoryEventConfiguration(object sender, Impinj.Atlas.TagInventoryEventConfiguration e) => this.OnTagInventoryEventConfiguration(e);
 
     public Task StopPresetAsync()
     {
@@ -255,28 +341,21 @@ public class R700IotReader : IR700IotReader
 
     public async Task StopAsync()
     {
-        var r700IotReader = this;
         try
         {
-            await r700IotReader._r700IotEventProcessor.StopAsync();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
+            await _operationSemaphore.WaitAsync();
+            await _r700IotEventProcessor.StopStreamingAsync();
 
-        try
-        {
-            r700IotReader._r700IotEventProcessor.TagInventoryEvent -=
-                r700IotReader.R700IotEventProcessorOnTagInventoryEvent;
-            r700IotReader._r700IotEventProcessor.StreamingErrorEvent -=
-                r700IotReader.R700IotEventProcessorOnStreamingErrorEvent;
-
+            // Unsubscribe from events
+            _r700IotEventProcessor.TagInventoryEvent -= R700IotEventProcessorOnTagInventoryEvent;
+            _r700IotEventProcessor.StreamingErrorEvent -= R700IotEventProcessorOnStreamingErrorEvent;
             _r700IotEventProcessor.GpiTransitionEvent -= R700IotEventProcessorOnGpiTransitionEvent;
             _r700IotEventProcessor.InventoryStatusEvent -= R700IotEventProcessorOnInventoryStatusEvent;
             _r700IotEventProcessor.DiagnosticEvent -= R700IotEventProcessorOnDiagnosticEvent;
         }
-        catch (Exception)
+        finally
         {
+            _ = _operationSemaphore.Release();
         }
     }
 
@@ -517,7 +596,7 @@ public class R700IotReader : IR700IotReader
 
 
 
-    private void R700IotEventProcessorOnGpiTransitionEvent(object?sender, GpiTransitionVm e)
+    private void R700IotEventProcessorOnGpiTransitionEvent(object? sender, GpiTransitionVm e)
     {
         OnGpiTransitionEvent(e);
     }
@@ -675,7 +754,7 @@ public class R700IotReader : IR700IotReader
         }
     }
 
-    
+
 
     private void OnInventoryStatusEvent(InventoryStatusEvent e)
     {
@@ -712,12 +791,381 @@ public class R700IotReader : IR700IotReader
             // Log completion of event processing
             _logger.LogDebug("Completed processing InventoryStatusEvent.");
         }
+
+
+    }
+
+    internal interface IEventManager
+    {
+        void Dispose();
+        void Subscribe<T>(string eventName, EventHandler<T> handler);
+        void Unsubscribe<T>(string eventName, EventHandler<T> handler);
+    }
+
+    internal class EventManager : IDisposable, IEventManager
+    {
+        private readonly ConcurrentDictionary<string, Delegate> _subscriptions;
+        private readonly ILogger _logger;
+        private bool _disposed;
+
+        public EventManager(ILogger logger)
+        {
+            _logger = logger;
+            _subscriptions = new ConcurrentDictionary<string, Delegate>();
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(R700IotReader));
+            }
+        }
+
+        public void Subscribe<T>(string eventName, EventHandler<T> handler)
+        {
+            ThrowIfDisposed();
+
+            _ = _subscriptions.AddOrUpdate(
+                eventName,
+                handler,
+                (_, existing) => Delegate.Combine(existing, handler));
+
+            _logger.LogDebug("Subscribed to event: {EventName}", eventName);
+        }
+
+        public void Unsubscribe<T>(string eventName, EventHandler<T> handler)
+        {
+            ThrowIfDisposed();
+
+            if (_subscriptions.TryGetValue(eventName, out var existing))
+            {
+                var updated = Delegate.Remove(existing, handler);
+                if (updated == null)
+                {
+                    _ = _subscriptions.TryRemove(eventName, out _);
+                }
+                else
+                {
+                    _ = _subscriptions.TryUpdate(eventName, updated, existing);
+                }
+            }
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed)
+            {
+                if (disposing)
+                {
+                    _subscriptions.Clear();
+                }
+                _disposed = true;
+            }
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+        }
+    }
+
+    internal interface IHealthMonitor
+    {
+        Task RecordMetricAsync(HealthMetric metric, CancellationToken cancellationToken = default);
+        Task StartMonitoring(CancellationToken cancellationToken = default);
+        void Dispose();
+    }
+
+    internal class HealthMonitor : IHealthMonitor
+    {
+        private readonly ILogger _logger;
+        private readonly Channel<HealthMetric> _metricsChannel;
+        private readonly CancellationTokenSource _monitoringCts;
+        private Task _monitoringTask;
+        private bool _disposed;
+        private readonly HealthCheck _healthCheck;
+
+        public HealthMonitor(ILogger logger)
+        {
+            _logger = logger;
+            _metricsChannel = Channel.CreateUnbounded<HealthMetric>(
+                new UnboundedChannelOptions
+                {
+                    SingleReader = true,
+                    SingleWriter = false
+                });
+            _monitoringCts = new CancellationTokenSource();
+            _healthCheck = new HealthCheck();
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(HealthMonitor));
+            }
+        }
+
+        /// <summary>
+        /// Starts the health monitoring process, tracking system metrics and health status.
+        /// </summary>
+        public Task StartMonitoring(CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            // Initialize health check monitoring state
+            _healthCheck.MarkStreamStart();
+
+            _monitoringTask = Task.Run(async () =>
+            {
+                try
+                {
+                    // Register cancellation callback
+                    await using var registration = cancellationToken.Register(
+                        () => _monitoringCts.Cancel());
+
+                    // Process metrics as they arrive
+                    await foreach (var metric in _metricsChannel.Reader
+                        .ReadAllAsync(_monitoringCts.Token))
+                    {
+                        try
+                        {
+                            // Process each metric and update health status
+                            ProcessHealthMetric(metric);
+
+                            // Get current health metrics after processing
+                            var healthMetrics = _healthCheck.GetHealthMetrics();
+
+                            // Log health status changes
+                            if (healthMetrics.Status >= HealthStatus.Degraded)
+                            {
+                                _logger.LogWarning(
+                                    "System health degraded - Status: {Status}, Uptime: {Uptime}, " +
+                                    "Messages/min: {MessageRate}, Recent Errors: {ErrorCount}",
+                                    healthMetrics.Status,
+                                    healthMetrics.Uptime,
+                                    healthMetrics.MessagesPerMinute,
+                                    healthMetrics.RecentErrors?.Length ?? 0);
+
+                                // Record the degraded state as an error
+                                _healthCheck.RecordError(
+                                    new Exception($"Health status degraded to {healthMetrics.Status}"),
+                                    ErrorSeverity.Warning);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            // Record processing errors but continue monitoring
+                            _healthCheck.RecordError(ex, ErrorSeverity.Error);
+                            _logger.LogError(ex, "Error processing health metric");
+                        }
+                    }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    // Log the expected cancellation
+                    _logger.LogInformation("Health monitoring cancelled normally");
+
+                    // Record monitoring stoppage in health check
+                    _healthCheck.RecordError(
+                        new Exception("Health monitoring cancelled"),
+                        ErrorSeverity.Info);
+                }
+                catch (Exception ex)
+                {
+                    // Record unexpected monitoring failures
+                    _healthCheck.RecordError(ex, ErrorSeverity.Critical);
+                    _logger.LogError(ex, "Health monitoring failed unexpectedly");
+                }
+                finally
+                {
+                    // Ensure we mark any degraded state when monitoring stops
+                    var finalMetrics = _healthCheck.GetHealthMetrics();
+                    if (finalMetrics.Status != HealthStatus.Healthy)
+                    {
+                        _logger.LogWarning(
+                            "Health monitoring stopped with non-healthy status: {Status}",
+                            finalMetrics.Status);
+                    }
+                }
+            }, cancellationToken);
+            return _monitoringTask;
+        }
+
+        public async Task RecordMetricAsync(
+            HealthMetric metric,
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+
+            await _metricsChannel.Writer.WriteAsync(metric, cancellationToken);
+        }
+
+        /// <summary>
+        /// Processes health metrics, evaluates system state, and records the results
+        /// using the existing HealthCheck system.
+        /// </summary>
+        private void ProcessHealthMetric(HealthMetric metric)
+        {
+            if (metric == null)
+            {
+                _logger.LogWarning("Received null health metric");
+                return;
+            }
+
+            try
+            {
+                _logger.LogDebug("Processing health metric: {MetricType} - {MetricName} from {Source}",
+                    metric.Type, metric.Name, metric.Source);
+
+                // Record the metric receipt as a message for general health tracking
+                _healthCheck.RecordMessageReceived();
+
+                // Process based on metric type
+                switch (metric.Type)
+                {
+                    case MetricType.Connection:
+                        ProcessConnectionMetric(metric);
+                        break;
+
+                    case MetricType.Performance:
+                    case MetricType.TagReads:
+                        // These metrics serve as heartbeats for the system
+                        _healthCheck.RecordHeartbeat();
+                        ProcessPerformanceMetric(metric);
+                        break;
+
+                    case MetricType.Memory:
+                        ProcessMemoryMetric(metric);
+                        break;
+
+                    case MetricType.Errors:
+                        ProcessErrorMetric(metric);
+                        break;
+                }
+
+                // Get current health status after processing
+                var healthMetrics = _healthCheck.GetHealthMetrics();
+
+                // Log significant health state changes
+                if (healthMetrics.Status >= SmartReaderStandalone.IotDeviceInterface.HealthStatus.Degraded)
+                {
+                    _logger.LogWarning(
+                        "System health degraded: Status={Status}, TimeSinceLastHeartbeat={Heartbeat}, MessagesPerMinute={MessageRate}",
+                        healthMetrics.Status,
+                        healthMetrics.TimeSinceLastHeartbeat,
+                        healthMetrics.MessagesPerMinute);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing health metric: {MetricType} - {MetricName}",
+                    metric.Type, metric.Name);
+                _healthCheck.RecordError(ex, ErrorSeverity.Error);
+            }
+        }
+
+        private void ProcessConnectionMetric(HealthMetric metric)
+        {
+            // Connection metrics directly affect health state
+            bool isConnected = metric.Value > 0;
+
+            if (!isConnected)
+            {
+                _healthCheck.RecordError(
+                    new Exception(metric.Description),
+                    ErrorSeverity.Critical);
+            }
+            else
+            {
+                _healthCheck.RecordHeartbeat();
+            }
+        }
+
+        private void ProcessPerformanceMetric(HealthMetric metric)
+        {
+            // For performance metrics, we evaluate against thresholds
+            if (metric.Value.HasValue && metric.Value.Value <= 0)
+            {
+                _healthCheck.RecordError(
+                    new Exception($"Performance degradation: {metric.Description}"),
+                    ErrorSeverity.Warning);
+            }
+        }
+
+        private void ProcessMemoryMetric(HealthMetric metric)
+        {
+            if (!metric.Value.HasValue) return;
+
+            // Memory usage thresholds from the HealthMetric factory
+            if (metric.Value.Value > 90)
+            {
+                _healthCheck.RecordError(
+                    new Exception($"Critical memory usage: {metric.Value.Value}%"),
+                    ErrorSeverity.Critical);
+            }
+            else if (metric.Value.Value > 80)
+            {
+                _healthCheck.RecordError(
+                    new Exception($"High memory usage: {metric.Value.Value}%"),
+                    ErrorSeverity.Warning);
+            }
+        }
+
+        private void ProcessErrorMetric(HealthMetric metric)
+        {
+            // Map MetricSeverity to ErrorSeverity
+            var severity = metric.Severity switch
+            {
+                MetricSeverity.Critical => ErrorSeverity.Critical,
+                MetricSeverity.Error => ErrorSeverity.Error,
+                MetricSeverity.Warning => ErrorSeverity.Warning,
+                _ => ErrorSeverity.Info
+            };
+
+            _healthCheck.RecordError(
+                new Exception(metric.Description),
+                severity);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed)
+            {
+                if (disposing)
+                {
+                    _monitoringCts.Cancel();
+                    _monitoringCts.Dispose();
+                    _metricsChannel.Writer.Complete();
+
+                    if (_monitoringTask != null)
+                    {
+                        // Wait for monitoring to complete with timeout
+                        _ = Task.WaitAny(_monitoringTask, Task.Delay(TimeSpan.FromSeconds(5)));
+                    }
+                }
+                _disposed = true;
+            }
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+        }
+
+        //Task IHealthMonitor.StartMonitoring(CancellationToken cancellationToken)
+        //{
+        //    throw new NotImplementedException();
+        //}
     }
 
 
 
     private sealed class IotDeviceInterfaceEventProcessor
     {
+        private readonly SemaphoreSlim _streamingSemaphore = new(1, 1);
+        private volatile bool _isStreaming;
         private readonly string _hostname;
         private readonly HttpClient _httpClient;
         private readonly HttpClient _httpClientSecure;
@@ -729,35 +1177,44 @@ public class R700IotReader : IR700IotReader
         private Stream? _responseStream;
         private Task? _streamingTask;
         private readonly ILogger<IotDeviceInterfaceEventProcessor> _logger;
+        private readonly HealthCheck _healthCheck = new();
+        private readonly object _innerEventLock = new();
+
 
         private readonly Func<bool> _isNetworkConnectedDelegate;
 
+        private readonly R700IotReader _parent;
+
+        private IReaderConfiguration _configuration;
+
         internal IotDeviceInterfaceEventProcessor(
             string hostname,
-            bool useHttpAlways,
-            bool useBasicAuthAlways,
-            string uname,
-            string pwd,
-            int hostPort = 0,
-            string proxy = "",
-            int proxyPort = 8080,
-            ILogger<IotDeviceInterfaceEventProcessor> logger = null,
-            ILoggerFactory loggerFactory = null,
-            Func<bool> isNetworkConnectedDelegate = null)
+            IReaderConfiguration configuration,
+            ILogger<R700IotReader>? eventProcessorLogger = null,
+            ILogger<IotDeviceInterfaceEventProcessor>? logger = null,
+            ILoggerFactory? loggerFactory = null,
+            Func<bool>? isNetworkConnectedDelegate = null,
+            R700IotReader? parent = null)
         {
+            
+
+            _parent = parent ?? throw new ArgumentNullException(nameof(parent));
+
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
             _isNetworkConnectedDelegate = isNetworkConnectedDelegate ?? throw new ArgumentNullException(nameof(isNetworkConnectedDelegate));
 
+            _configuration = configuration;
 
             _hostname = Regex.Replace(hostname, "^https*\\://", "");
-            var num = (uint)hostPort > 0U ? 1 : 0;
-            _useHttpAlways = useHttpAlways;
-            _useBasicAuthAlways = useBasicAuthAlways;
+            var num = (uint)_configuration.Network.Port > 0U ? _configuration.Network.Port : 0;
+            _useHttpAlways = !_configuration.Network.UseHttps;
+            _useBasicAuthAlways = _configuration.Security.UseBasicAuth;
             var baseUrl1 = num != 0
-                ? string.Format("http://{0}:{1}/api/v1", hostname, hostPort)
+                ? string.Format("http://{0}:{1}/api/v1", hostname, num)
                 : "http://" + hostname + "/api/v1";
             var baseUrl2 = "https://" + hostname + "/api/v1";
-            var bytes = Encoding.ASCII.GetBytes(uname + ":" + pwd);
+            var bytes = Encoding.ASCII.GetBytes(_configuration.Security.Username + ":" + _configuration.Security.Password);
             var timeSpan = new TimeSpan(0, 0, 0, 3, 0);
             ServicePointManager.ServerCertificateValidationCallback +=
                 (sender, certificate, chain, sslPolicyErrors) => true;
@@ -770,13 +1227,15 @@ public class R700IotReader : IR700IotReader
             };
 
 
-            if (!string.IsNullOrEmpty(proxy))
+            if (_configuration.Network.Proxy != null && !string.IsNullOrEmpty(_configuration.Network.Proxy.Address))
             {
-                WebProxy webProxy = new WebProxy(proxy);
-                webProxy.Credentials = CredentialCache.DefaultNetworkCredentials;
-                webProxy.BypassProxyOnLocal = true;
-                webProxy.BypassList.Append("169.254.1.1");
-                webProxy.BypassList.Append(hostname);
+                WebProxy webProxy = new(_configuration.Network.Proxy.Address)
+                {
+                    Credentials = CredentialCache.DefaultNetworkCredentials,
+                    BypassProxyOnLocal = true
+                };
+                _ = webProxy.BypassList.Append("169.254.1.1");
+                _ = webProxy.BypassList.Append(hostname);
 
 
                 httpClientHandler = new HttpClientHandler
@@ -788,14 +1247,15 @@ public class R700IotReader : IR700IotReader
                 };
             }
 
-            if (useHttpAlways)
+            if (!_useHttpAlways)
             {
 
 
                 _httpClient = new HttpClient(httpClientHandler)
                 {
                     BaseAddress = new Uri(baseUrl2 + "/"),
-                    Timeout = timeSpan
+                    //Timeout = timeSpan
+                    Timeout = Timeout.InfiniteTimeSpan
                 };
                 _iotDeviceInterfaceClient = new AtlasClient(baseUrl2, _httpClient);
 
@@ -810,7 +1270,7 @@ public class R700IotReader : IR700IotReader
                 _iotDeviceInterfaceClient = new AtlasClient(baseUrl1, _httpClient);
             }
 
-            if (useBasicAuthAlways)
+            if (_useBasicAuthAlways)
                 _httpClient.DefaultRequestHeaders.Authorization =
                     new AuthenticationHeaderValue("Basic", Convert.ToBase64String(bytes));
             _httpClientSecure = new HttpClient(httpClientHandler)
@@ -834,12 +1294,12 @@ public class R700IotReader : IR700IotReader
             throw new TimeoutException("Operation timed out");
         }
 
-        private void ResetCancellationToken()
-        {
-            _cancelSource?.Cancel();
-            _cancelSource?.Dispose();
-            _cancelSource = new CancellationTokenSource();
-        }
+        //private void ResetCancellationToken()
+        //{
+        //    _cancelSource?.Cancel();
+        //    _cancelSource?.Dispose();
+        //    _cancelSource = new CancellationTokenSource();
+        //}
         public Task<ReaderStatus> GetStatusAsync()
         {
             var readerStatus = new ReaderStatus();
@@ -850,11 +1310,11 @@ public class R700IotReader : IR700IotReader
             {
                 currentInterface = _iotDeviceInterfaceClient.SystemRfidInterfaceGetAsync().Result;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 _logger.LogWarning("Error while trying to query the current interface mode.");
             }
-            
+
             if (currentInterface.RfidInterface1 == RfidInterface1.Rest)
             {
                 readerStatus = _iotDeviceInterfaceClient.StatusAsync().Result;
@@ -920,14 +1380,146 @@ public class R700IotReader : IR700IotReader
             return _iotDeviceInterfaceClientSecure.SystemPowerGetAsync(systemPowerCancellationToken);
         }
 
-        public async Task StartAsync(string presetId)
+        private async Task StopExistingStreamIfAnyAsync()
         {
-            var iotDeviceInterfaceEventProcessor = this;
-            await iotDeviceInterfaceEventProcessor._iotDeviceInterfaceClient.ProfilesStopAsync();
-            iotDeviceInterfaceEventProcessor._cancelSource = new CancellationTokenSource();
-            iotDeviceInterfaceEventProcessor._streamingTask = Task.Run(iotDeviceInterfaceEventProcessor.StreamingAsync);
-            await iotDeviceInterfaceEventProcessor._iotDeviceInterfaceClient
-                .ProfilesInventoryPresetsStartAsync(presetId);
+            if (_cancelSource != null)
+            {
+                _cancelSource.Cancel();
+
+                try
+                {
+                    // Dispose of the response stream
+                    if (_responseStream != null)
+                    {
+                        await _responseStream.DisposeAsync();
+                        _responseStream = null;
+                    }
+
+                    // Stop the inventory preset
+                    await _iotDeviceInterfaceClient.ProfilesStopAsync();
+
+                    // Wait for the streaming task to complete
+                    if (_streamingTask != null)
+                    {
+                        await _streamingTask;
+                        _streamingTask = null;
+                    }
+                }
+                catch (TaskCanceledException)
+                {
+                    // Expected during cancellation
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error stopping existing stream");
+                    OnStreamingErrorEvent(new IotDeviceInterfaceException(
+                        $"Error stopping stream for {_hostname}", ex));
+                }
+                finally
+                {
+                    // Dispose of the cancellation token
+                    _cancelSource.Dispose();
+                    _cancelSource = null;
+                }
+            }
+        }
+
+        private async Task StreamingAsync()
+        {
+            try
+            {
+                while (!_cancelSource?.IsCancellationRequested ?? false)
+                {
+                    using var responseMessage = await _httpClient.GetAsync(
+                        new Uri("data/stream", UriKind.Relative),
+                        HttpCompletionOption.ResponseHeadersRead);
+
+                    if (!responseMessage.IsSuccessStatusCode)
+                    {
+                        HandleHttpError(responseMessage);
+                        break;
+                    }
+
+                    _responseStream = await responseMessage.Content.ReadAsStreamAsync();
+                    using var streamReader = new StreamReader(_responseStream);
+
+                    await ProcessStream(streamReader);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Streaming operation failed");
+                OnStreamingErrorEvent(new IotDeviceInterfaceException(
+                    "Streaming operation failed", ex));
+            }
+            finally
+            {
+                _isStreaming = false;
+                _responseStream?.Dispose();
+                _responseStream = null;
+            }
+        }
+
+        internal async Task StartStreamingAsync(string presetId)
+        {
+            await _streamingSemaphore.WaitAsync();
+            try
+            {
+                if (_isStreaming)
+                {
+                    _logger.LogWarning("Streaming is already in progress.");
+                    return;
+                }
+
+                // Ensure any existing stream is stopped.
+                await StopExistingStreamIfAnyAsync();
+
+                // Reset cancellation token and mark streaming as active.
+                _cancelSource = new CancellationTokenSource();
+                _isStreaming = true;
+                _streamingTask = Task.Run(() => StreamingAsync(), _cancelSource.Token);
+
+                // Try to start the inventory preset.
+                try
+                {
+                    await _iotDeviceInterfaceClient.ProfilesInventoryPresetsStartAsync(presetId);
+                }
+                catch (AtlasException ex) when (ex.StatusCode == 409)
+                {
+                    // The preset is already running – log as informational and continue.
+                    _logger.LogInformation("Preset is already running. Skipping preset start.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to start streaming");
+                await StopExistingStreamIfAnyAsync();
+                throw;
+            }
+            finally
+            {
+                _ = _streamingSemaphore.Release();
+            }
+        }
+
+
+
+        internal async Task StopStreamingAsync()
+        {
+            try
+            {
+                await _streamingSemaphore.WaitAsync();
+
+                // Stop the existing stream
+                await StopExistingStreamIfAnyAsync();
+
+                // Reset the streaming state
+                _isStreaming = false;
+            }
+            finally
+            {
+                _ = _streamingSemaphore.Release();
+            }
         }
 
 
@@ -986,109 +1578,6 @@ public class R700IotReader : IR700IotReader
             }
         }
 
-        private const int MaxRetryAttempts = 3;
-
-        private async Task StreamingAsync()
-        {
-            ResetCancellationToken();
-
-            while (!_cancelSource?.IsCancellationRequested ?? false)
-            {
-                int retryCount = 0;
-                bool shouldRestart = true;
-
-                while (shouldRestart && !_cancelSource.IsCancellationRequested)
-                {
-                    try
-                    {
-                        // Establish the stream
-                        using (var responseMessage = await _httpClient.GetAsync(
-                            new Uri("data/stream", UriKind.Relative),
-                            HttpCompletionOption.ResponseHeadersRead))
-                        {
-                            if (!responseMessage.IsSuccessStatusCode)
-                            {
-                                HandleHttpError(responseMessage);
-                                break;
-                            }
-
-                            _responseStream = await responseMessage.Content.ReadAsStreamAsync();
-
-                            // Process the stream
-                            using (var streamReader = new StreamReader(_responseStream))
-                            {
-                                await ProcessStream(streamReader);
-                            }
-
-                            shouldRestart = false; // Successfully completed
-                        }
-                    }
-                    catch (TaskCanceledException)
-                    {
-                        _logger.LogDebug("Streaming operation was canceled.");
-                        shouldRestart = false;
-                    }
-                    catch (Exception ex)
-                    {
-                        if (!_cancelSource.IsCancellationRequested && retryCount < MaxRetryAttempts)
-                        {
-                            retryCount++;
-                            await RetryAfterDelay(retryCount, ex);
-                        }
-                        else
-                        {
-                            HandleStreamingError(ex);
-                            shouldRestart = false;
-                        }
-                    }
-                    finally
-                    {
-                        CleanupStream();
-                    }
-                }
-            }
-
-            CleanupAfterStreaming();
-        }
-
-        //private async Task ProcessStream(StreamReader streamReader)
-        //{
-        //    while (!_cancelSource.IsCancellationRequested)
-        //    {
-        //        try
-        //        {
-        //            if (streamReader.EndOfStream)
-        //            {
-        //                throw new IOException("IoT Interface Processor: End of stream reached unexpectedly.");
-        //            }
-
-        //            var str = await streamReader.ReadLineAsync();
-        //            if (string.IsNullOrWhiteSpace(str))
-        //            {
-        //                _logger.LogWarning("IoT Interface Processor: Received an empty or whitespace-only line.");
-        //                continue;
-        //            }
-
-        //            _logger.LogDebug("IoT Interface Processor: Processing received line: {Line}", str);
-
-        //            await ProcessStreamedData(str);
-        //        }
-        //        catch (IOException ioEx)
-        //        {
-        //            _logger.LogWarning($"IoT Interface Processor: I/O error while reading the stream. {ioEx.Message}");
-        //            throw;
-        //        }
-        //        catch (JsonException jsonEx)
-        //        {
-        //            _logger.LogWarning($"IoT Interface Processor: Failed to deserialize a line from the stream. {jsonEx.Message}");
-        //        }
-        //        catch (Exception ex)
-        //        {
-        //            _logger.LogWarning($"IoT Interface Processor: Unexpected error while processing the stream. {ex.Message}");
-        //            //throw;
-        //        }
-        //    }
-        //}
 
         private async Task ProcessStream(StreamReader streamReader, TimeSpan timeout = default)
         {
@@ -1204,7 +1693,7 @@ public class R700IotReader : IR700IotReader
             {
                 _logger.LogError(ex, "HandleTimeout: Unexpected error while processing the stream.");
             }
-            
+
         }
 
         private async Task HandleUnexpectedError(Exception ex)
@@ -1231,7 +1720,7 @@ public class R700IotReader : IR700IotReader
             }
         }
 
-        private async Task ProcessStreamedData(string str)
+        private Task ProcessStreamedData(string str)
         {
             try
             {
@@ -1240,24 +1729,24 @@ public class R700IotReader : IR700IotReader
                 // Determine the type of event
                 if (str.Contains("gpiTransitionEvent"))
                 {
-                    _logger.LogInformation($"IoT Interface Processor: GpiTransitionEvent: \n {str}");
+                    _logger.LogDebug($"IoT Interface Processor: GpiTransitionEvent: \n {str}");
                     //readerEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<ReaderEvent>(str);
                     var gpiTransitionVm = Newtonsoft.Json.JsonConvert.DeserializeObject<GpiTransitionVm>(str);
-                    _logger.LogInformation(gpiTransitionVm.ToString());
+                    _logger.LogDebug(gpiTransitionVm.ToString());
                     OnGpiTransitionEvent(gpiTransitionVm);
-                    return;
+                    return Task.CompletedTask;
                 }
 
                 if (!str.Contains("gpiTransitionEvent"))
                 {
-                    _logger.LogInformation($"IoT Interface Processor: ReaderEvent: \n {str}");
+                    _logger.LogDebug($"IoT Interface Processor: ReaderEvent: \n {str}");
                     readerEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<ReaderEvent>(str);
                 }
 
                 if (readerEvent == null)
                 {
                     _logger.LogWarning("IoT Interface Processor: Unrecognized or null event: {Line}", str);
-                    return;
+                    return Task.CompletedTask;
                 }
 
                 // Handle specific events
@@ -1277,6 +1766,7 @@ public class R700IotReader : IR700IotReader
             {
                 _logger.LogError(ex, "IoT Interface Processor - Error processing streamed data: {Line}", str);
             }
+            return Task.CompletedTask;
         }
 
         private void UpdateInventoryStatus(ReaderEvent readerEvent, string str)
@@ -1306,34 +1796,6 @@ public class R700IotReader : IR700IotReader
                 _logger.LogDebug("IoT Interface Processor - Retry attempt {RetryCount} was canceled.", retryCount);
             }
         }
-
-
-        //private async Task RetryAfterDelay(int retryCount, Exception ex)
-        //{
-        //    // Calculate exponential backoff with a maximum delay
-        //    const int BaseRetryDelayMs = 1000; // Base delay in milliseconds
-        //    const int MaxRetryDelayMs = 30000; // Maximum delay in milliseconds
-
-        //    int delayMs = Math.Min(BaseRetryDelayMs * (int)Math.Pow(2, retryCount - 1), MaxRetryDelayMs);
-
-        //    // Log retry details
-        //    _logger.LogWarning(
-        //        "Retrying operation after failure. Attempt: {RetryCount}, Delay: {DelayMs} ms, Error: {ErrorMessage}",
-        //        retryCount, delayMs, ex.Message);
-
-        //    // Wait for the calculated delay
-        //    try
-        //    {
-        //        await Task.Delay(delayMs, _cancelSource.Token);
-        //    }
-        //    catch (TaskCanceledException)
-        //    {
-        //        // Log if the retry was interrupted by cancellation
-        //        _logger.LogDebug("Retry attempt {RetryCount} was canceled.", retryCount);
-        //        throw;
-        //    }
-        //}
-
 
         private void HandleHttpError(HttpResponseMessage responseMessage)
         {
@@ -1371,33 +1833,48 @@ public class R700IotReader : IR700IotReader
         }
 
 
-        private void CleanupStream()
+        //private void CleanupStream()
+        //{
+        //    if (_responseStream != null)
+        //    {
+        //        _responseStream.Dispose();
+        //        _responseStream = null;
+        //    }
+        //}
+
+        //private void CleanupAfterStreaming()
+        //{
+        //    if (_cancelSource != null && _cancelSource.IsCancellationRequested)
+        //    {
+        //        _cancelSource.Dispose();
+        //    }
+        //}
+
+        //private void HandleStreamingError(Exception ex)
+        //{
+        //    _logger.LogWarning("Unable to read streaming: {Message}", ex.Message);
+        //    OnStreamingErrorEvent(new IotDeviceInterfaceException("Streaming error detected", ex));
+        //}
+
+        //public bool IsHealthy()
+        //{
+        //    return _isNetworkConnectedDelegate() && (_responseStream != null) && !_cancelSource.IsCancellationRequested;
+        //}
+
+        internal bool IsHealthy()
         {
-            if (_responseStream != null)
-            {
-                _responseStream.Dispose();
-                _responseStream = null;
-            }
+            return IsStreamingActive() &&
+                   HasRecentHeartbeat() &&
+                   !IsCancellationRequested();
         }
 
-        private void CleanupAfterStreaming()
-        {
-            if (_cancelSource != null && _cancelSource.IsCancellationRequested)
-            {
-                _cancelSource.Dispose();
-            }
-        }
+        private bool IsStreamingActive() => _isStreaming;
 
-        private void HandleStreamingError(Exception ex)
-        {
-            _logger.LogWarning("Unable to read streaming: {Message}", ex.Message);
-            OnStreamingErrorEvent(new IotDeviceInterfaceException("Streaming error detected", ex));
-        }
+        private bool HasRecentHeartbeat() =>
+            _healthCheck.LastHeartbeat > DateTime.UtcNow.AddSeconds(-30);
 
-        public bool IsHealthy()
-        {
-            return _isNetworkConnectedDelegate() && (_responseStream != null) && !_cancelSource.IsCancellationRequested;
-        }
+        private bool IsCancellationRequested() =>
+            _cancelSource?.IsCancellationRequested ?? false;
 
         public void Dispose()
         {
@@ -1407,7 +1884,7 @@ public class R700IotReader : IR700IotReader
             _httpClient?.Dispose();
             _httpClientSecure?.Dispose();
 
-            
+
 
             GC.SuppressFinalize(this);
         }
@@ -1596,7 +2073,7 @@ public class R700IotReader : IR700IotReader
                 return Task.CompletedTask;
             }
 
-            
+
         }
 
         public Task UpdateReaderInventoryPresetAsync(
@@ -1625,35 +2102,56 @@ public class R700IotReader : IR700IotReader
 
         }
 
-        public Task PostTransientInventoryPresetAsync(
-            string json)
+        public async Task<HttpResponseMessage> PostTransientInventoryPresetAsync(string json)
         {
-            var iotDeviceInterfaceEventProcessor = this;
-            iotDeviceInterfaceEventProcessor._iotDeviceInterfaceClient.ProfilesStopAsync();
-            iotDeviceInterfaceEventProcessor._cancelSource = new CancellationTokenSource();
-            iotDeviceInterfaceEventProcessor._streamingTask =
-                Task.Run(iotDeviceInterfaceEventProcessor.StreamingAsync);
-
-            var endpoint = "profiles/inventory/start";
-            var completeUri = _httpClient.BaseAddress + endpoint;
+            // Acquire the semaphore for exclusive streaming control.
+            await _streamingSemaphore.WaitAsync();
             try
             {
-                var request_ = new HttpRequestMessage();
-                var stringContent = new StringContent(json);
-                stringContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/json");
-                //request_.Content = (HttpContent)stringContent;
-                request_.Method = new HttpMethod("POST");
-                request_.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                //request_.RequestUri = new Uri(completeUri, UriKind.RelativeOrAbsolute);
-                //task = (Task)_httpClient.SendAsync(request_, HttpCompletionOption.ResponseHeadersRead);
-                return _httpClient.PostAsync(completeUri, stringContent);
+                // Stop any existing streaming to prevent overlapping streams.
+                await StopExistingStreamIfAnyAsync();
+
+                // Reset cancellation token and mark streaming as active.
+                _cancelSource = new CancellationTokenSource();
+                _isStreaming = true;
+
+                // Start the streaming task in a thread-safe manner.
+                _streamingTask = Task.Run(() => StreamingAsync(), _cancelSource.Token);
+
+                // Construct the POST request for starting the transient inventory preset.
+                var endpoint = "profiles/inventory/start";
+                var completeUri = _httpClient.BaseAddress + endpoint;
+                var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
+
+                // Execute the POST request. This HTTP call is now performed after the streaming task has been safely started.
+                return await _httpClient.PostAsync(completeUri, requestContent);
             }
-            catch (Exception ex)
+            catch (AtlasException ex) when (ex.StatusCode == 403 || ex.StatusCode == 204)
             {
-                Console.WriteLine("Unexpected error: " + ex.Message);
-                return Task.CompletedTask;
+                try
+                {
+                    // Unsubscribe from events in a thread-safe way if necessary.
+                    lock (_innerEventLock)
+                    {
+                        _parent.TagInventoryEvent -= _parent.R700IotEventProcessorOnTagInventoryEvent;
+                        _parent.StreamingErrorEvent -= _parent.R700IotEventProcessorOnStreamingErrorEvent;
+                        _parent.GpiTransitionEvent -= _parent.R700IotEventProcessorOnGpiTransitionEvent;
+                        _parent.InventoryStatusEvent -= _parent.R700IotEventProcessorOnInventoryStatusEvent;
+                        _parent.DiagnosticEvent -= _parent.R700IotEventProcessorOnDiagnosticEvent;
+                    }
+                }
+                catch (Exception)
+                {
+                    // Optionally log or handle unsubscription errors.
+                }
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            }
+            finally
+            {
+                _ = _streamingSemaphore.Release();
             }
         }
+
 
         public Task PostStopInventoryPresetAsync(
             string json = "")
@@ -1667,9 +2165,9 @@ public class R700IotReader : IR700IotReader
                 try
                 {
                     _responseStream?.Dispose();
-                    _iotDeviceInterfaceClient.ProfilesStopAsync();
+                    _ = _iotDeviceInterfaceClient.ProfilesStopAsync();
                     return _streamingTask ?? Task.CompletedTask;
-                
+
                 }
                 catch (TaskCanceledException)
                 {
@@ -1684,10 +2182,18 @@ public class R700IotReader : IR700IotReader
             return Task.CompletedTask;
         }
 
-        public Task DeleteReaderInventoryPresetAsync(string presetId)
+        public async Task DeleteReaderInventoryPresetAsync(string presetId)
         {
-            return _iotDeviceInterfaceClient.ProfilesInventoryPresetsDeleteAsync(presetId);
+            try
+            {
+                await _iotDeviceInterfaceClient.ProfilesInventoryPresetsDeleteAsync(presetId);
+            }
+            catch (AtlasException ex) when (ex.StatusCode == 409)
+            {
+                _logger.LogDebug("Preset deletion skipped because the preset is already running.");
+            }
         }
+
 
         public Task<object> GetReaderInventorySchemaAsync()
         {
@@ -1890,4 +2396,15 @@ public class R700IotReader : IR700IotReader
         }
 
     }
+
+
+
+    private class StreamingConfiguration
+    {
+        public int MaxRetryAttempts { get; set; } = 3;
+        public TimeSpan InitialRetryDelay { get; set; } = TimeSpan.FromSeconds(1);
+        public TimeSpan MaxRetryDelay { get; set; } = TimeSpan.FromSeconds(30);
+        public TimeSpan StreamTimeout { get; set; } = TimeSpan.FromSeconds(30);
+    }
+
 }

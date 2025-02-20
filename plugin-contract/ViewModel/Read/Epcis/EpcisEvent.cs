@@ -27,9 +27,9 @@ public class EpcisEvent
     public string? TransformationId { get; set; }
     public DateTime? CorrectiveDeclarationTime { get; set; }
     public string? CorrectiveReason { get; set; }
-    public List<string> CorrectiveEventIds { get; set; } = new();
-    public List<Epc> Epcs { get; set; } = new();
-    public List<BusinessTransaction> BusinessTransactions { get; set; } = new();
-    public List<SourceDestination> SourceDestinationList { get; set; } = new();
-    public List<CustomField> CustomFields { get; set; } = new();
+    public List<string> CorrectiveEventIds { get; set; } = [];
+    public List<Epc> Epcs { get; set; } = [];
+    public List<BusinessTransaction> BusinessTransactions { get; set; } = [];
+    public List<SourceDestination> SourceDestinationList { get; set; } = [];
+    public List<CustomField> CustomFields { get; set; } = [];
 }

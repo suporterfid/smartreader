@@ -1,12 +1,12 @@
-using System.Collections.Concurrent;
 using SmartReader.Infrastructure.ViewModel;
+using System.Collections.Concurrent;
 
 public class ValidationService
 {
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<string, int> _currentSkus;
     private readonly ConcurrentBag<string> _currentSkuReadEpcs;
-    private readonly SemaphoreSlim _validationLock = new SemaphoreSlim(1, 1);
+    private readonly SemaphoreSlim _validationLock = new(1, 1);
     private volatile StandaloneConfigDTO? _config;
 
     public ValidationService(
@@ -26,7 +26,7 @@ public class ValidationService
 
     public bool IsValidationEnabled()
     {
-        return _config != null && 
+        return _config != null &&
                string.Equals("1", _config.enableValidation, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -43,7 +43,7 @@ public class ValidationService
                 if (!_currentSkuReadEpcs.Contains(epc))
                 {
                     _currentSkuReadEpcs.Add(epc);
-                    _currentSkus.AddOrUpdate(
+                    _ = _currentSkus.AddOrUpdate(
                         tagDataKey,
                         1,
                         (key, oldValue) => oldValue + 1
@@ -54,7 +54,7 @@ public class ValidationService
             }
             finally
             {
-                _validationLock.Release();
+                _ = _validationLock.Release();
             }
         }
         catch (Exception ex)
@@ -67,7 +67,7 @@ public class ValidationService
     public Dictionary<string, int> GetCurrentValidationStatus()
     {
         if (!IsValidationEnabled())
-            return new Dictionary<string, int>();
+            return [];
 
         try
         {
@@ -76,7 +76,7 @@ public class ValidationService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting validation status");
-            return new Dictionary<string, int>();
+            return [];
         }
     }
 
@@ -94,7 +94,7 @@ public class ValidationService
                 var result = new ValidationResult
                 {
                     IsValid = true,
-                    Details = new List<string>()
+                    Details = []
                 };
 
                 if (!expectedItems.Any())
@@ -132,16 +132,16 @@ public class ValidationService
             }
             finally
             {
-                _validationLock.Release();
+                _ = _validationLock.Release();
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error validating expected items");
-            return new ValidationResult 
-            { 
-                IsValid = false, 
-                Details = new List<string> { "Internal validation error" } 
+            return new ValidationResult
+            {
+                IsValid = false,
+                Details = ["Internal validation error"]
             };
         }
     }
@@ -164,5 +164,5 @@ public class ValidationService
 public class ValidationResult
 {
     public bool IsValid { get; set; }
-    public List<string> Details { get; set; } = new List<string>();
+    public List<string> Details { get; set; } = [];
 }

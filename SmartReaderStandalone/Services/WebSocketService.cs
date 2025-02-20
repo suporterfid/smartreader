@@ -1,5 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
-using Newtonsoft.Json.Linq;
+﻿using Newtonsoft.Json.Linq;
 using SmartReader.Infrastructure.ViewModel;
 using System.Collections.Concurrent;
 using System.Net;
@@ -33,7 +32,7 @@ namespace SmartReaderStandalone.Services
         private HttpListener? _httpListener;
         private ConcurrentDictionary<string, WebSocket> _connectedClients;
         private CancellationTokenSource? _serverCancellation;
-        private readonly SemaphoreSlim _socketLock = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim _socketLock = new(1, 1);
         private volatile bool _isSocketProcessing = false;
         private StandaloneConfigDTO _standaloneConfigDTO;
 
@@ -54,19 +53,24 @@ namespace SmartReaderStandalone.Services
         public void InitializeSocketServer()
         {
             if (_standaloneConfigDTO == null ||
-                !string.Equals("1", _standaloneConfigDTO.socketServer, StringComparison.OrdinalIgnoreCase))
+                !string.Equals("1", _standaloneConfigDTO.webSocketServer, StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
 
-            Start(int.Parse(_standaloneConfigDTO.socketPort));
+            Start(int.Parse(_standaloneConfigDTO.webSocketPort));
         }
 
         private const int DEFAULT_PORT = 50080;
 
         public void Start(int port = DEFAULT_PORT)
         {
-            // If port is 0 or negative, use the default port
+            if (_httpListener != null && _httpListener.IsListening)
+            {
+                _logger.LogWarning("WebSocket server is already running.");
+                return;
+            }
+
             if (port <= 0)
             {
                 _logger.LogWarning($"Invalid port {port} specified, using default port {DEFAULT_PORT}");
@@ -81,9 +85,14 @@ namespace SmartReaderStandalone.Services
             {
                 _httpListener.Start();
                 _logger.LogInformation($"WebSocket server started on port {port}");
-
-                // Start accepting connections
                 _ = AcceptWebSocketClientsAsync(_serverCancellation.Token);
+            }
+            catch (HttpListenerException ex) when (ex.ErrorCode == 5)
+            {
+                _logger.LogError(ex, "Access denied when starting the WebSocket server. " +
+                    "Ensure the URL prefix is reserved for your user. " +
+                    "You can reserve it by running (windows example): netsh http add urlacl url=http://*:50080/ws/ user=YourUserName");
+                throw;
             }
             catch (Exception ex)
             {
@@ -91,6 +100,8 @@ namespace SmartReaderStandalone.Services
                 throw;
             }
         }
+
+
 
         private async Task AcceptWebSocketClientsAsync(CancellationToken cancellationToken)
         {
@@ -127,7 +138,7 @@ namespace SmartReaderStandalone.Services
                 webSocket = webSocketContext.WebSocket;
                 clientId = $"{context.Request.RemoteEndPoint}";
 
-                _connectedClients.TryAdd(clientId, webSocket);
+                _ = _connectedClients.TryAdd(clientId, webSocket);
                 _logger.LogInformation($"Client connected from {clientId}");
 
                 // Keep the connection alive and handle incoming messages
@@ -169,24 +180,37 @@ namespace SmartReaderStandalone.Services
             }
             finally
             {
-                _connectedClients.TryRemove(clientId, out _);
+                _ = _connectedClients.TryRemove(clientId, out _);
                 _logger.LogInformation($"Client disconnected: {clientId}");
             }
         }
 
         public void Stop()
         {
+            // Cancel any pending operations
             _serverCancellation?.Cancel();
 
-            // Close all client connections
+            // Disconnect all client connections
             foreach (var client in _connectedClients)
             {
                 _ = HandleClientDisconnectionAsync(client.Key, client.Value);
             }
 
-            _httpListener?.Stop();
+            // Properly stop and dispose the HttpListener
+            if (_httpListener != null)
+            {
+                if (_httpListener.IsListening)
+                {
+                    _httpListener.Stop();
+                }
+                _httpListener.Close(); // Ensures the listener is disposed and the port is freed
+                _httpListener = null;
+            }
+
             _logger.LogInformation("WebSocket server stopped");
         }
+
+
 
         public bool IsHealthy() => _httpListener?.IsListening == true;
 
@@ -234,7 +258,7 @@ namespace SmartReaderStandalone.Services
         public async Task EnsureSocketServerConnectionAsync()
         {
             if (_standaloneConfigDTO != null &&
-                string.Equals("1", _standaloneConfigDTO.socketServer, StringComparison.OrdinalIgnoreCase))
+                string.Equals("1", _standaloneConfigDTO.webSocketServer, StringComparison.OrdinalIgnoreCase))
             {
                 if (!IsSocketServerHealthy())
                 {
@@ -246,12 +270,12 @@ namespace SmartReaderStandalone.Services
                             _logger.LogWarning("Restarting WebSocket Server based on health check");
                             Stop();
                             await Task.Delay(1000); // Cool down
-                            Start(int.Parse(_standaloneConfigDTO.socketPort));
+                            Start(int.Parse(_standaloneConfigDTO.webSocketPort));
                         }
                     }
                     finally
                     {
-                        _socketLock.Release();
+                        _ = _socketLock.Release();
                     }
                 }
 
@@ -288,7 +312,9 @@ namespace SmartReaderStandalone.Services
             {
                 _logger.LogWarning("Trying to restart the WebSocket Server");
                 Stop();
-                Start(int.Parse(_standaloneConfigDTO.socketPort));
+                // Allow time for the port to be released by the OS
+                Thread.Sleep(1000);
+                Start(int.Parse(_standaloneConfigDTO.webSocketPort));
                 return IsSocketServerHealthy();
             }
             catch (Exception ex)
@@ -297,6 +323,7 @@ namespace SmartReaderStandalone.Services
                 return false;
             }
         }
+
 
         public async Task<int> ProcessMessageBatchAsync(
             ConcurrentQueue<JObject> messageQueue,
@@ -390,7 +417,7 @@ namespace SmartReaderStandalone.Services
             }
             finally
             {
-                _socketLock.Release();
+                _ = _socketLock.Release();
             }
         }
     }

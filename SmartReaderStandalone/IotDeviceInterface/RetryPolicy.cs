@@ -8,6 +8,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
 {
     public static class RetryPolicy
     {
+
         private static readonly IAsyncPolicy RetryablePolicy = Policy
             .Handle<DbUpdateException>()
             .Or<SqlException>()

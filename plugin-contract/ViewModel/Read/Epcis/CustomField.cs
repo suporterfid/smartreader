@@ -20,5 +20,5 @@ public class CustomField
     public string? TextValue { get; set; }
     public double? NumericValue { get; set; }
     public DateTime? DateValue { get; set; }
-    public List<CustomField> Children { get; set; } = new();
+    public List<CustomField> Children { get; set; } = [];
 }

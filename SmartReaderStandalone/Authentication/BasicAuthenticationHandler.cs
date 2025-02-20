@@ -20,6 +20,7 @@ public class BasicAuthenticationHandler : AuthenticationHandler<AuthenticationSc
 {
     public string Realm = "R700";
 
+    [Obsolete]
     public BasicAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
@@ -50,7 +51,7 @@ public class BasicAuthenticationHandler : AuthenticationHandler<AuthenticationSc
             Response.StatusCode = 401;
             // Response.Headers["WWW-Authenticate"] = "Basic realm=\"\", charset=\"UTF-8\"";
             //Response.Headers.WWWAuthenticate = "Newauth realm=\"apps\", type=1, title=\"Login to \"apps\", Basic realm=\"simple\"";
-            Response.Headers.Add("WWW-Authenticate", string.Format("Basic realm=\"{0}\"", Realm));
+            Response.Headers.Append("WWW-Authenticate", string.Format("Basic realm=\"{0}\"", Realm));
             //HttpContext.Current.Response.StatusCode = 401;
             return Task.FromResult(AuthenticateResult.Fail("Invalid Authorization Header."));
         }
@@ -59,7 +60,7 @@ public class BasicAuthenticationHandler : AuthenticationHandler<AuthenticationSc
         //Response.Headers.Add("WWW-Authenticate", "Newauth realm=\"apps\", type=1, title=\"Login to \"apps\", Basic realm=\"simple\"");
         //Response.Headers.WWWAuthenticate = "Newauth realm=\"apps\", type=1, title=\"Login to \"apps\", Basic realm=\"simple\"";
 
-        Response.Headers.Add("WWW-Authenticate", string.Format("Basic realm=\"{0}\"", Realm));
+        Response.Headers.Append("WWW-Authenticate", string.Format("Basic realm=\"{0}\"", Realm));
         //Response.Headers["WWW-Authenticate"] = "Basic realm=\"\", charset=\"UTF-8\"";
         //HttpContext.Current.Response.StatusCode = 401;
         return Task.FromResult(AuthenticateResult.Fail("Invalid Authorization Header"));
@@ -67,7 +68,7 @@ public class BasicAuthenticationHandler : AuthenticationHandler<AuthenticationSc
 
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)
     {
-        Response.Headers.Add("WWW-Authenticate", string.Format("Basic realm=\"{0}\"", Realm));
+        Response.Headers.Append("WWW-Authenticate", string.Format("Basic realm=\"{0}\"", Realm));
         //Response.Headers["WWW-Authenticate"] = "Basic realm=\"\", charset=\"UTF-8\"";
         return base.HandleChallengeAsync(properties);
     }

@@ -1,12 +1,7 @@
-﻿using Microsoft.Extensions.Logging;
-using Newtonsoft.Json.Linq;
+﻿using Newtonsoft.Json.Linq;
 using SmartReader.Infrastructure.ViewModel;
-using SmartReaderJobs.ViewModel.Events;
 using SuperSimpleTcp;
 using System.Collections.Concurrent;
-using System.Data;
-using System.Net.Http;
-using System.Reflection.Metadata.Ecma335;
 using System.Text;
 
 namespace SmartReaderStandalone.Services
@@ -39,7 +34,7 @@ namespace SmartReaderStandalone.Services
 
         private StandaloneConfigDTO _standaloneConfigDTO;
 
-        private readonly SemaphoreSlim _socketLock = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim _socketLock = new(1, 1);
 
         private volatile bool _isSocketProcessing = false;
 
@@ -159,9 +154,7 @@ namespace SmartReaderStandalone.Services
             catch (Exception ex)
             {
                 //_logger.LogInformation("Error stoping tcp socket server. " + ex.Message, SeverityType.Error);
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
                 _logger.LogError(ex, "Error stoping tcp socket server. [" + _standaloneConfigDTO.socketPort + "] ");
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
             }
         }
 
@@ -183,7 +176,7 @@ namespace SmartReaderStandalone.Services
                 var clients = _tcpServer.GetClients();
                 if (clients == null || !clients.Any())
                 {
-                    _logger.LogWarning("IsSocketServerHealthy: Socket server has no connected clients.");
+                    _logger.LogDebug("IsSocketServerHealthy: Socket server has no connected clients.");
                 }
                 else
                 {
@@ -209,7 +202,7 @@ namespace SmartReaderStandalone.Services
                     }
                 }
 
-                
+
 
                 // If all checks pass, the server is healthy
                 return true;
@@ -223,7 +216,7 @@ namespace SmartReaderStandalone.Services
 
         public bool IsSocketServerConnectedToClients()
         {
-            bool isConnected = false;
+            bool isConnected;
             // Ensure server exists and is listening
             if (_tcpServer == null || !_tcpServer.IsListening)
             {
@@ -238,15 +231,15 @@ namespace SmartReaderStandalone.Services
                 var clients = _tcpServer.GetClients();
                 if (clients == null || !clients.Any())
                 {
-                    _logger.LogWarning("Check for connections could not detect Socket clients connected.");
+                    _logger.LogDebug("Check for connections could not detect Socket clients connected.");
                     isConnected = false;
                 }
                 else
                 {
                     isConnected = true;
-                                     
+
                 }
-                
+
             }
             catch (Exception ex)
             {
@@ -282,7 +275,7 @@ namespace SmartReaderStandalone.Services
                     }
                     finally
                     {
-                        _socketLock.Release();
+                        _ = _socketLock.Release();
                     }
                 }
                 try
@@ -387,8 +380,6 @@ namespace SmartReaderStandalone.Services
 
         }
 
-        // Add this field to track reconnection attempts
-        private static DateTime? _lastReconnectAttempt;
         public async Task<bool> TrySetSocketProcessingFlagAsync(int timeoutMilliseconds)
         {
             var start = DateTime.UtcNow;
@@ -450,7 +441,7 @@ namespace SmartReaderStandalone.Services
                         if (_tcpServer?.GetClients()?.Any() ?? false)
                         {
                             var clientCount = _tcpServer?.GetClients().Count();
-                            _logger.LogInformation($"Publishing data to {clientCount} clients. Queue size [{messageQueue.Count()}]");
+                            _logger.LogDebug($"Publishing data to {clientCount} clients. Queue size [{messageQueue.Count()}]");
                             string jsonMessage = message.ToString(Newtonsoft.Json.Formatting.None);
                             // Extract data once to avoid repeated processing
                             var line = SmartReaderJobs.Utils.Utils.ExtractLineFromJsonObject(message, _standaloneConfigDTO, _logger);
@@ -507,7 +498,7 @@ namespace SmartReaderStandalone.Services
                         }
                         else
                         {
-                            _logger.LogWarning("No clients connected; discarding message.");                            
+                            _logger.LogWarning("No clients connected; discarding message.");
                             break;
                         }
                     }
@@ -524,14 +515,14 @@ namespace SmartReaderStandalone.Services
                         //}
                     }
                 }
-                if(processedCount > 0)
-                    _logger.LogInformation($"Processed {processedCount} socket message(s).");
+                if (processedCount > 0)
+                    _logger.LogDebug($"Processed {processedCount} socket message(s).");
 
                 return processedCount;
             }
             finally
             {
-                _socketLock.Release();
+                _ = _socketLock.Release();
             }
         }
 

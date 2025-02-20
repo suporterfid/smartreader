@@ -139,7 +139,7 @@ internal class ParseStringConverter : JsonConverter
         return t == typeof(long) || t == typeof(long?);
     }
 
-    public override object ReadJson(JsonReader reader, Type t, object existingValue, JsonSerializer serializer)
+    public override object? ReadJson(JsonReader reader, Type t, object existingValue, JsonSerializer serializer)
     {
         if (reader.TokenType == JsonToken.Null) return null;
         var value = serializer.Deserialize<string>(reader);

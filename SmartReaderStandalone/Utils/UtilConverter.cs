@@ -14,7 +14,7 @@ public static class UtilConverter
 {
     public static string ConvertBoolToNumericString(bool value)
     {
-        var i = 0;
+        int i;
         try
         {
             i = Convert.ToInt32(value);
@@ -34,15 +34,15 @@ public static class UtilConverter
 
     public static int ConvertfromNumericStringToInt(string value)
     {
-        var returnValue = 0;
-        int.TryParse(value, out returnValue);
+        int returnValue;
+        _ = int.TryParse(value, out returnValue);
         return returnValue;
     }
 
     public static long ConvertfromNumericStringToLong(string value)
     {
-        long returnValue = 0;
-        long.TryParse(value, out returnValue);
+        long returnValue;
+        _ = long.TryParse(value, out returnValue);
         return returnValue;
     }
 }

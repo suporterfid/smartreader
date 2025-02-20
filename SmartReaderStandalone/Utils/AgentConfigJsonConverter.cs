@@ -24,8 +24,7 @@ public static class AgentConfigJsonConverter
     public static StandaloneConfigDTO FromEntityToDto(SmartReaderConfig smartReaderConfig,
         List<SmartReaderAntennaConfig> smartReaderAntennaConfigs)
     {
-        StandaloneConfigDTO? dto = null;
-        dto = new StandaloneConfigDTO();
+        StandaloneConfigDTO? dto = new();
 
         var antennaPorts = "";
         var antennaStates = "";
@@ -382,7 +381,7 @@ public static class AgentConfigJsonConverter
     public static SmartReaderConfig FromDtoToEntity(StandaloneConfigDTO dto, SmartReaderConfig smartReaderConfig,
         List<SmartReaderAntennaConfig> smartReaderAntennaConfigs)
     {
-        if (smartReaderAntennaConfigs == null) smartReaderAntennaConfigs = new List<SmartReaderAntennaConfig>();
+        if (smartReaderAntennaConfigs == null) smartReaderAntennaConfigs = [];
 
         try
         {
@@ -430,21 +429,22 @@ public static class AgentConfigJsonConverter
 
                 if (!currentAntennaFound)
                 {
-                    var newAntenna = new SmartReaderAntennaConfig();
+                    var newAntenna = new SmartReaderAntennaConfig
+                    {
+                        AntennaPort = UtilConverter.ConvertfromNumericStringToInt(antennaPorts[i]),
 
-                    newAntenna.AntennaPort = UtilConverter.ConvertfromNumericStringToInt(antennaPorts[i]);
+                        AntennaState = UtilConverter.ConvertfromNumericStringToBool(antennaStates[i]),
 
-                    newAntenna.AntennaState = UtilConverter.ConvertfromNumericStringToBool(antennaStates[i]);
+                        ReaderMode = UtilConverter.ConvertfromNumericStringToInt(readerMode),
 
-                    newAntenna.ReaderMode = UtilConverter.ConvertfromNumericStringToInt(readerMode);
+                        Session = UtilConverter.ConvertfromNumericStringToInt(session),
 
-                    newAntenna.Session = UtilConverter.ConvertfromNumericStringToInt(session);
+                        TagPopulation = UtilConverter.ConvertfromNumericStringToInt(tagPopulation),
 
-                    newAntenna.TagPopulation = UtilConverter.ConvertfromNumericStringToInt(tagPopulation);
+                        TransmitPower = UtilConverter.ConvertfromNumericStringToInt(transmitPower[i]),
 
-                    newAntenna.TransmitPower = UtilConverter.ConvertfromNumericStringToInt(transmitPower[i]);
-
-                    newAntenna.ReceiveSensitivity = UtilConverter.ConvertfromNumericStringToInt(receiveSensitivity[i]);
+                        ReceiveSensitivity = UtilConverter.ConvertfromNumericStringToInt(receiveSensitivity[i])
+                    };
 
                     newAntennasToAdd.Add(newAntenna);
                 }

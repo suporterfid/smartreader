@@ -15,7 +15,7 @@ namespace SmartReaderStandalone.Utils.InputUsb
 
         private readonly byte[] _buffer = new byte[BufferLength];
 
-        private FileStream _stream;
+        private FileStream? _stream;
         private bool _disposing;
 
         private StringBuilder _bufferStringBuilder;
@@ -25,7 +25,7 @@ namespace SmartReaderStandalone.Utils.InputUsb
             _bufferStringBuilder = new StringBuilder();
             _stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
 
-            Task.Run(Run);
+            _ = Task.Run(Run);
         }
 
         private void Run()
@@ -35,7 +35,7 @@ namespace SmartReaderStandalone.Utils.InputUsb
                 if (_disposing)
                     break;
 
-                _stream.Read(_buffer, 0, BufferLength);
+                _ = _stream.Read(_buffer, 0, BufferLength);
 
                 try
                 {
@@ -124,74 +124,74 @@ namespace SmartReaderStandalone.Utils.InputUsb
                     case EventCode.Esc:
                         break;
                     case EventCode.Num1:
-                        _bufferStringBuilder.Append("1");
+                        _ = _bufferStringBuilder.Append("1");
                         break;
                     case EventCode.Num2:
-                        _bufferStringBuilder.Append("2");
+                        _ = _bufferStringBuilder.Append("2");
                         break;
                     case EventCode.Num3:
-                        _bufferStringBuilder.Append("3");
+                        _ = _bufferStringBuilder.Append("3");
                         break;
                     case EventCode.Num4:
-                        _bufferStringBuilder.Append("4");
+                        _ = _bufferStringBuilder.Append("4");
                         break;
                     case EventCode.Num5:
-                        _bufferStringBuilder.Append("5");
+                        _ = _bufferStringBuilder.Append("5");
                         break;
                     case EventCode.Num6:
-                        _bufferStringBuilder.Append("6");
+                        _ = _bufferStringBuilder.Append("6");
                         break;
                     case EventCode.Num7:
-                        _bufferStringBuilder.Append("7");
+                        _ = _bufferStringBuilder.Append("7");
                         break;
                     case EventCode.Num8:
-                        _bufferStringBuilder.Append("8");
+                        _ = _bufferStringBuilder.Append("8");
                         break;
                     case EventCode.Num9:
-                        _bufferStringBuilder.Append("9");
+                        _ = _bufferStringBuilder.Append("9");
                         break;
                     case EventCode.Num0:
-                        _bufferStringBuilder.Append("0");
+                        _ = _bufferStringBuilder.Append("0");
                         break;
                     case EventCode.Minus:
-                        _bufferStringBuilder.Append("-");
+                        _ = _bufferStringBuilder.Append("-");
                         break;
                     case EventCode.Equal:
-                        _bufferStringBuilder.Append("=");
+                        _ = _bufferStringBuilder.Append("=");
                         break;
                     case EventCode.Backspace:
                         break;
                     case EventCode.Tab:
                         break;
                     case EventCode.Q:
-                        _bufferStringBuilder.Append("Q");
+                        _ = _bufferStringBuilder.Append("Q");
                         break;
                     case EventCode.W:
-                        _bufferStringBuilder.Append("W");
+                        _ = _bufferStringBuilder.Append("W");
                         break;
                     case EventCode.E:
-                        _bufferStringBuilder.Append("E");
+                        _ = _bufferStringBuilder.Append("E");
                         break;
                     case EventCode.R:
-                        _bufferStringBuilder.Append("R");
+                        _ = _bufferStringBuilder.Append("R");
                         break;
                     case EventCode.T:
-                        _bufferStringBuilder.Append("T");
+                        _ = _bufferStringBuilder.Append("T");
                         break;
                     case EventCode.Y:
-                        _bufferStringBuilder.Append("Y");
+                        _ = _bufferStringBuilder.Append("Y");
                         break;
                     case EventCode.U:
-                        _bufferStringBuilder.Append("U");
+                        _ = _bufferStringBuilder.Append("U");
                         break;
                     case EventCode.I:
-                        _bufferStringBuilder.Append("I");
+                        _ = _bufferStringBuilder.Append("I");
                         break;
                     case EventCode.O:
-                        _bufferStringBuilder.Append("O");
+                        _ = _bufferStringBuilder.Append("O");
                         break;
                     case EventCode.P:
-                        _bufferStringBuilder.Append("P");
+                        _ = _bufferStringBuilder.Append("P");
                         break;
                     case EventCode.LeftBrace:
                         break;
@@ -202,75 +202,75 @@ namespace SmartReaderStandalone.Utils.InputUsb
                     case EventCode.LeftCtrl:
                         break;
                     case EventCode.A:
-                        _bufferStringBuilder.Append("A");
+                        _ = _bufferStringBuilder.Append("A");
                         break;
                     case EventCode.S:
-                        _bufferStringBuilder.Append("S");
+                        _ = _bufferStringBuilder.Append("S");
                         break;
                     case EventCode.D:
-                        _bufferStringBuilder.Append("D");
+                        _ = _bufferStringBuilder.Append("D");
                         break;
                     case EventCode.F:
-                        _bufferStringBuilder.Append("F");
+                        _ = _bufferStringBuilder.Append("F");
                         break;
                     case EventCode.G:
-                        _bufferStringBuilder.Append("G");
+                        _ = _bufferStringBuilder.Append("G");
                         break;
                     case EventCode.H:
-                        _bufferStringBuilder.Append("H");
+                        _ = _bufferStringBuilder.Append("H");
                         break;
                     case EventCode.J:
-                        _bufferStringBuilder.Append("J");
+                        _ = _bufferStringBuilder.Append("J");
                         break;
                     case EventCode.K:
-                        _bufferStringBuilder.Append("K");
+                        _ = _bufferStringBuilder.Append("K");
                         break;
                     case EventCode.L:
-                        _bufferStringBuilder.Append("L");
+                        _ = _bufferStringBuilder.Append("L");
                         break;
                     case EventCode.Semicolon:
-                        _bufferStringBuilder.Append(";");
+                        _ = _bufferStringBuilder.Append(";");
                         break;
                     case EventCode.Apostrophe:
-                        _bufferStringBuilder.Append("¨");
+                        _ = _bufferStringBuilder.Append("¨");
                         break;
                     case EventCode.Grave:
-                        _bufferStringBuilder.Append("'");
+                        _ = _bufferStringBuilder.Append("'");
                         break;
                     case EventCode.LeftShift:
                         break;
                     case EventCode.Backslash:
-                        _bufferStringBuilder.Append("\\");
+                        _ = _bufferStringBuilder.Append("\\");
                         break;
                     case EventCode.Z:
-                        _bufferStringBuilder.Append("Z");
+                        _ = _bufferStringBuilder.Append("Z");
                         break;
                     case EventCode.X:
-                        _bufferStringBuilder.Append("Z");
+                        _ = _bufferStringBuilder.Append("Z");
                         break;
                     case EventCode.C:
-                        _bufferStringBuilder.Append("C");
+                        _ = _bufferStringBuilder.Append("C");
                         break;
                     case EventCode.V:
-                        _bufferStringBuilder.Append("V");
+                        _ = _bufferStringBuilder.Append("V");
                         break;
                     case EventCode.B:
-                        _bufferStringBuilder.Append("B");
+                        _ = _bufferStringBuilder.Append("B");
                         break;
                     case EventCode.N:
-                        _bufferStringBuilder.Append("N");
+                        _ = _bufferStringBuilder.Append("N");
                         break;
                     case EventCode.M:
-                        _bufferStringBuilder.Append("M");
+                        _ = _bufferStringBuilder.Append("M");
                         break;
                     case EventCode.Comma:
-                        _bufferStringBuilder.Append(",");
+                        _ = _bufferStringBuilder.Append(",");
                         break;
                     case EventCode.Dot:
-                        _bufferStringBuilder.Append(".");
+                        _ = _bufferStringBuilder.Append(".");
                         break;
                     case EventCode.Slash:
-                        _bufferStringBuilder.Append("/");
+                        _ = _bufferStringBuilder.Append("/");
                         break;
                     case EventCode.RightShift:
                         break;
@@ -678,7 +678,7 @@ namespace SmartReaderStandalone.Utils.InputUsb
                 if (c == EventCode.Enter)
                 {
                     var currentData = _bufferStringBuilder.ToString();
-                    _bufferStringBuilder.Clear();
+                    _ = _bufferStringBuilder.Clear();
                     var e = new KeyPressEvent(c, s, currentData);
                     OnKeyPress?.Invoke(e);
                 }

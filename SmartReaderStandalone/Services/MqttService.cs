@@ -1,15 +1,14 @@
-﻿using MQTTnet.Client;
-using MQTTnet.Extensions.ManagedClient;
-using MQTTnet.Protocol;
+﻿using Impinj.Utils.DebugLogger;
 using MQTTnet;
-using Impinj.Utils.DebugLogger;
+using MQTTnet.Client;
+using MQTTnet.Extensions.ManagedClient;
+using MQTTnet.Packets;
+using MQTTnet.Protocol;
 using Newtonsoft.Json;
 using SmartReader.Infrastructure.ViewModel;
+using System.Globalization;
 using System.Security.Authentication;
 using System.Text;
-using System.Globalization;
-using SmartReaderJobs.ViewModel.Mqtt.Endpoint;
-using MQTTnet.Packets;
 
 namespace SmartReaderStandalone.Services
 {
@@ -59,7 +58,6 @@ namespace SmartReaderStandalone.Services
         private string? DeviceIdMqtt = null;
         private static IManagedMqttClient? _mqttClient = null;
         private static ManagedMqttClientOptions? _mqttClientOptions = null;
-        private static ManagedMqttClientOptions? _mqttCommandClientOptions = null;
 
 
         // Event to notify subscribers when a message is received with standardized parameters
@@ -75,8 +73,8 @@ namespace SmartReaderStandalone.Services
 
             // Subscribe to client events.
             _mqttClient.ConnectedAsync += OnConnectedAsync;
-            _mqttClient.DisconnectedAsync += OnDisconnectedAsync;
-            _standaloneConfigDTO = standaloneConfigDTO;            
+            _mqttClient.DisconnectedAsync += OnDisconnected;
+            _standaloneConfigDTO = standaloneConfigDTO;
         }
 
         public List<MqttTopicFilter> BuildMqttTopicList(StandaloneConfigDTO smartReaderSetupData)
@@ -88,8 +86,8 @@ namespace SmartReaderStandalone.Services
                 var managementCommandQoslevel = 0;
                 var controlCommandQoslevel = 0;
 
-                int.TryParse(smartReaderSetupData.mqttManagementCommandQoS, out managementCommandQoslevel);
-                int.TryParse(smartReaderSetupData.mqttControlCommandQoS, out controlCommandQoslevel);
+                _ = int.TryParse(smartReaderSetupData.mqttManagementCommandQoS, out managementCommandQoslevel);
+                _ = int.TryParse(smartReaderSetupData.mqttControlCommandQoS, out controlCommandQoslevel);
 
                 if (smartReaderSetupData != null)
                 {
@@ -215,7 +213,7 @@ namespace SmartReaderStandalone.Services
                 }
 
                 _logger.LogDebug($"prepared {mqttTopicFilters.Count} topic to subscribe.");
-                
+
                 return mqttTopicFilters;
             }
             catch (Exception ex)
@@ -258,9 +256,7 @@ namespace SmartReaderStandalone.Services
                 var mqttTagEventsQoS = int.Parse(_standaloneConfigDTO.mqttTagEventsQoS);
                 var lastWillMessage = BuildMqttLastWillMessage();
                 int mqttKeepAlivePeriod = 30;
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                int.TryParse(_standaloneConfigDTO.mqttBrokerKeepAlive, out mqttKeepAlivePeriod);
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
+                _ = int.TryParse(_standaloneConfigDTO.mqttBrokerKeepAlive, out mqttKeepAlivePeriod);
 
                 //var mqttBrokerAddress = _configuration.GetValue<string>("MQTTInfo:Address");
                 //var mqttBrokerPort = _configuration.GetValue<int>("MQTTInfo:Port");
@@ -363,10 +359,10 @@ namespace SmartReaderStandalone.Services
                             {
                                 // The used public broker sometimes has invalid certificates. This sample accepts all
                                 // certificates. This should not be used in live environments.
-                                o.WithCertificateValidationHandler(_ => true);
+                                _ = o.WithCertificateValidationHandler(_ => true);
 
                                 // The default value is determined by the OS. Set manually to force version.
-                                o.WithSslProtocols(SslProtocols.Tls12);
+                                _ = o.WithSslProtocols(SslProtocols.Tls12);
                             })
                             //.WithWillMessage(lastWillMessage)
                             .Build())
@@ -429,10 +425,10 @@ namespace SmartReaderStandalone.Services
                                     {
                                         // The used public broker sometimes has invalid certificates. This sample accepts all
                                         // certificates. This should not be used in live environments.
-                                        o.WithCertificateValidationHandler(_ => true);
+                                        _ = o.WithCertificateValidationHandler(_ => true);
 
                                         // The default value is determined by the OS. Set manually to force version.
-                                        o.WithSslProtocols(SslProtocols.Tls12);
+                                        _ = o.WithSslProtocols(SslProtocols.Tls12);
                                     })
                                     //.WithWillMessage(lastWillMessage)
                                     .Build())
@@ -503,6 +499,8 @@ namespace SmartReaderStandalone.Services
                     }
 
                     _logger.LogInformation(" ");
+                    // Ensure the lambda returns a Task
+                    await Task.CompletedTask;
                 };
 
 
@@ -514,13 +512,13 @@ namespace SmartReaderStandalone.Services
                     if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
                         _logger.LogInformation("### CONNECTED WITH SERVER ### " + _standaloneConfigDTO.mqttBrokerAddress,
                             SeverityType.Debug);
-                    var mqttManagementEvents = new Dictionary<string, object>();
-                    mqttManagementEvents.Add("smartreader-mqtt-status", "connected");
-                    mqttManagementEvents.Add("readerName", _standaloneConfigDTO.readerName);
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                    mqttManagementEvents.Add("mac", _deviceMacAddress);
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-                    mqttManagementEvents.Add("timestamp", SmartReaderJobs.Utils.Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now));
+                    var mqttManagementEvents = new Dictionary<string, object>
+                    {
+                        { "smartreader-mqtt-status", "connected" },
+                        { "readerName", _standaloneConfigDTO.readerName },
+                        { "mac", _deviceMacAddress },
+                        { "timestamp", SmartReaderJobs.Utils.Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now) }
+                    };
                     await PublishMqttManagementEventAsync(mqttManagementEvents);
 
                     try
@@ -572,6 +570,8 @@ namespace SmartReaderStandalone.Services
                         _logger.LogError(ex, "MQTT Disconnected.");
                     }
 
+                    // Ensure the lambda returns a Task
+                    await Task.CompletedTask;
                 };
 
                 _mqttClient.ConnectingFailedAsync += async e =>
@@ -596,7 +596,8 @@ namespace SmartReaderStandalone.Services
                     {
 
                     }
-
+                    // Ensure the lambda returns a Task
+                    await Task.CompletedTask;
                 };
 
                 _mqttClient.ConnectionStateChangedAsync += async e =>
@@ -607,9 +608,9 @@ namespace SmartReaderStandalone.Services
 
                     if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
                         _logger.LogInformation($"### CONNECTION STATE CHANGED ### {_standaloneConfigDTO.mqttBrokerAddress}");
-                    
+
                     var disconnectDetails = "";
-                    
+
                     try
                     {
                         if (_mqttClient.InternalClient.IsConnected)
@@ -624,7 +625,7 @@ namespace SmartReaderStandalone.Services
                         //disconnectDetails = $"CONNECTION STATE CHANGED: ConnectResult {e.ToString()} \n";
 
                         //_logger.LogInformation($"### Details {disconnectDetails}");
-   
+
                     }
                     catch (Exception)
                     {
@@ -638,6 +639,9 @@ namespace SmartReaderStandalone.Services
             {
                 _logger.LogError(ex, "Unexpected error" + ex.Message);
             }
+
+            // Ensure the lambda returns a Task
+            await Task.CompletedTask;
         }
 
         private MqttApplicationMessage BuildMqttLastWillMessage()
@@ -653,12 +657,14 @@ namespace SmartReaderStandalone.Services
                 }
                 if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttLwtQoS))
                 {
-                    bool.TryParse(_standaloneConfigDTO.mqttLwtQoS, out lwtRetainMessage);
+                    _ = bool.TryParse(_standaloneConfigDTO.mqttLwtQoS, out lwtRetainMessage);
                 }
 
             }
-            var mqttManagementEvents = new Dictionary<string, string>();
-            mqttManagementEvents.Add("smartreader-mqtt-status", "disconnected");
+            var mqttManagementEvents = new Dictionary<string, string>
+            {
+                { "smartreader-mqtt-status", "disconnected" }
+            };
             var jsonParam = JsonConvert.SerializeObject(mqttManagementEvents);
 
             var lastWillMessage = new MqttApplicationMessageBuilder()
@@ -699,8 +705,8 @@ namespace SmartReaderStandalone.Services
                             var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                             try
                             {
-                                int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
-                                bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
+                                _ = int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
+                                _ = bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
 
                                 mqttQualityOfServiceLevel = qos switch
                                 {
@@ -719,7 +725,7 @@ namespace SmartReaderStandalone.Services
                                 await _mqttClient.EnqueueAsync(mqttManagementEventsTopic, jsonParam,
                                     mqttQualityOfServiceLevel, retain);
                                 // Wait until the queue is fully processed.
-                                SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 1000);
+                                _ = SpinWait.SpinUntil(() => _mqttClient.PendingApplicationMessagesCount == 0, 1000);
                                 //_ = ProcessGpoErrorPortRecoveryAsync();
                             }
 
@@ -733,10 +739,10 @@ namespace SmartReaderStandalone.Services
             }
         }
 
-        public async Task PublishAsync(string topic, 
+        public async Task PublishAsync(string topic,
             string payload,
             string deviceMacAddress = "",
-            MqttQualityOfServiceLevel qos = MqttQualityOfServiceLevel.AtMostOnce, 
+            MqttQualityOfServiceLevel qos = MqttQualityOfServiceLevel.AtMostOnce,
             bool retain = false)
         {
             _deviceMacAddress = deviceMacAddress;
@@ -773,7 +779,7 @@ namespace SmartReaderStandalone.Services
                                   threshold +
                                   "|" + message;
                     //
-                    Task.Run(() =>
+                    _ = Task.Run(() =>
                         _mqttClient.EnqueueAsync("smartreader/log/" + DeviceIdMqtt, payload,
                             MqttQualityOfServiceLevel.AtLeastOnce));
                 }
@@ -807,7 +813,7 @@ namespace SmartReaderStandalone.Services
         }
 
         // Event handler: Called when the client disconnects.
-        private async Task OnDisconnectedAsync(MqttClientDisconnectedEventArgs args)
+        private Task OnDisconnected(MqttClientDisconnectedEventArgs args)
         {
             _logger.LogWarning($"MQTT client disconnected: {args.Reason}");
 
@@ -836,7 +842,10 @@ namespace SmartReaderStandalone.Services
                 //        await Task.Delay(delay);
                 //    }
                 //}
+
             }
+
+            return Task.CompletedTask;
         }
 
     }

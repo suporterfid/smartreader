@@ -10,8 +10,6 @@
 #endregion
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using RestSharp;
-using RestSharp.Authenticators;
 using Serilog;
 using SmartReaderJobs.ViewModel.Antenna;
 using SmartReaderJobs.ViewModel.Events;
@@ -20,8 +18,6 @@ using SmartReaderJobs.ViewModel.Reader;
 using SmartReaderJobs.ViewModel.ReaderCommand;
 using System.Net.Http.Headers;
 using System.Net.Mime;
-using System.Net.Security;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
 namespace SmartReaderJobs.Utils;
@@ -54,13 +50,12 @@ public class HttpUtil
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
         HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        _ = response.EnsureSuccessStatusCode();
         string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         //.AddParameter("foo", "bar");
         SmartReaderCommand? deserializedData = JsonConvert.DeserializeObject<SmartReaderCommand>(content);
-        List<SmartReaderCommandData> responseData = new();
-        responseData = deserializedData.Data;
+        List<SmartReaderCommandData> responseData = deserializedData.Data;
 
 
         return responseData;
@@ -70,7 +65,6 @@ public class HttpUtil
     {
         string filter = "{ \"filters\": [ [\"id_leitor\",\"=\"," + readerId +
                      "], [\"status\",\"=\",\"EXECUTANDO\"], [\"tipo_comando\",\"=\",\"" + cmdType + "\"] ]}";
-        List<SmartReaderCommandData> responseData = new();
 
         HttpClient httpClient = _httpClientFactory.CreateClient();
         HttpRequestMessage request = new()
@@ -84,11 +78,11 @@ public class HttpUtil
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
         HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        _ = response.EnsureSuccessStatusCode();
         string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         SmartReaderCommand? deserializedData = JsonConvert.DeserializeObject<SmartReaderCommand>(content);
-        responseData = deserializedData.Data;
+        List<SmartReaderCommandData> responseData = deserializedData.Data;
 
         return responseData;
     }
@@ -96,7 +90,6 @@ public class HttpUtil
     public async Task<List<SmartReaderCommandData>> GetCommandsRunningByReaderAsync(int readerId)
     {
         string filter = "{ \"filters\": [ [\"id_leitor\",\"=\"," + readerId + "], [\"status\",\"=\",\"EXECUTANDO\"] ]}";
-        List<SmartReaderCommandData> responseData = new();
 
         HttpClient httpClient = _httpClientFactory.CreateClient();
         HttpRequestMessage request = new()
@@ -110,11 +103,11 @@ public class HttpUtil
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
         HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        _ = response.EnsureSuccessStatusCode();
         string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         SmartReaderCommand? deserializedData = JsonConvert.DeserializeObject<SmartReaderCommand>(content);
-        responseData = deserializedData.Data;
+        List<SmartReaderCommandData> responseData = deserializedData.Data;
 
         return responseData;
     }
@@ -122,8 +115,7 @@ public class HttpUtil
     public async Task<List<SmartReaderCommandData>> GetCommandsByReaderAsync(int readerId)
     {
         string filter = "{ \"filters\": [ [\"id_leitor\",\"=\"," + readerId + "] ]}";
-        List<SmartReaderCommandData> responseData = new();
-
+        
         HttpClient httpClient = _httpClientFactory.CreateClient();
         HttpRequestMessage request = new()
         {
@@ -136,11 +128,11 @@ public class HttpUtil
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
         HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        _ = response.EnsureSuccessStatusCode();
         string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         SmartReaderCommand? deserializedData = JsonConvert.DeserializeObject<SmartReaderCommand>(content);
-        responseData = deserializedData.Data;
+        List<SmartReaderCommandData> responseData = deserializedData.Data;
 
         return responseData;
     }
@@ -160,8 +152,8 @@ public class HttpUtil
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
         HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        _ = response.EnsureSuccessStatusCode();
+        _ = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         return response.IsSuccessStatusCode;
     }
@@ -183,8 +175,8 @@ public class HttpUtil
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
         HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        _ = response.EnsureSuccessStatusCode();
+        _ = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         return response.IsSuccessStatusCode;
     }
@@ -206,8 +198,8 @@ public class HttpUtil
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
         HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        _ = response.EnsureSuccessStatusCode();
+        _ = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         return response.IsSuccessStatusCode;
     }
@@ -228,7 +220,7 @@ public class HttpUtil
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
         HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        _ = response.EnsureSuccessStatusCode();
         string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
         SmartReaderSetup? deserializedData = JsonConvert.DeserializeObject<SmartReaderSetup>(content);
         List<SmartReaderSetupData> responseData = deserializedData.Data;
@@ -253,7 +245,7 @@ public class HttpUtil
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
         HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        _ = response.EnsureSuccessStatusCode();
         string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
         SmartReaderSetup? deserializedData = JsonConvert.DeserializeObject<SmartReaderSetup>(content);
         List<SmartReaderSetupData> responseData = deserializedData.Data;
@@ -278,7 +270,7 @@ public class HttpUtil
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
         HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        _ = response.EnsureSuccessStatusCode();
         string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         SmartReaderAntennaSetup? deserializedData = JsonConvert.DeserializeObject<SmartReaderAntennaSetup>(content);
@@ -303,7 +295,7 @@ public class HttpUtil
         //request.Headers.Add("Content-Type", "application/json");
         request.Headers.Add("Authorization", _token);
         HttpResponseMessage response = await httpClient.SendAsync(request).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        _ = response.EnsureSuccessStatusCode();
         string content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         SmartReaderMqtt? deserializedData = JsonConvert.DeserializeObject<SmartReaderMqtt>(content);
@@ -660,8 +652,8 @@ public class HttpUtil
 
 
             ServerCertificateCustomValidationCallback =
-                   (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
-                       chain, errors) => true)
+                   (message, cert,
+                       chain, errors) => true
         };
 
         //var httpClient = new HttpClient(httpClientHandler);
@@ -678,7 +670,7 @@ public class HttpUtil
                     //request.Headers.Add("Authorization", _token);
                 }
 
-                using (MultipartFormDataContent formData = new())
+                using (MultipartFormDataContent formData = [])
                 {
                     // Create the file stream content
                     //FileStreamContent fileContent = new FileStreamContent(File.OpenRead(localFile));
@@ -747,7 +739,7 @@ public class HttpUtil
             StringContent content = new(data, null, "application/json");
             request.Content = content;
             HttpResponseMessage response = client.SendAsync(request).Result;
-            response.EnsureSuccessStatusCode();
+            _ = response.EnsureSuccessStatusCode();
             returnedData = response.Content.ReadAsStringAsync().Result;
         }
         catch (Exception)
@@ -770,7 +762,7 @@ public class HttpUtil
             StringContent content = new(data, null, "application/json");
             request.Content = content;
             HttpResponseMessage response = client.SendAsync(request).Result;
-            response.EnsureSuccessStatusCode();
+            _ = response.EnsureSuccessStatusCode();
             returnedData = response.Content.ReadAsStringAsync().Result;
         }
         catch (Exception)
@@ -793,7 +785,7 @@ public class HttpUtil
             StringContent content = new(data, null, "application/json");
             request.Content = content;
             HttpResponseMessage response = client.SendAsync(request).Result;
-            response.EnsureSuccessStatusCode();
+            _ = response.EnsureSuccessStatusCode();
             returnedData = response.Content.ReadAsStringAsync().Result;
         }
         catch (Exception)

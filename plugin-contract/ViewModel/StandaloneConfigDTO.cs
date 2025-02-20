@@ -73,6 +73,10 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
     public string socketPort { get; set; } = "14150";
 
+    public string webSocketServer { get; set; } = "0";
+
+    public string webSocketPort { get; set; } = "50080";
+
     public string socketCommandServer { get; set; } = "0";
 
     public string socketCommandServerPort { get; set; } = "14151";

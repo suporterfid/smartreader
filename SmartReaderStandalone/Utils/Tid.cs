@@ -18,13 +18,13 @@ public class Tid : IEquatable<Tid>, IComparable<Tid>, IComparable, IEnumerable<u
 
     public Tid(IEnumerable<ushort> tidEnumerable)
     {
-        _tidArray = (tidEnumerable != null ? tidEnumerable.ToArray() : null) ??
+        _tidArray = (tidEnumerable?.ToArray()) ??
                     throw new ArgumentNullException(nameof(tidEnumerable));
     }
 
     public Tid(IEnumerable<byte> tidEnumerable)
     {
-        var numArray = (tidEnumerable != null ? tidEnumerable.ToArray() : null) ??
+        var numArray = (tidEnumerable?.ToArray()) ??
                        throw new ArgumentNullException(nameof(tidEnumerable));
         _tidArray = new ushort[numArray.Length / 2];
         for (var index = 0; index < numArray.Length; index += 2)
@@ -97,7 +97,7 @@ public class Tid : IEquatable<Tid>, IComparable<Tid>, IComparable, IEnumerable<u
     {
         var num = _tidArray.Length;
         foreach (var tid in _tidArray)
-            num = num * 397 + tid.GetHashCode();
+            num = (num * 397) + tid.GetHashCode();
         return num;
     }
 
@@ -139,11 +139,11 @@ public class Tid : IEquatable<Tid>, IComparable<Tid>, IComparable, IEnumerable<u
             var num1 = _tidArray[index] >> 12;
             chArray[index * 4] = (char)(55 + num1 + (((num1 - 10) >> 31) & -7));
             var num2 = (_tidArray[index] >> 8) & 15;
-            chArray[index * 4 + 1] = (char)(55 + num2 + (((num2 - 10) >> 31) & -7));
+            chArray[(index * 4) + 1] = (char)(55 + num2 + (((num2 - 10) >> 31) & -7));
             var num3 = (_tidArray[index] >> 4) & 15;
-            chArray[index * 4 + 2] = (char)(55 + num3 + (((num3 - 10) >> 31) & -7));
+            chArray[(index * 4) + 2] = (char)(55 + num3 + (((num3 - 10) >> 31) & -7));
             var num4 = _tidArray[index] & 15;
-            chArray[index * 4 + 3] = (char)(55 + num4 + (((num4 - 10) >> 31) & -7));
+            chArray[(index * 4) + 3] = (char)(55 + num4 + (((num4 - 10) >> 31) & -7));
         }
 
         return new string(chArray);

@@ -69,12 +69,12 @@
 
         public string GetData()
         {
-            string jsonData = null;
+            string? jsonData = null;
 
             if (SharedSummaryQueue.Queue.Count > 0)
             {
                 // Enqueue the JSON data item
-                SharedSummaryQueue.Queue.TryDequeue(out jsonData);
+                _ = SharedSummaryQueue.Queue.TryDequeue(out jsonData);
             }
             return jsonData;
         }

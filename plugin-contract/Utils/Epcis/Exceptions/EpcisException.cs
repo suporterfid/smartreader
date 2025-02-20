@@ -15,7 +15,7 @@ public class EpcisException : Exception
     public static readonly EpcisException Default = new(ExceptionType.ImplementationException, string.Empty,
         ExceptionSeverity.Error);
 
-    public EpcisException(ExceptionType exceptionType, string message, ExceptionSeverity severity = null) :
+    public EpcisException(ExceptionType exceptionType, string message, ExceptionSeverity? severity = null) :
         base(message)
     {
         ExceptionType = exceptionType;

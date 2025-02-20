@@ -1,14 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Globalization;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using System.Globalization;
 
 namespace SmartReader.ViewModel.Auth
 {
     public partial class CustomAuth
     {
-        public CustomAuth() 
+        public CustomAuth()
         {
             BasicAuth = new Auth();
 
@@ -42,7 +40,7 @@ namespace SmartReader.ViewModel.Auth
 
     internal static class Converter
     {
-        public static readonly JsonSerializerSettings Settings = new JsonSerializerSettings
+        public static readonly JsonSerializerSettings Settings = new()
         {
             MetadataPropertyHandling = MetadataPropertyHandling.Ignore,
             DateParseHandling = DateParseHandling.None,

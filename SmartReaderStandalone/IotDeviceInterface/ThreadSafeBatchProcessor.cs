@@ -1,17 +1,8 @@
-using System.Collections.Concurrent;
-using System.Globalization;
 using Newtonsoft.Json.Linq;
 using SmartReader.Infrastructure.ViewModel;
-using SmartReaderJobs.Utils;
 using SmartReaderStandalone.ViewModel.Read;
-
-
 using System.Collections.Concurrent;
 using System.Globalization;
-using Newtonsoft.Json.Linq;
-using SmartReader.Infrastructure.ViewModel;
-using SmartReaderJobs.Utils;
-using SmartReaderStandalone.ViewModel.Read;
 
 public class ThreadSafeBatchProcessor : IDisposable
 {
@@ -21,7 +12,7 @@ public class ThreadSafeBatchProcessor : IDisposable
     private readonly ConcurrentDictionary<string, JObject> _eventsListBatchOnUpdate;
     private readonly ConcurrentDictionary<string, JObject> _eventsListAbsent;
     private readonly StandaloneConfigDTO _config;
-    private readonly SemaphoreSlim _batchLock = new SemaphoreSlim(1, 1);
+    private readonly SemaphoreSlim _batchLock = new(1, 1);
     private readonly Timer _expirationTimer;
     private readonly int _expirationCheckIntervalMs = 100; // Check every second
 
@@ -54,7 +45,7 @@ public class ThreadSafeBatchProcessor : IDisposable
         {
             await _batchLock.WaitAsync();
             var timeoutSeconds = double.Parse(_config.tagPresenceTimeoutInSec, CultureInfo.InvariantCulture);
-            ProcessExpiredTags(timeoutSeconds);
+            _ = ProcessExpiredTags(timeoutSeconds);
         }
         catch (Exception ex)
         {
@@ -62,7 +53,7 @@ public class ThreadSafeBatchProcessor : IDisposable
         }
         finally
         {
-            _batchLock.Release();
+            _ = _batchLock.Release();
         }
     }
 
@@ -79,13 +70,13 @@ public class ThreadSafeBatchProcessor : IDisposable
             {
                 if (_eventsListBatch.TryRemove(expiredEpc, out var expiredEvent))
                 {
-                    _eventsListAbsent.TryAdd(expiredEpc, expiredEvent);
+                    _ = _eventsListAbsent.TryAdd(expiredEpc, expiredEvent);
                     _logger.LogInformation($"Moved expired EPC: {expiredEpc} to eventsListAbsent.");
 
                     // Trigger update with current state when a tag expires
                     foreach (var remainingTag in _eventsListBatch)
                     {
-                        _eventsListBatchOnUpdate.AddOrUpdate(
+                        _ = _eventsListBatchOnUpdate.AddOrUpdate(
                             remainingTag.Key,
                             remainingTag.Value,
                             (_, __) => remainingTag.Value);
@@ -93,7 +84,7 @@ public class ThreadSafeBatchProcessor : IDisposable
 
                     tagsExpired = true;
                 }
-                _tagEventDataDictionary.TryRemove(expiredEpc, out _);
+                _ = _tagEventDataDictionary.TryRemove(expiredEpc, out _);
             }
         }
 
@@ -119,7 +110,7 @@ public class ThreadSafeBatchProcessor : IDisposable
         }
         finally
         {
-            _batchLock.Release();
+            _ = _batchLock.Release();
         }
     }
 
@@ -135,8 +126,8 @@ public class ThreadSafeBatchProcessor : IDisposable
         if (shouldPublish)
         {
             _logger.LogInformation($"Publishing updated tag data for EPC: {tagRead.Epc}");
-            _eventsListBatchOnUpdate.AddOrUpdate(tagRead.Epc, tagDataJObject, (_, __) => tagDataJObject);
-            _eventsListBatch.AddOrUpdate(tagRead.Epc, tagDataJObject, (_, __) => tagDataJObject);
+            _ = _eventsListBatchOnUpdate.AddOrUpdate(tagRead.Epc, tagDataJObject, (_, __) => tagDataJObject);
+            _ = _eventsListBatch.AddOrUpdate(tagRead.Epc, tagDataJObject, (_, __) => tagDataJObject);
         }
     }
 
@@ -150,13 +141,13 @@ public class ThreadSafeBatchProcessor : IDisposable
             AntennaZone = tagRead.AntennaZone
         };
 
-        _tagEventDataDictionary.TryAdd(tagRead.Epc, newTagEventData);
-        _eventsListBatch.TryAdd(tagRead.Epc, tagDataJObject);
+        _ = _tagEventDataDictionary.TryAdd(tagRead.Epc, newTagEventData);
+        _ = _eventsListBatch.TryAdd(tagRead.Epc, tagDataJObject);
 
         // Trigger update with all current tags when a new tag enters
         foreach (var tag in _eventsListBatch)
         {
-            _eventsListBatchOnUpdate.AddOrUpdate(
+            _ = _eventsListBatchOnUpdate.AddOrUpdate(
                 tag.Key,
                 tag.Value,
                 (_, __) => tag.Value);
@@ -205,10 +196,10 @@ public class ThreadSafeBatchProcessor : IDisposable
 
 public class TagEventData
 {
-    public string Epc { get; set; }
+    public required string Epc { get; set; }
     public long FirstSeenTimestamp { get; set; }
     public long? AntennaPort { get; set; }
-    public string AntennaZone { get; set; }
+    public required string AntennaZone { get; set; }
 }
 
 

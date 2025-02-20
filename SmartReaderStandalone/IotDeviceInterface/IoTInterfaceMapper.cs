@@ -13,7 +13,6 @@ using SmartReader.Infrastructure.ViewModel;
 using SmartReaderJobs.ViewModel.Antenna;
 using SmartReaderJobs.ViewModel.Mqtt;
 using SmartReaderJobs.ViewModel.Reader;
-using System.Collections.ObjectModel;
 
 namespace SmartReader.IotDeviceInterface;
 
@@ -80,23 +79,31 @@ public class IoTInterfaceMapper
     public InventoryRequest CreateInventoryRequest(SmartReaderSetupData smartReaderConfig,
         List<SmartReaderAntennaSetupListData> smartReaderAntennaSetupList)
     {
-        var inventoryRequest = new InventoryRequest();
-        inventoryRequest.EventConfig = new InventoryEventConfiguration();
-        inventoryRequest.EventConfig.Common = new CommonEventConfiguration();
-        inventoryRequest.EventConfig.Common.Hostname = CommonEventConfigurationHostname.Enabled;
+        var inventoryRequest = new InventoryRequest
+        {
+            EventConfig = new InventoryEventConfiguration
+            {
+                Common = new CommonEventConfiguration
+                {
+                    Hostname = CommonEventConfigurationHostname.Enabled
+                },
 
-        inventoryRequest.EventConfig.TagInventory = new TagInventoryEventConfiguration();
+                TagInventory = new TagInventoryEventConfiguration
+                {
+                    TagReporting = new TagReportingConfiguration
+                    {
+                        AntennaIdentifier =
+            TagReportingConfigurationAntennaIdentifier.AntennaPort,
+                        TagIdentifier =
+            TagReportingConfigurationTagIdentifier.Epc,
+                        ReportingIntervalSeconds = 1
+                    },
 
-        inventoryRequest.EventConfig.TagInventory.TagReporting = new TagReportingConfiguration();
-
-        inventoryRequest.EventConfig.TagInventory.TagReporting.AntennaIdentifier =
-            TagReportingConfigurationAntennaIdentifier.AntennaPort;
-        inventoryRequest.EventConfig.TagInventory.TagReporting.TagIdentifier =
-            TagReportingConfigurationTagIdentifier.Epc;
-        inventoryRequest.EventConfig.TagInventory.TagReporting.ReportingIntervalSeconds = 1;
-
-        inventoryRequest.EventConfig.TagInventory.Epc = TagInventoryEventConfigurationEpc.Enabled;
-        inventoryRequest.EventConfig.TagInventory.EpcHex = TagInventoryEventConfigurationEpcHex.Enabled;
+                    Epc = TagInventoryEventConfigurationEpc.Enabled,
+                    EpcHex = TagInventoryEventConfigurationEpcHex.Enabled
+                }
+            }
+        };
 
         if (smartReaderConfig.Fastid.HasValue && smartReaderConfig.Fastid == 1)
         {
@@ -119,7 +126,7 @@ public class IoTInterfaceMapper
         // a default inventory preset:
         //===================================================================================================================================
         var inventoryAntennaConfiguration = new InventoryAntennaConfiguration();
-        inventoryRequest.AntennaConfigs = new ObservableCollection<InventoryAntennaConfiguration>();
+        inventoryRequest.AntennaConfigs = [];
         for (var i = 0; i < smartReaderAntennaSetupList.Count; i++)
         {
             var currentAntenna = smartReaderAntennaSetupList[i];
@@ -171,20 +178,29 @@ public class IoTInterfaceMapper
 
     public InventoryRequest CreateStandaloneInventoryRequest(StandaloneConfigDTO smartReaderConfig)
     {
-        var inventoryRequest = new InventoryRequest();
-        inventoryRequest.EventConfig = new InventoryEventConfiguration();
-        inventoryRequest.EventConfig.Common = new CommonEventConfiguration();
-        inventoryRequest.EventConfig.Common.Hostname = CommonEventConfigurationHostname.Enabled;
+        var inventoryRequest = new InventoryRequest
+        {
+            EventConfig = new InventoryEventConfiguration
+            {
+                Common = new CommonEventConfiguration
+                {
+                    Hostname = CommonEventConfigurationHostname.Enabled
+                },
 
-        inventoryRequest.EventConfig.TagInventory = new TagInventoryEventConfiguration();
-        inventoryRequest.EventConfig.TagInventory.TagReporting = new TagReportingConfiguration();
-
-        inventoryRequest.EventConfig.TagInventory.TagReporting.AntennaIdentifier =
-            TagReportingConfigurationAntennaIdentifier.AntennaPort;
-        inventoryRequest.EventConfig.TagInventory.TagReporting.TagIdentifier =
-            TagReportingConfigurationTagIdentifier.Epc;
-        var reportInterval = 1;
-        int.TryParse(smartReaderConfig.reportingIntervalSeconds, out reportInterval);
+                TagInventory = new TagInventoryEventConfiguration
+                {
+                    TagReporting = new TagReportingConfiguration
+                    {
+                        AntennaIdentifier =
+            TagReportingConfigurationAntennaIdentifier.AntennaPort,
+                        TagIdentifier =
+            TagReportingConfigurationTagIdentifier.Epc
+                    }
+                }
+            }
+        };
+        int reportInterval;
+        _ = int.TryParse(smartReaderConfig.reportingIntervalSeconds, out reportInterval);
         inventoryRequest.EventConfig.TagInventory.TagReporting.ReportingIntervalSeconds = reportInterval;
 
         inventoryRequest.EventConfig.TagInventory.Epc = TagInventoryEventConfigurationEpc.Enabled;
@@ -193,7 +209,7 @@ public class IoTInterfaceMapper
         if (string.Equals("3", smartReaderConfig.startTriggerType, StringComparison.OrdinalIgnoreCase))
             try
             {
-                inventoryRequest.StartTriggers = new ObservableCollection<InventoryStartTrigger>();
+                inventoryRequest.StartTriggers = [];
                 var inventoryStartTrigger = new InventoryStartTrigger();
                 var gpiTransitionEvent = new Impinj.Atlas.GpiTransitionEvent();
                 var gpiPort = int.Parse(smartReaderConfig.startTriggerGpiPort);
@@ -213,7 +229,7 @@ public class IoTInterfaceMapper
         if (string.Equals("2", smartReaderConfig.stopTriggerType, StringComparison.OrdinalIgnoreCase))
             try
             {
-                inventoryRequest.StopTriggers = new ObservableCollection<InventoryStopTrigger>();
+                inventoryRequest.StopTriggers = [];
                 var inventoryStopTrigger = new InventoryStopTrigger();
                 var gpiTransitionEvent = new Impinj.Atlas.GpiTransitionEvent();
                 var gpiPort = int.Parse(smartReaderConfig.stopTriggerGpiPort);
@@ -279,7 +295,7 @@ public class IoTInterfaceMapper
         // a default inventory preset:
         //===================================================================================================================================
 
-        inventoryRequest.AntennaConfigs = new ObservableCollection<InventoryAntennaConfiguration>();
+        inventoryRequest.AntennaConfigs = [];
         var antennaPorts = smartReaderConfig.antennaPorts.Split(','); //\u002C
         var antennaStates = smartReaderConfig.antennaStates.Split(','); //\u002C
         var antennaZones = smartReaderConfig.antennaZones.Split(','); //\u002C

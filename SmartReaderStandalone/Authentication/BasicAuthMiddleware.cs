@@ -53,14 +53,14 @@ public class BasicAuthMiddleware
             else
             {
                 httpContext.Response.StatusCode = 401;
-                httpContext.Response.Headers.Add("WWW-Authenticate", string.Format("Basic realm=\"{0}\"", "R700"));
+                httpContext.Response.Headers.Append("WWW-Authenticate", string.Format("Basic realm=\"{0}\"", "R700"));
                 return;
             }
         }
         else
         {
             httpContext.Response.StatusCode = 401;
-            httpContext.Response.Headers.Add("WWW-Authenticate", string.Format("Basic realm=\"{0}\"", "R700"));
+            httpContext.Response.Headers.Append("WWW-Authenticate", string.Format("Basic realm=\"{0}\"", "R700"));
             return;
         }
 

@@ -20,6 +20,7 @@ namespace SmartReaderStandalone.Authentication;
 
 public class SmartreaderAuthHandler : AuthenticationHandler<SmartreaderAuthSchemeOptions>
 {
+    [Obsolete]
     public SmartreaderAuthHandler(
         IServiceProvider services,
         IOptionsMonitor<SmartreaderAuthSchemeOptions> options,

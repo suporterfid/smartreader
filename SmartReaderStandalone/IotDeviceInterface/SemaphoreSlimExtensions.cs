@@ -28,7 +28,7 @@
             {
                 if (!_disposed)
                 {
-                    _semaphore.Release();
+                    _ = _semaphore.Release();
                     _disposed = true;
                 }
             }

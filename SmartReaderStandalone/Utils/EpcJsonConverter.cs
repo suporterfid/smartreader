@@ -23,13 +23,13 @@ internal class EpcJsonConverter : JsonConverter
         }
         else
         {
-            if ((value as Epc) is null)
+            if (value as Epc is null)
                 throw new JsonSerializationException("Unexpected error - Invalid type.");
             writer.WriteValue(value.ToString());
         }
     }
 
-    public override object ReadJson(
+    public override object? ReadJson(
         JsonReader reader,
         Type objectType,
         object existingValue,

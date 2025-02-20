@@ -1,8 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using MQTTnet.Packets;
-using MQTTnet.Protocol;
-using MQTTnet;
+﻿using McMaster.NETCore.Plugins;
+using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Serilog;
@@ -14,9 +11,7 @@ using SmartReaderStandalone.IotDeviceInterface;
 using SmartReaderStandalone.Plugins;
 using SmartReaderStandalone.Utils;
 using SmartReaderStandalone.ViewModel.Status;
-using SuperSimpleTcp;
 using System.Data;
-using McMaster.NETCore.Plugins;
 
 namespace SmartReaderStandalone.Services
 {
@@ -78,7 +73,7 @@ namespace SmartReaderStandalone.Services
 
         public StandaloneConfigDTO LoadConfig()
         {
-            StandaloneConfigDTO standaloneConfigDTO = null;
+            StandaloneConfigDTO? standaloneConfigDTO = null;
             try
             {
                 //var configHelper = new IniConfigHelper();
@@ -90,9 +85,7 @@ namespace SmartReaderStandalone.Services
                     if (length > 0)
                     {
                         standaloneConfigDTO = StandaloneConfigDTO.CleanupUrlEncoding(ConfigFileHelper.ReadFile());
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
                         Console.WriteLine("Config loaded. " + standaloneConfigDTO.antennaPorts);
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
                     }
                 }
             }
@@ -157,7 +150,7 @@ namespace SmartReaderStandalone.Services
                 await UpdateLicenseAsync(deviceId, plugins);
 
                 // Update configuration
-                await UpdateConfigurationAsync();
+                UpdateConfiguration();
             }
             catch (Exception ex)
             {
@@ -194,11 +187,11 @@ namespace SmartReaderStandalone.Services
             }
         }
 
-        private async Task UpdateConfigurationAsync()
+        private void UpdateConfiguration()
         {
             try
             {
-                var configModel = await GetConfigDtoFromDb();
+                var configModel = GetConfigDtoFromDb();
                 if (configModel == null)
                 {
                     _logger.LogWarning("No configuration found in the database.");
@@ -245,18 +238,20 @@ namespace SmartReaderStandalone.Services
                 var configModel = dbContext.ReaderConfigs.FindAsync("READER_LICENSE").Result;
                 if (configModel == null)
                 {
-                    configModel = new ReaderConfigs();
-                    configModel.Id = "READER_LICENSE";
-                    configModel.Value = license;
-                    dbContext.ReaderConfigs.Add(configModel);
+                    configModel = new ReaderConfigs
+                    {
+                        Id = "READER_LICENSE",
+                        Value = license
+                    };
+                    _ = dbContext.ReaderConfigs.Add(configModel);
                 }
                 else
                 {
                     configModel.Value = license;
-                    dbContext.ReaderConfigs.Update(configModel);
+                    _ = dbContext.ReaderConfigs.Update(configModel);
                 }
 
-                await dbContext.SaveChangesAsync();
+                _ = await dbContext.SaveChangesAsync();
             }
             catch (Exception ex)
             {
@@ -264,12 +259,11 @@ namespace SmartReaderStandalone.Services
             }
             finally
             {
-                readLock.Release();
+                _ = readLock.Release();
             }
         }
 
-        public async Task<StandaloneConfigDTO> GetConfigDtoFromDb()
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
+        public StandaloneConfigDTO GetConfigDtoFromDb()
         {
 #pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.
             StandaloneConfigDTO? model = null;
@@ -307,18 +301,20 @@ namespace SmartReaderStandalone.Services
                 var configModel = dbContext.ReaderConfigs.FindAsync("READER_CONFIG").Result;
                 if (configModel == null)
                 {
-                    configModel = new ReaderConfigs();
-                    configModel.Id = "READER_CONFIG";
-                    configModel.Value = JsonConvert.SerializeObject(dto);
-                    dbContext.ReaderConfigs.Add(configModel);
+                    configModel = new ReaderConfigs
+                    {
+                        Id = "READER_CONFIG",
+                        Value = JsonConvert.SerializeObject(dto)
+                    };
+                    _ = dbContext.ReaderConfigs.Add(configModel);
                 }
                 else
                 {
                     configModel.Value = JsonConvert.SerializeObject(dto);
-                    dbContext.ReaderConfigs.Update(configModel);
+                    _ = dbContext.ReaderConfigs.Update(configModel);
                 }
 
-                await dbContext.SaveChangesAsync();
+                _ = await dbContext.SaveChangesAsync();
             }
             catch (Exception ex)
             {
@@ -326,7 +322,7 @@ namespace SmartReaderStandalone.Services
             }
             finally
             {
-                readLock.Release();
+                _ = readLock.Release();
             }
         }
 
@@ -374,7 +370,7 @@ namespace SmartReaderStandalone.Services
                             NullValueHandling = NullValueHandling.Ignore
                         })
                     };
-                    await dbContext.ReaderStatus.AddAsync(configModel);
+                    _ = await dbContext.ReaderStatus.AddAsync(configModel);
                 }
                 else
                 {
@@ -382,11 +378,11 @@ namespace SmartReaderStandalone.Services
                     {
                         NullValueHandling = NullValueHandling.Ignore
                     });
-                    dbContext.ReaderStatus.Update(configModel);
+                    _ = dbContext.ReaderStatus.Update(configModel);
                 }
 
                 // Adding retry logic for transient database errors
-                await RetryPolicy.ExecuteAsync(async () => await dbContext.SaveChangesAsync());
+                _ = await RetryPolicy.ExecuteAsync(async () => await dbContext.SaveChangesAsync());
             }
             catch (TimeoutException tex)
             {
@@ -421,20 +417,22 @@ namespace SmartReaderStandalone.Services
                 var commandModel = dbContext.ReaderCommands.FindAsync("START_PRESET").Result;
                 if (commandModel == null)
                 {
-                    commandModel = new ReaderCommands();
-                    commandModel.Id = "START_PRESET";
-                    commandModel.Value = "START";
-                    commandModel.Timestamp = DateTime.Now;
-                    dbContext.ReaderCommands.Add(commandModel);
+                    commandModel = new ReaderCommands
+                    {
+                        Id = "START_PRESET",
+                        Value = "START",
+                        Timestamp = DateTime.Now
+                    };
+                    _ = dbContext.ReaderCommands.Add(commandModel);
                 }
                 else
                 {
                     commandModel.Value = "START";
                     commandModel.Timestamp = DateTime.Now;
-                    dbContext.ReaderCommands.Update(commandModel);
+                    _ = dbContext.ReaderCommands.Update(commandModel);
                 }
 
-                await dbContext.SaveChangesAsync();
+                _ = await dbContext.SaveChangesAsync();
             }
             catch (Exception ex)
             {
@@ -442,7 +440,7 @@ namespace SmartReaderStandalone.Services
             }
             finally
             {
-                readLock.Release();
+                _ = readLock.Release();
             }
         }
 
@@ -457,20 +455,22 @@ namespace SmartReaderStandalone.Services
                 var commandModel = dbContext.ReaderCommands.FindAsync("STOP_PRESET").Result;
                 if (commandModel == null)
                 {
-                    commandModel = new ReaderCommands();
-                    commandModel.Id = "STOP_PRESET";
-                    commandModel.Value = "STOP";
-                    commandModel.Timestamp = DateTime.Now;
-                    dbContext.ReaderCommands.Add(commandModel);
+                    commandModel = new ReaderCommands
+                    {
+                        Id = "STOP_PRESET",
+                        Value = "STOP",
+                        Timestamp = DateTime.Now
+                    };
+                    _ = dbContext.ReaderCommands.Add(commandModel);
                 }
                 else
                 {
                     commandModel.Value = "STOP";
                     commandModel.Timestamp = DateTime.Now;
-                    dbContext.ReaderCommands.Update(commandModel);
+                    _ = dbContext.ReaderCommands.Update(commandModel);
                 }
 
-                await dbContext.SaveChangesAsync();
+                _ = await dbContext.SaveChangesAsync();
             }
             catch (Exception ex)
             {
@@ -478,7 +478,7 @@ namespace SmartReaderStandalone.Services
             }
             finally
             {
-                readLock.Release();
+                _ = readLock.Release();
             }
         }
 
@@ -493,20 +493,22 @@ namespace SmartReaderStandalone.Services
                 var commandModel = dbContext.ReaderCommands.FindAsync("START_INVENTORY").Result;
                 if (commandModel == null)
                 {
-                    commandModel = new ReaderCommands();
-                    commandModel.Id = "START_INVENTORY";
-                    commandModel.Value = "START";
-                    commandModel.Timestamp = DateTime.Now;
-                    dbContext.ReaderCommands.Add(commandModel);
+                    commandModel = new ReaderCommands
+                    {
+                        Id = "START_INVENTORY",
+                        Value = "START",
+                        Timestamp = DateTime.Now
+                    };
+                    _ = dbContext.ReaderCommands.Add(commandModel);
                 }
                 else
                 {
                     commandModel.Value = "START";
                     commandModel.Timestamp = DateTime.Now;
-                    dbContext.ReaderCommands.Update(commandModel);
+                    _ = dbContext.ReaderCommands.Update(commandModel);
                 }
 
-                await dbContext.SaveChangesAsync();
+                _ = await dbContext.SaveChangesAsync();
             }
             catch (Exception ex)
             {
@@ -514,7 +516,7 @@ namespace SmartReaderStandalone.Services
             }
             finally
             {
-                readLock.Release();
+                _ = readLock.Release();
             }
         }
 
@@ -529,20 +531,22 @@ namespace SmartReaderStandalone.Services
                 var commandModel = dbContext.ReaderCommands.FindAsync("STOP_INVENTORY").Result;
                 if (commandModel == null)
                 {
-                    commandModel = new ReaderCommands();
-                    commandModel.Id = "STOP_INVENTORY";
-                    commandModel.Value = "STOP";
-                    commandModel.Timestamp = DateTime.Now;
-                    dbContext.ReaderCommands.Add(commandModel);
+                    commandModel = new ReaderCommands
+                    {
+                        Id = "STOP_INVENTORY",
+                        Value = "STOP",
+                        Timestamp = DateTime.Now
+                    };
+                    _ = dbContext.ReaderCommands.Add(commandModel);
                 }
                 else
                 {
                     commandModel.Value = "STOP";
                     commandModel.Timestamp = DateTime.Now;
-                    dbContext.ReaderCommands.Update(commandModel);
+                    _ = dbContext.ReaderCommands.Update(commandModel);
                 }
 
-                await dbContext.SaveChangesAsync();
+                _ = await dbContext.SaveChangesAsync();
             }
             catch (Exception ex)
             {
@@ -550,7 +554,7 @@ namespace SmartReaderStandalone.Services
             }
             finally
             {
-                readLock.Release();
+                _ = readLock.Release();
             }
         }
 
@@ -565,20 +569,22 @@ namespace SmartReaderStandalone.Services
                 var commandModel = dbContext.ReaderCommands.FindAsync("UPGRADE_SYSTEM_IMAGE").Result;
                 if (commandModel == null)
                 {
-                    commandModel = new ReaderCommands();
-                    commandModel.Id = "UPGRADE_SYSTEM_IMAGE";
-                    commandModel.Value = remoteUrl;
-                    commandModel.Timestamp = DateTime.Now;
-                    dbContext.ReaderCommands.Add(commandModel);
+                    commandModel = new ReaderCommands
+                    {
+                        Id = "UPGRADE_SYSTEM_IMAGE",
+                        Value = remoteUrl,
+                        Timestamp = DateTime.Now
+                    };
+                    _ = dbContext.ReaderCommands.Add(commandModel);
                 }
                 else
                 {
                     commandModel.Value = remoteUrl;
                     commandModel.Timestamp = DateTime.Now;
-                    dbContext.ReaderCommands.Update(commandModel);
+                    _ = dbContext.ReaderCommands.Update(commandModel);
                 }
 
-                await dbContext.SaveChangesAsync();
+                _ = await dbContext.SaveChangesAsync();
             }
             catch (Exception ex)
             {
@@ -586,7 +592,7 @@ namespace SmartReaderStandalone.Services
             }
             finally
             {
-                readLock.Release();
+                _ = readLock.Release();
             }
         }
 
@@ -600,17 +606,19 @@ namespace SmartReaderStandalone.Services
                 var dataModel = dbContext.InventoryStatus.FindAsync("INVENTORY_STATUS").Result;
                 if (dataModel == null)
                 {
-                    dataModel = new InventoryStatus();
-                    dataModel.Id = "INVENTORY_STATUS";
-                    dataModel.CurrentStatus = status;
-                    dataModel.TotalCount = currentCount;
-                    dataModel.CycleId = cycleId;
-                    dataModel.StartedOn = DateTimeOffset.Now;
+                    dataModel = new InventoryStatus
+                    {
+                        Id = "INVENTORY_STATUS",
+                        CurrentStatus = status,
+                        TotalCount = currentCount,
+                        CycleId = cycleId,
+                        StartedOn = DateTimeOffset.Now
+                    };
                     if (isStopRequest)
                         dataModel.StoppedOn = DateTimeOffset.Now;
                     else
                         dataModel.StoppedOn = null;
-                    dbContext.InventoryStatus.Add(dataModel);
+                    _ = dbContext.InventoryStatus.Add(dataModel);
                 }
                 else
                 {
@@ -622,10 +630,10 @@ namespace SmartReaderStandalone.Services
                         dataModel.StoppedOn = DateTimeOffset.Now;
                     else
                         dataModel.StoppedOn = null;
-                    dbContext.InventoryStatus.Update(dataModel);
+                    _ = dbContext.InventoryStatus.Update(dataModel);
                 }
 
-                await dbContext.SaveChangesAsync();
+                _ = await dbContext.SaveChangesAsync();
             }
             catch (Exception ex)
             {
@@ -633,7 +641,7 @@ namespace SmartReaderStandalone.Services
             }
             finally
             {
-                readLock.Release();
+                _ = readLock.Release();
             }
         }
 
@@ -644,10 +652,12 @@ namespace SmartReaderStandalone.Services
                 await readLock.WaitAsync();
                 using var scope = Services.CreateScope();
                 var dbContext = scope.ServiceProvider.GetRequiredService<RuntimeDb>();
-                var configModel = new SmartReaderTagReadModel();
-                configModel.Value = JsonConvert.SerializeObject(dto);
-                dbContext.SmartReaderTagReadModels.Add(configModel);
-                await dbContext.SaveChangesAsync();
+                var configModel = new SmartReaderTagReadModel
+                {
+                    Value = JsonConvert.SerializeObject(dto)
+                };
+                _ = dbContext.SmartReaderTagReadModels.Add(configModel);
+                _ = await dbContext.SaveChangesAsync();
             }
             catch (Exception ex)
             {
@@ -655,7 +665,7 @@ namespace SmartReaderStandalone.Services
             }
             finally
             {
-                readLock.Release();
+                _ = readLock.Release();
             }
         }
 
@@ -699,7 +709,7 @@ namespace SmartReaderStandalone.Services
             }
         }
 
-       
+
 
         //public void ConfigureSocketServer(SimpleTcpServer server,
         //    EventHandler<ConnectionEventArgs> ClientConnected,
@@ -765,7 +775,7 @@ namespace SmartReaderStandalone.Services
                             {
                                 _logger.LogInformation($"Created plugin: {plugin.GetName()}");
                                 plugin.SetDeviceId(deviceId);
-                                await plugin.Init();
+                                _ = await plugin.Init();
                                 plugins.Add(plugin.GetName(), plugin);
                             }
                         }
@@ -784,6 +794,9 @@ namespace SmartReaderStandalone.Services
             return plugins;
         }
 
-
+        Task<StandaloneConfigDTO> IConfigurationService.GetConfigDtoFromDb()
+        {
+            throw new NotImplementedException();
+        }
     }
 }

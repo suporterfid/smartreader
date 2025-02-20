@@ -2,7 +2,7 @@
 {
     public class AggregateInputReader : IDisposable
     {
-        private List<InputReader>? _readers = new();
+        private List<InputReader>? _readers = [];
 
         public event InputReader.RaiseKeyPress? OnKeyPress;
 
@@ -39,7 +39,7 @@
 
         public void Dispose()
         {
-            if(_readers != null )
+            if (_readers != null)
             {
                 foreach (var d in _readers)
                 {

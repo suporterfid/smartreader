@@ -14,7 +14,6 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
-using static Org.BouncyCastle.Math.EC.ECCurve;
 
 namespace SmartReaderJobs.Utils;
 
@@ -42,7 +41,7 @@ public class Utils
     /// <exception cref="ArgumentException">
     ///     ipAddressOrHostname is an invalid hostname.
     /// </exception>
-    public static void stringToIpAddress(string ipAddressOrHostname, out IPAddress returnIPAddress)
+    public static void stringToIpAddress(string ipAddressOrHostname, out IPAddress? returnIPAddress)
     {
         returnIPAddress = null;
         // Check to see whether the hostname is an IP address by
@@ -68,9 +67,9 @@ public class Utils
                         break;
                     }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                throw ex;
+                throw;
             }
         }
     }
@@ -82,7 +81,7 @@ public class Utils
     public static DateTime GetDateTime(ulong usecondsSinceEpoch)
     {
         var epoc = new DateTime(1970, 1, 1, 0, 0, 0);
-        var ticks = (long)usecondsSinceEpoch * 10 + epoc.Ticks;
+        var ticks = ((long)usecondsSinceEpoch * 10) + epoc.Ticks;
         return new DateTime(ticks, DateTimeKind.Utc);
     }
 
@@ -194,11 +193,13 @@ public class Utils
 
     public static Dictionary<string, int> GetDefaultRfModeTableByRegion(string region)
     {
-        var rfModeTable = new Dictionary<string, int>();
-        rfModeTable.Add("MaxThroughput", 0);
-        rfModeTable.Add("Hybrid", 1);
-        rfModeTable.Add("DenseReaderM4", 2);
-        rfModeTable.Add("DenseReaderM8", 3);
+        var rfModeTable = new Dictionary<string, int>
+        {
+            { "MaxThroughput", 0 },
+            { "Hybrid", 1 },
+            { "DenseReaderM4", 2 },
+            { "DenseReaderM8", 3 }
+        };
         if (!string.IsNullOrEmpty(region)
             && !region.ToUpper().Contains("ETSI")
             && !region.ToUpper().Contains("INDIA"))
@@ -274,20 +275,20 @@ public class Utils
     /// </exception>
     public static bool OnlyHexInString(string InputString)
     {
-        var returnResult = false;
         var SourceString = new StringBuilder();
 
+        bool returnResult;
         if (false == string.IsNullOrEmpty(InputString))
         {
             // Append the input string to the SourceString work variable
-            SourceString.Append(InputString);
+            _ = SourceString.Append(InputString);
 
             // Remove any prefix characters
-            SourceString.Replace("0x", string.Empty);
+            _ = SourceString.Replace("0x", string.Empty);
 
             // Next, remove any space or dash delimiters
-            SourceString.Replace(" ", string.Empty);
-            SourceString.Replace("-", string.Empty);
+            _ = SourceString.Replace(" ", string.Empty);
+            _ = SourceString.Replace("-", string.Empty);
 
             returnResult =
                 Regex.IsMatch(SourceString.ToString(), @"\A\b[0-9a-fA-F]+\b\Z");
@@ -316,16 +317,16 @@ public class Utils
     /// </exception>
     public static bool OnlyBinInString(string InputString)
     {
-        var returnResult = false;
         var SourceString = new StringBuilder();
 
+        bool returnResult;
         if (false == string.IsNullOrEmpty(InputString))
         {
-            SourceString.Append(InputString);
+            _ = SourceString.Append(InputString);
 
             // Next, remove any space or dash delimiters
-            SourceString.Replace(" ", string.Empty);
-            SourceString.Replace("-", string.Empty);
+            _ = SourceString.Replace(" ", string.Empty);
+            _ = SourceString.Replace("-", string.Empty);
 
             returnResult =
                 Regex.IsMatch(SourceString.ToString(), @"\A\b[01]+\b\Z");
@@ -398,7 +399,7 @@ public class Utils
 
         // Step 2, convert byte array to hex string
         var sb = new StringBuilder();
-        for (var i = 0; i < hashBytes.Length; i++) sb.Append(hashBytes[i].ToString("X2"));
+        for (var i = 0; i < hashBytes.Length; i++) _ = sb.Append(hashBytes[i].ToString("X2"));
         return sb.ToString();
     }
 
@@ -443,7 +444,7 @@ public class Utils
         {
             if (!smartReaderTagEventData.ContainsKey("tag_reads")) return string.Empty;
 
-            foreach (var tagRead in smartReaderTagEventData["tag_reads"]?.ToList() ?? new List<JToken>())
+            foreach (var tagRead in smartReaderTagEventData["tag_reads"]?.ToList() ?? [])
             {
                 AppendField(sb, tagRead["antennaPort"], config.includeAntennaPort, fieldDelim);
                 AppendField(sb, tagRead["antennaZone"], config.includeAntennaZone, fieldDelim);
@@ -468,7 +469,7 @@ public class Utils
             AppendCustomFields(sb, smartReaderTagEventData, config, fieldDelim);
             AppendBarcode(sb, smartReaderTagEventData, config, fieldDelim);
 
-            sb.Append(lineEnd);
+            _ = sb.Append(lineEnd);
         }
         catch (Exception ex)
         {
@@ -495,8 +496,8 @@ public class Utils
     {
         if (string.Equals("1", condition, StringComparison.OrdinalIgnoreCase))
         {
-            sb.Append(field?.ToString() ?? string.Empty);
-            sb.Append(fieldDelim);
+            _ = sb.Append(field?.ToString() ?? string.Empty);
+            _ = sb.Append(fieldDelim);
         }
     }
 
@@ -505,8 +506,8 @@ public class Utils
         for (int i = 1; i <= 4; i++)
         {
             var gpiStatus = tagRead?[$"gpi{i}Status"]?.ToString();
-            sb.Append(string.IsNullOrEmpty(gpiStatus) ? "0" : gpiStatus);
-            sb.Append(fieldDelim);
+            _ = sb.Append(string.IsNullOrEmpty(gpiStatus) ? "0" : gpiStatus);
+            _ = sb.Append(fieldDelim);
         }
     }
 
@@ -542,8 +543,8 @@ public class Utils
             string.Equals("1", config?.enableBarcodeHid, StringComparison.OrdinalIgnoreCase) ||
             string.Equals("1", config?.enableBarcodeTcp, StringComparison.OrdinalIgnoreCase)))
         {
-            sb.Append(barcode);
-            sb.Append(fieldDelim);
+            _ = sb.Append(barcode);
+            _ = sb.Append(fieldDelim);
         }
     }
 

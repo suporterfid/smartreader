@@ -11,7 +11,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
-using Microsoft.Extensions.Logging;
 using MQTTnet;
 using MQTTnet.Server;
 using Newtonsoft.Json;
@@ -27,6 +26,7 @@ using SmartReaderJobs.Utils;
 using SmartReaderJobs.ViewModel.Mqtt.Endpoint;
 using SmartReaderStandalone.Authentication;
 using SmartReaderStandalone.Entities;
+using SmartReaderStandalone.IotDeviceInterface;
 using SmartReaderStandalone.Services;
 using SmartReaderStandalone.Utils;
 using SmartReaderStandalone.ViewModel;
@@ -34,13 +34,11 @@ using SmartReaderStandalone.ViewModel.Status;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Security;
 using System.Runtime.Loader;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Xml.Linq;
+using static SmartReader.IotDeviceInterface.R700IotReader;
 using Endpoint = SmartReaderJobs.ViewModel.Mqtt.Endpoint.Endpoint;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
@@ -53,8 +51,10 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
     .CreateBootstrapLogger();
 
-var levelSwitch = new LoggingLevelSwitch();
-levelSwitch.MinimumLevel = LogEventLevel.Information; // Default level
+var levelSwitch = new LoggingLevelSwitch
+{
+    MinimumLevel = LogEventLevel.Information // Default level
+};
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -67,11 +67,16 @@ builder.Configuration.AddJsonFile("/customer/appsettings.json", optional: false,
 // Register IConfiguration in services
 builder.Services.AddSingleton(builder.Configuration);
 
+LogEventLevel logEventLevel = LogEventLevel.Warning;
+
+#if DEBUG
+    logEventLevel = LogEventLevel.Debug;
+#endif
 builder.Host.UseSerilog((ctx, lc) => lc
     .WriteTo.Console()
     .ReadFrom.Configuration(ctx.Configuration)
     .MinimumLevel.ControlledBy(levelSwitch)
-    .WriteTo.File("/customer/wwwroot/logs/log.txt", LogEventLevel.Debug,
+    .WriteTo.File("/customer/wwwroot/logs/log.txt", logEventLevel,
         "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}",
         fileSizeLimitBytes: 102400, rollOnFileSizeLimit: true, retainedFileCountLimit: 2));
 
@@ -162,12 +167,12 @@ builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvid
 
 
 
-    return new IotInterfaceService(serviceProvider, 
-        configuration, 
-        logger, 
-        loggerFactory, 
-        httpClientFactory, 
-        configurationService, 
+    return new IotInterfaceService(serviceProvider,
+        configuration,
+        logger,
+        loggerFactory,
+        httpClientFactory,
+        configurationService,
         tcpSocketService,
         mqttService,
         webSocketService);
@@ -179,7 +184,7 @@ builder.Services.AddScoped<ISummaryQueueBackgroundService, SummaryQueueBackgroun
 
 // Create and start the MQTT servers
 var mqttFactory = new MqttFactory();
-MqttServer tcpMqttServer = null;
+MqttServer? tcpMqttServer = null;
 try
 {
     var configDto = ConfigFileHelper.ReadFile();
@@ -211,7 +216,7 @@ var readerAddress = app.Configuration["ReaderInfo:Address"] ?? "127.0.0.1";
 // Get the current build configuration
 string buildConfiguration = "Release"; // Default to Debug if unable to determine
 #if DEBUG
-buildConfiguration = "Debug";
+    buildConfiguration = "Debug";
 #endif
 // Get the value based on the build configuration
 if ("Debug".Equals(buildConfiguration))
@@ -240,7 +245,7 @@ app.UseMiddleware<BasicAuthMiddleware>();
 
 app.UseDefaultFiles(new DefaultFilesOptions
 {
-    DefaultFileNames = new List<string> { "index.html" }
+    DefaultFileNames = ["index.html"]
 });
 
 app.UseStaticFiles(new StaticFileOptions
@@ -253,7 +258,7 @@ app.UseStaticFiles(new StaticFileOptions
             ctx.Context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
             ctx.Context.Response.ContentLength = 0;
             ctx.Context.Response.Body = Stream.Null;
-            ctx.Context.Response.Headers.Add("WWW-Authenticate", string.Format("Basic realm=\"{0}\"", "R700"));
+            ctx.Context.Response.Headers.Append("WWW-Authenticate", string.Format("Basic realm=\"{0}\"", "R700"));
         }
     }
 });
@@ -271,7 +276,7 @@ if (Directory.Exists("/customer/wwwroot/logs"))
 
 
 
-app.MapGet("/api/stream/volumes", async (RuntimeDb db, HttpContext context) =>
+app.MapGet("/api/stream/volumes", (RuntimeDb db, HttpContext context) =>
 {
     var producerService = context.RequestServices.GetRequiredService<ISummaryQueueBackgroundService>();
 
@@ -286,7 +291,7 @@ app.MapGet("/api/stream/volumes", async (RuntimeDb db, HttpContext context) =>
         //var serializer = new JsonSerializer();
         while (true)
         {
-            string dataModel = null;
+            string? dataModel = null;
             if (producerService.HasDataAvailable())
             {
                 dataModel = producerService.GetData();
@@ -302,8 +307,7 @@ app.MapGet("/api/stream/volumes", async (RuntimeDb db, HttpContext context) =>
 
                     if (returnedData.StartsWith("[")) returnedData = returnedData.Substring(1);
 
-                    List<JsonDocument> result = new();
-                    result.Add(jsonOject);
+                    List<JsonDocument> result = [jsonOject];
 
                     yield return result;
                 }
@@ -313,8 +317,7 @@ app.MapGet("/api/stream/volumes", async (RuntimeDb db, HttpContext context) =>
             {
                 keepaliveStopWatch.Restart();
                 var jsonOject = JsonDocument.Parse(@"{}");
-                List<JsonDocument> result = new();
-                result.Add(jsonOject);
+                List<JsonDocument> result = [jsonOject];
                 yield return result;
             }
 
@@ -328,7 +331,7 @@ app.MapGet("/api/stream/volumes", async (RuntimeDb db, HttpContext context) =>
 
 });
 
-app.MapGet("/api/stream/tags", async (RuntimeDb db, HttpContext context) =>
+app.MapGet("/api/stream/tags", (RuntimeDb db, HttpContext context) =>
 {
 
     async IAsyncEnumerable<List<JsonDocument>> StreamSmartReaderTagReadModelAsync()
@@ -357,8 +360,7 @@ app.MapGet("/api/stream/tags", async (RuntimeDb db, HttpContext context) =>
                 db.SmartReaderTagReadModels.Remove(dataModel);
                 await db.SaveChangesAsync();
 
-                List<JsonDocument> result = new();
-                result.Add(jsonOject);
+                List<JsonDocument> result = [jsonOject];
 
                 yield return result;
 
@@ -373,9 +375,9 @@ app.MapGet("/api/stream/tags", async (RuntimeDb db, HttpContext context) =>
 //RequireAuth
 //app.MapGet("/api/settings", [Authorize] async (RuntimeDb db) =>
 
-app.MapGet("/api/restore-default-settings", [AuthorizeBasicAuth]  async (
+app.MapGet("/api/restore-default-settings", [AuthorizeBasicAuth] async (
     [FromServices] RuntimeDb db,
-    [FromServices] IotInterfaceService backgroundService, 
+    [FromServices] IotInterfaceService backgroundService,
     [FromServices] ConfigurationService configurationService,
     [FromServices] IConfiguration configuration) =>
 {
@@ -386,7 +388,7 @@ app.MapGet("/api/restore-default-settings", [AuthorizeBasicAuth]  async (
 
         var configDto = ConfigFileHelper.GetSmartreaderDefaultConfigDTO();
 
-        if(configDto != null)
+        if (configDto != null)
         {
             try
             {
@@ -421,7 +423,7 @@ app.MapGet("/api/restore-default-settings", [AuthorizeBasicAuth]  async (
             catch (Exception)
             {
 
-                
+
             }
             configurationService.SaveConfigDtoToDb(configDto);
             dtos.Add(configDto);
@@ -436,7 +438,7 @@ app.MapGet("/api/restore-default-settings", [AuthorizeBasicAuth]  async (
     }
 });
 
-app.MapGet("/api/settings", [AuthorizeBasicAuth] async (RuntimeDb db) =>
+app.MapGet("/api/settings", [AuthorizeBasicAuth] (RuntimeDb db) =>
 {
     try
     {
@@ -479,7 +481,7 @@ app.MapGet("/api/settings", [AuthorizeBasicAuth] async (RuntimeDb db) =>
     }
 });
 
-app.MapPost("/api/settings", [AuthorizeBasicAuth] async ([FromBody] StandaloneConfigDTO config, RuntimeDb db) =>
+app.MapPost("/api/settings", [AuthorizeBasicAuth] ([FromBody] StandaloneConfigDTO config, RuntimeDb db) =>
 {
 
     try
@@ -492,9 +494,11 @@ app.MapPost("/api/settings", [AuthorizeBasicAuth] async ([FromBody] StandaloneCo
                 var configLicenseModel = db.ReaderConfigs.FindAsync("READER_LICENSE").Result;
                 if (configLicenseModel == null)
                 {
-                    configLicenseModel = new ReaderConfigs();
-                    configLicenseModel.Id = "READER_LICENSE";
-                    configLicenseModel.Value = config.licenseKey;
+                    configLicenseModel = new ReaderConfigs
+                    {
+                        Id = "READER_LICENSE",
+                        Value = config.licenseKey
+                    };
                     db.ReaderConfigs.Add(configLicenseModel);
                 }
                 else
@@ -538,9 +542,11 @@ app.MapPost("/api/settings", [AuthorizeBasicAuth] async ([FromBody] StandaloneCo
             var configModel = db.ReaderConfigs.FindAsync("READER_CONFIG").Result;
             if (configModel == null)
             {
-                configModel = new ReaderConfigs();
-                configModel.Id = "READER_CONFIG";
-                configModel.Value = JsonConvert.SerializeObject(config);
+                configModel = new ReaderConfigs
+                {
+                    Id = "READER_CONFIG",
+                    Value = JsonConvert.SerializeObject(config)
+                };
                 db.ReaderConfigs.Add(configModel);
             }
             else
@@ -697,8 +703,8 @@ async (HttpRequest readerRequest, string gtin, RuntimeDb db) =>
 
 
                     ServerCertificateCustomValidationCallback =
-                   (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
-                       chain, errors) => true)
+                   (message, cert,
+                       chain, errors) => true
                 };
 
                 HttpClient httpClient = new()
@@ -708,9 +714,11 @@ async (HttpRequest readerRequest, string gtin, RuntimeDb db) =>
 
                 if (!string.IsNullOrEmpty(configDto.networkProxy))
                 {
-                    WebProxy webProxy = new WebProxy(configDto.networkProxy, int.Parse(configDto.networkProxyPort));
-                    webProxy.Credentials = CredentialCache.DefaultNetworkCredentials;
-                    webProxy.BypassProxyOnLocal = true;
+                    WebProxy webProxy = new(configDto.networkProxy, int.Parse(configDto.networkProxyPort))
+                    {
+                        Credentials = CredentialCache.DefaultNetworkCredentials,
+                        BypassProxyOnLocal = true
+                    };
                     webProxy.BypassList.Append("169.254.1.1");
                     webProxy.BypassList.Append(readerAddress);
                     webProxy.BypassList.Append("localhost");
@@ -721,8 +729,8 @@ async (HttpRequest readerRequest, string gtin, RuntimeDb db) =>
                         Proxy = webProxy,
                         UseProxy = true,
                         ServerCertificateCustomValidationCallback =
-                        (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
-                            chain, errors) => true)
+                        (message, cert,
+                            chain, errors) => true
                     };
                     httpClient = new HttpClient(httpClientHandler)
                     {
@@ -797,8 +805,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
             if (configDto != null && !string.IsNullOrEmpty(configDto.enableExternalApiVerification)
                                   && "1".Equals(configDto.enableExternalApiVerification))
             {
-                if (eventProcessorLogger != null)
-                    eventProcessorLogger.LogInformation("enableExternalApiVerification -> " +
+                eventProcessorLogger?.LogInformation("enableExternalApiVerification -> " +
                                           configDto.enableExternalApiVerification);
                 var url = configDto.externalApiVerificationSearchOrderUrl;
                 var fullUriData = new Uri(url);
@@ -810,8 +817,8 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
 
 
                     ServerCertificateCustomValidationCallback =
-                   (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
-                       chain, errors) => true)
+                   (message, cert,
+                       chain, errors) => true
                 };
                 HttpClient httpClient = new()
                 {
@@ -820,9 +827,11 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
 
                 if (!string.IsNullOrEmpty(configDto.networkProxy))
                 {
-                    WebProxy webProxy = new WebProxy(configDto.networkProxy, int.Parse(configDto.networkProxyPort));
-                    webProxy.Credentials = CredentialCache.DefaultNetworkCredentials;
-                    webProxy.BypassProxyOnLocal = true;
+                    WebProxy webProxy = new(configDto.networkProxy, int.Parse(configDto.networkProxyPort))
+                    {
+                        Credentials = CredentialCache.DefaultNetworkCredentials,
+                        BypassProxyOnLocal = true
+                    };
                     webProxy.BypassList.Append("169.254.1.1");
                     webProxy.BypassList.Append(readerAddress);
                     webProxy.BypassList.Append("localhost");
@@ -833,8 +842,8 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
                         Proxy = webProxy,
                         UseProxy = true,
                         ServerCertificateCustomValidationCallback =
-                        (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
-                            chain, errors) => true)
+                        (message, cert,
+                            chain, errors) => true
                     };
                     httpClient = new HttpClient(httpClientHandler)
                     {
@@ -872,28 +881,28 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
                 var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
                 //Log.Debug(content);
-                if (eventProcessorLogger != null) eventProcessorLogger.LogInformation(content);
+                eventProcessorLogger?.LogInformation(content);
                 eventProcessorLogger.LogInformation(content);
 
                 if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
                 {
                     requestResult = response.Content.ReadAsStringAsync().Result;
                     //Log.Debug(requestResult);
-                    if (eventProcessorLogger != null) eventProcessorLogger.LogInformation(requestResult);
+                    eventProcessorLogger?.LogInformation(requestResult);
 
                     return Results.Ok(JsonDocument.Parse(requestResult));
                 }
             }
             else
             {
-                if (eventProcessorLogger != null) eventProcessorLogger.LogError("enableExternalApiVerification disabled or null ");
+                eventProcessorLogger?.LogError("enableExternalApiVerification disabled or null ");
             }
 
             return Results.Ok(requestResult);
         }
         catch (Exception exDb)
         {
-            if (eventProcessorLogger != null) eventProcessorLogger.LogError(exDb, "Error processing order request.");
+            eventProcessorLogger?.LogError(exDb, "Error processing order request.");
             File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
             return Results.BadRequest(requestResult);
         }
@@ -912,8 +921,7 @@ async (HttpRequest readerRequest, string order, RuntimeDb db) =>
         if (configDto != null && !string.IsNullOrEmpty(configDto.enableExternalApiVerification)
                               && "1".Equals(configDto.enableExternalApiVerification))
         {
-            if (eventProcessorLogger != null)
-                eventProcessorLogger.LogInformation("enableExternalApiVerification -> " +
+            eventProcessorLogger?.LogInformation("enableExternalApiVerification -> " +
                                       configDto.enableExternalApiVerification);
             var url = configDto.externalApiVerificationSearchOrderUrl + order;
             var fullUriData = new Uri(url);
@@ -925,8 +933,8 @@ async (HttpRequest readerRequest, string order, RuntimeDb db) =>
 
 
                 ServerCertificateCustomValidationCallback =
-               (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
-                   chain, errors) => true)
+               (message, cert,
+                   chain, errors) => true
             };
 
             HttpClient httpClient = new()
@@ -936,9 +944,11 @@ async (HttpRequest readerRequest, string order, RuntimeDb db) =>
 
             if (!string.IsNullOrEmpty(configDto.networkProxy))
             {
-                WebProxy webProxy = new WebProxy(configDto.networkProxy, int.Parse(configDto.networkProxyPort));
-                webProxy.Credentials = CredentialCache.DefaultNetworkCredentials;
-                webProxy.BypassProxyOnLocal = true;
+                WebProxy webProxy = new(configDto.networkProxy, int.Parse(configDto.networkProxyPort))
+                {
+                    Credentials = CredentialCache.DefaultNetworkCredentials,
+                    BypassProxyOnLocal = true
+                };
                 webProxy.BypassList.Append("169.254.1.1");
                 webProxy.BypassList.Append(readerAddress);
                 webProxy.BypassList.Append("localhost");
@@ -949,8 +959,8 @@ async (HttpRequest readerRequest, string order, RuntimeDb db) =>
                     Proxy = webProxy,
                     UseProxy = true,
                     ServerCertificateCustomValidationCallback =
-                    (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
-                        chain, errors) => true)
+                    (message, cert,
+                        chain, errors) => true
                 };
 
                 httpClient = new HttpClient(httpClientHandler)
@@ -975,39 +985,35 @@ async (HttpRequest readerRequest, string order, RuntimeDb db) =>
                 .Accept
                 .Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            if (eventProcessorLogger != null)
-            {
-                eventProcessorLogger.LogInformation(url);
-                //logger.LogInformation(jsonDocumentStr);
-            }
+            eventProcessorLogger?.LogInformation(url);
             //Console.WriteLine(jsonDocument);
 
             var response = await httpClient.SendAsync(request).ConfigureAwait(false);
             var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
             //Log.Debug(content);
-            if (eventProcessorLogger != null) eventProcessorLogger.LogInformation(content);
+            eventProcessorLogger?.LogInformation(content);
             Console.WriteLine(content);
 
             if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
             {
                 requestResult = response.Content.ReadAsStringAsync().Result;
                 //Log.Debug(requestResult);
-                if (eventProcessorLogger != null) eventProcessorLogger.LogInformation(requestResult);
+                eventProcessorLogger?.LogInformation(requestResult);
 
                 return Results.Ok(JsonDocument.Parse(requestResult));
             }
         }
         else
         {
-            if (eventProcessorLogger != null) eventProcessorLogger.LogError("enableExternalApiVerification disabled or null ");
+            eventProcessorLogger?.LogError("enableExternalApiVerification disabled or null ");
         }
 
         return Results.Ok(requestResult);
     }
     catch (Exception exDb)
     {
-        if (eventProcessorLogger != null) eventProcessorLogger.LogError(exDb, "Error processing order request.");
+        eventProcessorLogger?.LogError(exDb, "Error processing order request.");
         File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
         return Results.BadRequest(requestResult);
     }
@@ -1043,8 +1049,8 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
 
 
                     ServerCertificateCustomValidationCallback =
-                   (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
-                       chain, errors) => true)
+                   (message, cert,
+                       chain, errors) => true
                 };
                 HttpClient httpClient = new()
                 {
@@ -1053,9 +1059,11 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
 
                 if (!string.IsNullOrEmpty(configDto.networkProxy))
                 {
-                    WebProxy webProxy = new WebProxy(configDto.networkProxy, int.Parse(configDto.networkProxyPort));
-                    webProxy.Credentials = CredentialCache.DefaultNetworkCredentials;
-                    webProxy.BypassProxyOnLocal = true;
+                    WebProxy webProxy = new(configDto.networkProxy, int.Parse(configDto.networkProxyPort))
+                    {
+                        Credentials = CredentialCache.DefaultNetworkCredentials,
+                        BypassProxyOnLocal = true
+                    };
                     webProxy.BypassList.Append("169.254.1.1");
                     webProxy.BypassList.Append(readerAddress);
                     webProxy.BypassList.Append("localhost");
@@ -1066,8 +1074,8 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
                         Proxy = webProxy,
                         UseProxy = true,
                         ServerCertificateCustomValidationCallback =
-                        (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
-                            chain, errors) => true)
+                        (message, cert,
+                            chain, errors) => true
                     };
                     httpClient = new HttpClient(httpClientHandler)
                     {
@@ -1154,8 +1162,8 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
 
 
                 ServerCertificateCustomValidationCallback =
-                   (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
-                       chain, errors) => true)
+                   (message, cert,
+                       chain, errors) => true
             };
             HttpClient httpClient = new()
             {
@@ -1164,9 +1172,11 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
 
             if (!string.IsNullOrEmpty(configDto.networkProxy))
             {
-                WebProxy webProxy = new WebProxy(configDto.networkProxy, int.Parse(configDto.networkProxyPort));
-                webProxy.Credentials = CredentialCache.DefaultNetworkCredentials;
-                webProxy.BypassProxyOnLocal = true;
+                WebProxy webProxy = new(configDto.networkProxy, int.Parse(configDto.networkProxyPort))
+                {
+                    Credentials = CredentialCache.DefaultNetworkCredentials,
+                    BypassProxyOnLocal = true
+                };
                 webProxy.BypassList.Append("169.254.1.1");
                 webProxy.BypassList.Append(readerAddress);
                 webProxy.BypassList.Append("localhost");
@@ -1177,8 +1187,8 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
                     Proxy = webProxy,
                     UseProxy = true,
                     ServerCertificateCustomValidationCallback =
-                    (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
-                        chain, errors) => true)
+                    (message, cert,
+                        chain, errors) => true
                 };
                 httpClient = new HttpClient(httpClientHandler)
                 {
@@ -1231,7 +1241,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
 });
 
 
-app.MapGet("/api/getserial", [AuthorizeBasicAuth] async (RuntimeDb db) =>
+app.MapGet("/api/getserial", [AuthorizeBasicAuth] (RuntimeDb db) =>
 {
     var serial = db.ReaderStatus.FindAsync("READER_SERIAL");
 
@@ -1245,20 +1255,22 @@ app.MapGet("/api/getserial", [AuthorizeBasicAuth] async (RuntimeDb db) =>
     return Results.NotFound();
 });
 
-app.MapGet("/api/deviceid", [AuthorizeBasicAuth] async (RuntimeDb db) =>
+app.MapGet("/api/deviceid", [AuthorizeBasicAuth] (RuntimeDb db) =>
 {
     var configDto = ConfigFileHelper.ReadFile();
     if (configDto != null && !string.IsNullOrEmpty(configDto.readerName))
     {
-        var json = new Dictionary<object, object>();
-        json.Add("readerName", configDto.readerName);
+        var json = new Dictionary<object, object>
+        {
+            { "readerName", configDto.readerName }
+        };
         return Results.Ok(json);
     }
 
     return Results.NotFound();
 });
 
-app.MapGet("/api/getstatus", [AuthorizeBasicAuth] async (RuntimeDb db) =>
+app.MapGet("/api/getstatus", [AuthorizeBasicAuth] (RuntimeDb db) =>
 {
     var status = db.ReaderStatus.FindAsync("READER_STATUS");
 
@@ -1271,14 +1283,16 @@ app.MapGet("/api/getstatus", [AuthorizeBasicAuth] async (RuntimeDb db) =>
     return Results.NotFound();
 });
 
-app.MapGet("/api/start-preset", [AuthorizeBasicAuth] async (RuntimeDb db) =>
+app.MapGet("/api/start-preset", [AuthorizeBasicAuth] (RuntimeDb db) =>
 {
     try
     {
-        var command = new ReaderCommands();
-        command.Id = "START_PRESET";
-        command.Value = "START";
-        command.Timestamp = DateTime.Now;
+        var command = new ReaderCommands
+        {
+            Id = "START_PRESET",
+            Value = "START",
+            Timestamp = DateTime.Now
+        };
         db.ReaderCommands.Add(command);
         db.SaveChangesAsync();
         return Results.Ok();
@@ -1289,14 +1303,16 @@ app.MapGet("/api/start-preset", [AuthorizeBasicAuth] async (RuntimeDb db) =>
     }
 });
 
-app.MapGet("/api/start-inventory", [AuthorizeBasicAuth] async (RuntimeDb db) =>
+app.MapGet("/api/start-inventory", [AuthorizeBasicAuth] (RuntimeDb db) =>
 {
     try
     {
-        var command = new ReaderCommands();
-        command.Id = "START_INVENTORY";
-        command.Value = "START";
-        command.Timestamp = DateTime.Now;
+        var command = new ReaderCommands
+        {
+            Id = "START_INVENTORY",
+            Value = "START",
+            Timestamp = DateTime.Now
+        };
         db.ReaderCommands.Add(command);
         db.SaveChangesAsync();
         return Results.Ok();
@@ -1307,14 +1323,16 @@ app.MapGet("/api/start-inventory", [AuthorizeBasicAuth] async (RuntimeDb db) =>
     }
 });
 
-app.MapGet("/api/stop-preset", [AuthorizeBasicAuth] async (RuntimeDb db) =>
+app.MapGet("/api/stop-preset", [AuthorizeBasicAuth] (RuntimeDb db) =>
 {
     try
     {
-        var command = new ReaderCommands();
-        command.Id = "STOP_PRESET";
-        command.Value = "STOP";
-        command.Timestamp = DateTime.Now;
+        var command = new ReaderCommands
+        {
+            Id = "STOP_PRESET",
+            Value = "STOP",
+            Timestamp = DateTime.Now
+        };
         db.ReaderCommands.Add(command);
         db.SaveChangesAsync();
         return Results.Ok();
@@ -1325,14 +1343,16 @@ app.MapGet("/api/stop-preset", [AuthorizeBasicAuth] async (RuntimeDb db) =>
     }
 });
 
-app.MapGet("/api/stop-inventory", [AuthorizeBasicAuth] async (RuntimeDb db) =>
+app.MapGet("/api/stop-inventory", [AuthorizeBasicAuth] (RuntimeDb db) =>
 {
     try
     {
-        var command = new ReaderCommands();
-        command.Id = "STOP_INVENTORY";
-        command.Value = "STOP";
-        command.Timestamp = DateTime.Now;
+        var command = new ReaderCommands
+        {
+            Id = "STOP_INVENTORY",
+            Value = "STOP",
+            Timestamp = DateTime.Now
+        };
         db.ReaderCommands.Add(command);
         db.SaveChangesAsync();
         return Results.Ok();
@@ -1343,17 +1363,19 @@ app.MapGet("/api/stop-inventory", [AuthorizeBasicAuth] async (RuntimeDb db) =>
     }
 });
 
-app.MapGet("/api/upgrade-firmware", [AuthorizeBasicAuth] async (RuntimeDb db) =>
+app.MapGet("/api/upgrade-firmware", [AuthorizeBasicAuth] (RuntimeDb db) =>
 {
     try
     {
         var configDto = ConfigFileHelper.ReadFile();
         if (configDto != null && !string.IsNullOrEmpty(configDto.systemImageUpgradeUrl))
         {
-            var command = new ReaderCommands();
-            command.Id = "UPGRADE_SYSTEM_IMAGE";
-            command.Value = configDto.systemImageUpgradeUrl;
-            command.Timestamp = DateTime.Now;
+            var command = new ReaderCommands
+            {
+                Id = "UPGRADE_SYSTEM_IMAGE",
+                Value = configDto.systemImageUpgradeUrl,
+                Timestamp = DateTime.Now
+            };
             db.ReaderCommands.Add(command);
             db.SaveChangesAsync();
         }
@@ -1366,7 +1388,7 @@ app.MapGet("/api/upgrade-firmware", [AuthorizeBasicAuth] async (RuntimeDb db) =>
     }
 });
 
-app.MapGet("/api/gpo/{port}/status/{status}", [AuthorizeBasicAuth] async (int port, string status, RuntimeDb db) =>
+app.MapGet("/api/gpo/{port}/status/{status}", [AuthorizeBasicAuth] (int port, string status, RuntimeDb db) =>
 {
     try
     {
@@ -1378,10 +1400,12 @@ app.MapGet("/api/gpo/{port}/status/{status}", [AuthorizeBasicAuth] async (int po
         else if ("1".Equals(status)) statusToSet = true;
 
 
-        var command = new ReaderCommands();
-        command.Id = "SET_GPO_" + port;
-        command.Value = "" + statusToSet;
-        command.Timestamp = DateTime.Now;
+        var command = new ReaderCommands
+        {
+            Id = "SET_GPO_" + port,
+            Value = "" + statusToSet,
+            Timestamp = DateTime.Now
+        };
         db.ReaderCommands.Add(command);
         db.SaveChangesAsync();
         return Results.Ok();
@@ -1392,15 +1416,17 @@ app.MapGet("/api/gpo/{port}/status/{status}", [AuthorizeBasicAuth] async (int po
     }
 });
 
-app.MapGet("/api/filter/clean", [AuthorizeBasicAuth] async (RuntimeDb db) =>
+app.MapGet("/api/filter/clean", [AuthorizeBasicAuth] (RuntimeDb db) =>
 {
     try
     {
 
-        var command = new ReaderCommands();
-        command.Id = "CLEAN_EPC_SOFTWARE_HISTORY_FILTERS";
-        command.Value = "ALL";
-        command.Timestamp = DateTime.Now;
+        var command = new ReaderCommands
+        {
+            Id = "CLEAN_EPC_SOFTWARE_HISTORY_FILTERS",
+            Value = "ALL",
+            Timestamp = DateTime.Now
+        };
         db.ReaderCommands.Add(command);
         db.SaveChangesAsync();
         return Results.Ok();
@@ -1418,10 +1444,12 @@ app.MapGet("/api/reload", [AuthorizeBasicAuth] async (RuntimeDb db) =>
         try
         {
             //request a start command
-            var command = new ReaderCommands();
-            command.Id = "START_INVENTORY";
-            command.Value = "START";
-            command.Timestamp = DateTime.Now;
+            var command = new ReaderCommands
+            {
+                Id = "START_INVENTORY",
+                Value = "START",
+                Timestamp = DateTime.Now
+            };
             db.ReaderCommands.Add(command);
             await db.SaveChangesAsync();
             await Task.Delay(100);
@@ -1449,28 +1477,30 @@ app.MapGet("/api/reload", [AuthorizeBasicAuth] async (RuntimeDb db) =>
 
 app.MapGet("/api/getcapabilities", async (
 RuntimeDb db,
-ILogger < Program > logger,  // For general logging
+ILogger<Program> logger,  // For general logging
     ILoggerFactory loggerFactory  // For creating specialized loggers
                                   ) =>
 {
-    List<SmartReaderCapabilities> capabilities = new List<SmartReaderCapabilities>();
+    List<SmartReaderCapabilities> capabilities = [];
     // Create a dedicated logger for the R700IotReader
     var readerLogger = loggerFactory.CreateLogger<R700IotReader>();
 
+    var healthMonitor = new HealthMonitor(loggerFactory.CreateLogger<HealthMonitor>());
+    var readerConfiguration = ReaderConfiguration.CreateDefault();
+    readerConfiguration.Network.Hostname = readerAddress;
+    readerConfiguration.Security.Username = rshellAuthUserName;
+    readerConfiguration.Security.Password = rshellAuthPassword;
+    readerConfiguration.Security.UseBasicAuth = true;
+    readerConfiguration.Network.UseHttps = true;
+
 
     using (IR700IotReader _iotDeviceInterfaceClient = new R700IotReader(
-            readerAddress,  // Reader address
-            "",            // Empty bearer token
-            true,          // Enable heartbeat
-            true,          // Enable monitoring
-            rshellAuthUserName,
-            rshellAuthPassword,
-            0,            // Default keepalive period
-            "",           // No proxy address
-            0,            // No proxy port
-            eventProcessorLogger: readerLogger,  // Logger for event processing
-            loggerFactory: loggerFactory        // Factory for internal logging
-        ))
+        readerAddress,
+        readerConfiguration,
+        eventProcessorLogger: readerLogger,  // Logger for event processing
+        loggerFactory: loggerFactory,        // Factory for internal logging
+        healthMonitor
+    ))
     {
         logger.LogInformation("Retrieving reader capabilities...");
 
@@ -1562,7 +1592,7 @@ ILogger < Program > logger,  // For general logging
     return Results.Ok(capabilities);
 });
 
-app.MapGet("/api/getrfidstatus", [AuthorizeBasicAuth] async (
+app.MapGet("/api/getrfidstatus", [AuthorizeBasicAuth] (
     RuntimeDb db,
 ILogger<Program> logger,  // For general logging
     ILoggerFactory loggerFactory  // For creating specialized loggers
@@ -1627,11 +1657,13 @@ ILogger<Program> logger,  // For general logging
     return Results.Ok(rfidStatus);
 });
 
-app.MapGet("/api/verify_key/{key}", [AuthorizeBasicAuth] async (RuntimeDb db, [FromRoute] string key) =>
+app.MapGet("/api/verify_key/{key}", [AuthorizeBasicAuth] (RuntimeDb db, [FromRoute] string key) =>
 {
     var readerLicenses = new List<ReaderLicense>();
-    var readerLicense = new ReaderLicense();
-    readerLicense.isValid = "fail";
+    var readerLicense = new ReaderLicense
+    {
+        isValid = "fail"
+    };
     try
     {
         var serial = db.ReaderStatus.FindAsync("READER_SERIAL");
@@ -1653,7 +1685,7 @@ app.MapGet("/api/verify_key/{key}", [AuthorizeBasicAuth] async (RuntimeDb db, [F
     return Results.Ok(readerLicenses);
 });
 
-app.MapGet("/api/image", [AuthorizeBasicAuth] async (RuntimeDb db) =>
+app.MapGet("/api/image", [AuthorizeBasicAuth] (RuntimeDb db) =>
 {
     var imageStatus = new Dictionary<object, object>();
     eventProcessorLogger.LogInformation("Requesting image status. ");
@@ -1725,7 +1757,7 @@ app.MapDelete("/cleanup-usb-files", [AuthorizeBasicAuth] (string? filename) =>
         if (string.IsNullOrEmpty(filename))
         {
             // Original logic to clean up all files
-            DirectoryInfo di = new DirectoryInfo(path);
+            DirectoryInfo di = new(path);
             foreach (FileInfo file in di.GetFiles())
             {
                 file.Delete();
@@ -1776,8 +1808,8 @@ app.MapPost("/api/test", [AuthorizeBasicAuth] async ([FromBody] BearerDTO bearer
 
 
                 ServerCertificateCustomValidationCallback =
-                   (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
-                       chain, errors) => true)
+                   (message, cert,
+                       chain, errors) => true
             };
             HttpClient httpClient = new()
             {
@@ -1786,9 +1818,11 @@ app.MapPost("/api/test", [AuthorizeBasicAuth] async ([FromBody] BearerDTO bearer
 
             if (!string.IsNullOrEmpty(configDto.networkProxy))
             {
-                WebProxy webProxy = new WebProxy(configDto.networkProxy, int.Parse(configDto.networkProxyPort));
-                webProxy.Credentials = CredentialCache.DefaultNetworkCredentials;
-                webProxy.BypassProxyOnLocal = true;
+                WebProxy webProxy = new(configDto.networkProxy, int.Parse(configDto.networkProxyPort))
+                {
+                    Credentials = CredentialCache.DefaultNetworkCredentials,
+                    BypassProxyOnLocal = true
+                };
                 webProxy.BypassList.Append("169.254.1.1");
                 webProxy.BypassList.Append(readerAddress);
                 webProxy.BypassList.Append("localhost");
@@ -1800,8 +1834,8 @@ app.MapPost("/api/test", [AuthorizeBasicAuth] async ([FromBody] BearerDTO bearer
                     Proxy = webProxy,
                     UseProxy = true,
                     ServerCertificateCustomValidationCallback =
-                    (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((message, cert,
-                        chain, errors) => true)
+                    (message, cert,
+                        chain, errors) => true
                 };
                 httpClient = new HttpClient(httpClientHandler)
                 {
@@ -1864,8 +1898,10 @@ app.MapPost("/mode", [AuthorizeBasicAuth]
 async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
 {
     var requestResult = new Dictionary<object, object>();
-    var payload = new Dictionary<object, object>();
-    payload.Add("", "");
+    var payload = new Dictionary<object, object>
+    {
+        { "", "" }
+    };
 
     try
     {
@@ -1895,10 +1931,12 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
             writer.Flush();
             jsonDocumentStr = Encoding.UTF8.GetString(stream.ToArray());
             //request a start command
-            var command = new ReaderCommands();
-            command.Id = "MODE_COMMAND";
-            command.Value = jsonDocumentStr;
-            command.Timestamp = DateTime.Now;
+            var command = new ReaderCommands
+            {
+                Id = "MODE_COMMAND",
+                Value = jsonDocumentStr,
+                Timestamp = DateTime.Now
+            };
             db.ReaderCommands.Add(command);
             await db.SaveChangesAsync();
         }
@@ -1913,7 +1951,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
 });
 
 app.MapPost("/mqtt", [AuthorizeBasicAuth]
-async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
+(HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
     {
         var requestResult = "";
 
@@ -1929,7 +1967,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
     });
 
 app.MapPut("/mqtt", [AuthorizeBasicAuth]
-async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
+(HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
     {
         var requestResult = "";
 
@@ -1944,26 +1982,38 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
         }
     });
 
-app.MapGet("/mqtt", [AuthorizeBasicAuth] async (HttpRequest readerRequest, RuntimeDb db) =>
+app.MapGet("/mqtt", [AuthorizeBasicAuth] (HttpRequest readerRequest, RuntimeDb db) =>
 {
     var operationResult = new Dictionary<string, object>();
     var endPointList = new List<MqttConfigurationDto>();
     try
     {
-        var mqttConfigurationDTO = new MqttConfigurationDto();
-        mqttConfigurationDTO.Data = new Data();
-        mqttConfigurationDTO.Data.Configuration = new Configuration();
-        mqttConfigurationDTO.Data.Configuration.Additional = new Additional();
-        mqttConfigurationDTO.Data.Configuration.Topics = new Topics();
-        mqttConfigurationDTO.Data.Configuration.Topics.Control = new Control();
-        mqttConfigurationDTO.Data.Configuration.Topics.Control.Command = new ManagementEvents();
-        mqttConfigurationDTO.Data.Configuration.Topics.Control.Response = new ManagementEvents();
-        mqttConfigurationDTO.Data.Configuration.Topics.Management = new Control();
-        mqttConfigurationDTO.Data.Configuration.Topics.Management.Command = new ManagementEvents();
-        mqttConfigurationDTO.Data.Configuration.Topics.Management.Response = new ManagementEvents();
-        mqttConfigurationDTO.Data.Configuration.Topics.ManagementEvents = new ManagementEvents();
-        mqttConfigurationDTO.Data.Configuration.Topics.TagEvents = new ManagementEvents();
-        mqttConfigurationDTO.Data.Configuration.Endpoint = new Endpoint();
+        var mqttConfigurationDTO = new MqttConfigurationDto
+        {
+            Data = new Data
+            {
+                Configuration = new Configuration
+                {
+                    Additional = new Additional(),
+                    Topics = new Topics
+                    {
+                        Control = new Control
+                        {
+                            Command = new ManagementEvents(),
+                            Response = new ManagementEvents()
+                        },
+                        Management = new Control
+                        {
+                            Command = new ManagementEvents(),
+                            Response = new ManagementEvents()
+                        },
+                        ManagementEvents = new ManagementEvents(),
+                        TagEvents = new ManagementEvents()
+                    },
+                    Endpoint = new Endpoint()
+                }
+            }
+        };
 
 
         var configDto = ConfigFileHelper.ReadFile();
@@ -2046,7 +2096,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
         string json = "";
         using (var stream = new MemoryStream())
         {
-            Utf8JsonWriter writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            Utf8JsonWriter writer = new(stream, new JsonWriterOptions { Indented = true });
             jsonDocument.WriteTo(writer);
             writer.Flush();
             json = Encoding.UTF8.GetString(stream.ToArray());
@@ -2075,7 +2125,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
         string json = "";
         using (var stream = new MemoryStream())
         {
-            Utf8JsonWriter writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            Utf8JsonWriter writer = new(stream, new JsonWriterOptions { Indented = true });
             jsonDocument.WriteTo(writer);
             writer.Flush();
             json = Encoding.UTF8.GetString(stream.ToArray());
@@ -2104,7 +2154,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
         string json = "";
         using (var stream = new MemoryStream())
         {
-            Utf8JsonWriter writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            Utf8JsonWriter writer = new(stream, new JsonWriterOptions { Indented = true });
             jsonDocument.WriteTo(writer);
             writer.Flush();
             json = Encoding.UTF8.GetString(stream.ToArray());
@@ -2134,7 +2184,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
         string json = "";
         using (var stream = new MemoryStream())
         {
-            Utf8JsonWriter writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            Utf8JsonWriter writer = new(stream, new JsonWriterOptions { Indented = true });
             jsonDocument.WriteTo(writer);
             writer.Flush();
             json = Encoding.UTF8.GetString(stream.ToArray());
@@ -2155,7 +2205,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
 });
 
 app.MapPost("/command/mode", [AuthorizeBasicAuth]
-async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db, IotInterfaceService backgroundService) =>
+(HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db, IotInterfaceService backgroundService) =>
 {
     var commandStatus = "success";
 
@@ -2164,7 +2214,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
         string json = "";
         using (var stream = new MemoryStream())
         {
-            Utf8JsonWriter writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            Utf8JsonWriter writer = new(stream, new JsonWriterOptions { Indented = true });
             jsonDocument.WriteTo(writer);
             writer.Flush();
             json = Encoding.UTF8.GetString(stream.ToArray());
@@ -2211,7 +2261,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
 });
 
 app.MapPost("/mqtt/command/mode", [AuthorizeBasicAuth]
-async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db, IotInterfaceService backgroundService) =>
+(HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db, IotInterfaceService backgroundService) =>
 {
     var commandStatus = "success";
 
@@ -2220,7 +2270,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
         string json = "";
         using (var stream = new MemoryStream())
         {
-            Utf8JsonWriter writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            Utf8JsonWriter writer = new(stream, new JsonWriterOptions { Indented = true });
             jsonDocument.WriteTo(writer);
             writer.Flush();
             json = Encoding.UTF8.GetString(stream.ToArray());
@@ -2267,7 +2317,7 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
 });
 
 app.MapPost("/upload/mqtt/ca", [AuthorizeBasicAuth]
-async (HttpRequest request, RuntimeDb db) =>
+(HttpRequest request, RuntimeDb db) =>
 {
     var requestResult = "Error saving file.";
 
@@ -2310,7 +2360,7 @@ async (HttpRequest request, RuntimeDb db) =>
 });
 
 app.MapPost("/upload/mqtt/certificate", [AuthorizeBasicAuth]
-async (HttpRequest request, RuntimeDb db) =>
+(HttpRequest request, RuntimeDb db) =>
 {
     var requestResult = "Error saving file.";
 
@@ -2352,7 +2402,7 @@ async (HttpRequest request, RuntimeDb db) =>
     }
 });
 
-app.MapPost("/api/logging/level", [AuthorizeBasicAuth] async (
+app.MapPost("/api/logging/level", [AuthorizeBasicAuth] (
     [FromBody] LogLevelRequest request,
     LoggingService loggingService) =>
 {
@@ -2437,7 +2487,7 @@ static IResult ProcessMqttEndpointRequest(JsonDocument jsonDocument, RuntimeDb d
     if (jsonDocument != null)
     {
         var jsonDocumentStr = "";
-        MqttConfigurationDto mqttConfigurationDto = null;
+        MqttConfigurationDto? mqttConfigurationDto = null;
         using (var stream = new MemoryStream())
         {
             var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
@@ -2476,9 +2526,11 @@ static IResult ProcessMqttEndpointRequest(JsonDocument jsonDocument, RuntimeDb d
                             var configModel = db.ReaderConfigs.FindAsync("READER_CONFIG").Result;
                             if (configModel == null)
                             {
-                                configModel = new ReaderConfigs();
-                                configModel.Id = "READER_CONFIG";
-                                configModel.Value = JsonConvert.SerializeObject(configDto);
+                                configModel = new ReaderConfigs
+                                {
+                                    Id = "READER_CONFIG",
+                                    Value = JsonConvert.SerializeObject(configDto)
+                                };
                                 db.ReaderConfigs.Add(configModel);
                             }
                             else
@@ -2488,9 +2540,11 @@ static IResult ProcessMqttEndpointRequest(JsonDocument jsonDocument, RuntimeDb d
                             }
 
                             db.SaveChangesAsync();
-                            var operationResult = new Dictionary<string, string>();
-                            operationResult.Add("status", "OK");
-                            operationResult.Add("message", connectionResult);
+                            var operationResult = new Dictionary<string, string>
+                            {
+                                { "status", "OK" },
+                                { "message", connectionResult }
+                            };
                             return Results.Ok(operationResult);
                         }
                         catch (Exception exDb1)
@@ -2765,9 +2819,11 @@ static IResult ProcessMqttEndpointRequest(JsonDocument jsonDocument, RuntimeDb d
                                 var configModel = db.ReaderConfigs.FindAsync("READER_CONFIG").Result;
                                 if (configModel == null)
                                 {
-                                    configModel = new ReaderConfigs();
-                                    configModel.Id = "READER_CONFIG";
-                                    configModel.Value = JsonConvert.SerializeObject(configDto);
+                                    configModel = new ReaderConfigs
+                                    {
+                                        Id = "READER_CONFIG",
+                                        Value = JsonConvert.SerializeObject(configDto)
+                                    };
                                     db.ReaderConfigs.Add(configModel);
                                 }
                                 else
@@ -2777,9 +2833,11 @@ static IResult ProcessMqttEndpointRequest(JsonDocument jsonDocument, RuntimeDb d
                                 }
 
                                 db.SaveChangesAsync();
-                                var operationResult = new Dictionary<string, string>();
-                                operationResult.Add("status", "OK");
-                                operationResult.Add("message", "Successfully added endpoint configurations");
+                                var operationResult = new Dictionary<string, string>
+                                {
+                                    { "status", "OK" },
+                                    { "message", "Successfully added endpoint configurations" }
+                                };
                                 return Results.Ok(operationResult);
                             }
                             catch (Exception exDb1)
@@ -2791,9 +2849,11 @@ static IResult ProcessMqttEndpointRequest(JsonDocument jsonDocument, RuntimeDb d
         }
     }
 
-    var operationResulterror = new Dictionary<string, string>();
-    operationResulterror.Add("status", "NOT PROCESSED");
-    operationResulterror.Add("message", "The request was not processed");
+    var operationResulterror = new Dictionary<string, string>
+    {
+        { "status", "NOT PROCESSED" },
+        { "message", "The request was not processed" }
+    };
 
     return Results.BadRequest(operationResulterror);
 }

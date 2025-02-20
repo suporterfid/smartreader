@@ -10,27 +10,18 @@
 #endregion
 using Impinj.Atlas;
 using Impinj.Utils.DebugLogger;
-using McMaster.NETCore.Plugins;
-using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using MQTTnet;
-using MQTTnet.Client;
-using MQTTnet.Extensions.ManagedClient;
-using MQTTnet.Packets;
 using MQTTnet.Protocol;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using plugin_contract.ViewModel.Gpi;
 using plugin_contract.ViewModel.Stream;
 using Serilog;
-using Serilog.Events;
 using SmartReader.Infrastructure.Database;
 using SmartReader.Infrastructure.ViewModel;
 using SmartReader.ViewModel.Auth;
 using SmartReaderJobs.Utils;
 using SmartReaderJobs.ViewModel.Events;
-using SmartReaderJobs.ViewModel.Mqtt.Endpoint;
 using SmartReaderStandalone.Entities;
 using SmartReaderStandalone.IotDeviceInterface;
 using SmartReaderStandalone.Plugins;
@@ -49,20 +40,15 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO.Ports;
 using System.Net;
-using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Net.Security;
 using System.Reflection;
-using System.Security.Authentication;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks.Dataflow;
 using System.Timers;
 using TagDataTranslation;
+using static SmartReader.IotDeviceInterface.R700IotReader;
 using DataReceivedEventArgs = SuperSimpleTcp.DataReceivedEventArgs;
-using JsonSerializer = Newtonsoft.Json.JsonSerializer;
 using ReaderStatus = SmartReaderStandalone.Entities.ReaderStatus;
 using Timer = System.Timers.Timer;
 
@@ -140,7 +126,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             try
             {
-                _currentSkus.AddOrUpdate(
+                _ = _currentSkus.AddOrUpdate(
                     sku,
                     increment,
                     (key, oldValue) => oldValue + increment
@@ -196,7 +182,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     using var cts = new CancellationTokenSource(SendTimeoutMs);
 
                     // Wrap the sync Send in a task to support timeout
-                    await Task.Run(() => {
+                    await Task.Run(() =>
+                    {
                         server.Send(client, data);
                     }, cts.Token);
 
@@ -227,7 +214,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
-    
+
 
     private static string? _readerAddress = null; // Nullable with default null value
 
@@ -239,9 +226,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     // private readonly object _batchLock = new object();
 
-    private readonly SemaphoreSlim _batchLock = new SemaphoreSlim(1, 1);
+    private readonly SemaphoreSlim _batchLock = new(1, 1);
 
-    private readonly SemaphoreSlim _publishSemaphore = new SemaphoreSlim(1, 1);
+    private readonly SemaphoreSlim _publishSemaphore = new(1, 1);
 
     private static int _positioningExpirationInSec = 3; // No change needed, value type with initializer
 
@@ -316,14 +303,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     public static readonly ConcurrentDictionary<int, bool> _gpiPortStates = new();
 
-    private static bool? previousGpi1 = null;
-
-    private static bool gpi1HasChanged = false;
-
-    private static bool? previousGpi2 = null;
-
-    private static bool gpi2HasChanged = false;
-
     // private readonly PeriodicTimer _gpiTimer;
 
     // private readonly Task _gpiTimerTask;
@@ -366,11 +345,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventUsbDrive = new();
 
-    private static List<string> _oldReadEpcList = new();
+    private static List<string> _oldReadEpcList = [];
 
-    private readonly List<int> _positioningAntennaPorts = new();
+    private readonly List<int> _positioningAntennaPorts = [];
 
-    private readonly List<string> _positioningEpcsHeaderList = new();
+    private readonly List<string> _positioningEpcsHeaderList = [];
 
     public readonly ConcurrentDictionary<string, ReadCountTimeoutEvent> _softwareFilterReadCountTimeoutDictionary =
         new();
@@ -437,7 +416,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private static readonly ConcurrentDictionary<string, long> _readEpcs = new();
     private readonly ConcurrentDictionary<string, int> _currentSkus = new();
-    private readonly ConcurrentBag<string> _currentSkuReadEpcs = new();
+    private readonly ConcurrentBag<string> _currentSkuReadEpcs = [];
 
     private SerialPort? _serialTty = null;
 
@@ -474,21 +453,17 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     //private double _mqttUpdateTagEventsListBatchOnChangeIntervalInMs = 10;
     private MqttPublishingConfiguration _mqttPublishingConfiguration;
 
-    private bool _emptyEventPublished = false;
-
-    public static Dictionary<string, IPlugin> _plugins = new();
+    public static Dictionary<string, IPlugin> _plugins = [];
 
     private readonly ILoggerFactory _loggerFactory;
 
     private string _buildConfiguration = "Release"; // Default to Debug if unable to determine
 
-
-
-    public IotInterfaceService(IServiceProvider services, 
+    public IotInterfaceService(IServiceProvider services,
         IConfiguration configuration,
-        ILogger<IotInterfaceService> logger, 
-        ILoggerFactory loggerFactory, 
-        IHttpClientFactory httpClientFactory, 
+        ILogger<IotInterfaceService> logger,
+        ILoggerFactory loggerFactory,
+        IHttpClientFactory httpClientFactory,
         IConfigurationService configurationService,
         ITcpSocketService tcpSocketService,
         IMqttService mqttService,
@@ -532,7 +507,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _httpUtil = _configurationService.CreateHttpUtil(HttpClientFactory);
 
         _logger.LogInformation($"Reader Address: {_readerAddress}, Reader Username: {_readerUsername}");
-        
+
 
         _timerPeriodicTasksJob = new Timer(100);
 
@@ -573,17 +548,18 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         catch (Exception)
         {
 
-            
+
         }
 
         try
         {
-            InitializeReaderDeviceAsync();
+            InitializeReaderDeviceAsync().GetAwaiter().GetResult();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogDebug($"Error initializing device: {ex.Message}");
 
-           
+
         }
         _batchProcessor = new ThreadSafeBatchProcessor(
                     _logger,
@@ -629,273 +605,272 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _gpiCts.Cancel();
     }
 
-//    private async Task HandleGpiTimerAsync(PeriodicTimer timer, CancellationToken cancel = default)
-//    {
-//        try
-//        {
-//            if (_standaloneConfigDTO == null)
-//            {
-//                _standaloneConfigDTO = ConfigFileHelper.ReadFile();
-//            }
-//#pragma warning disable CS8602 // Dereference of a possibly null reference.
-//            if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent,
-//                                             StringComparison.OrdinalIgnoreCase))
-//            {
-//                while (await timer.WaitForNextTickAsync(cancel)) await Task.Run(() => QueryGpiStatus(cancel), cancel);
-//            }
-//            else
-//            {
-//                await Task.Delay(100);
-//            }
-//#pragma warning restore CS8602 // Dereference of a possibly null reference.
+    //    private async Task HandleGpiTimerAsync(PeriodicTimer timer, CancellationToken cancel = default)
+    //    {
+    //        try
+    //        {
+    //            if (_standaloneConfigDTO == null)
+    //            {
+    //                _standaloneConfigDTO = ConfigFileHelper.ReadFile();
+    //            }
+    //#pragma warning disable CS8602 // Dereference of a possibly null reference.
+    //            if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent,
+    //                                             StringComparison.OrdinalIgnoreCase))
+    //            {
+    //                while (await timer.WaitForNextTickAsync(cancel)) await Task.Run(() => QueryGpiStatus(cancel), cancel);
+    //            }
+    //            else
+    //            {
+    //                await Task.Delay(100);
+    //            }
+    //#pragma warning restore CS8602 // Dereference of a possibly null reference.
 
-//        }
-//        catch (Exception ex)
-//        {
-//            Console.WriteLine("QueryGpiStatus - " + ex.Message);
-//        }
-//    }
+    //        }
+    //        catch (Exception ex)
+    //        {
+    //            Console.WriteLine("QueryGpiStatus - " + ex.Message);
+    //        }
+    //    }
 
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-//    private async Task QueryGpiStatus(CancellationToken cancel = default)
-//#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
-//    {
-//        try
-//        {
-
-
-//            var gpi1File = @"/dev/gpio/ext-gpi-0/value";
-//            var gpi2File = @"/dev/gpio/ext-gpi-1/value";
-//            var fileContent1 = "";
-//            var fileContent2 = "";
-//            if (File.Exists(gpi1File))
-//                fileContent1 = File.ReadAllText(gpi1File);
-//            if (File.Exists(gpi2File))
-//                fileContent2 = File.ReadAllText(gpi2File);
-
-//            if (!_gpiPortStates.ContainsKey(0)) _gpiPortStates.TryAdd(0, false);
-//            if (!_gpiPortStates.ContainsKey(1)) _gpiPortStates.TryAdd(1, false);
-
-//            if (!string.IsNullOrEmpty(fileContent1) && fileContent1.Contains("1"))
-//            {
-//                _gpiPortStates[0] = true;
-//                if (previousGpi1.HasValue)
-//                {
-//                    if (_gpiPortStates[0] != previousGpi1.Value)
-//                    {
-//                        gpi1HasChanged = true;
-//                    }
-//                    else
-//                    {
-//                        gpi1HasChanged = false;
-//                    }
-//                }
-//                else
-//                {
-//                    gpi1HasChanged = true;
-//                }
-
-//                previousGpi1 = _gpiPortStates[0];
-//            }
-//            else
-//            {
-//                _gpiPortStates[0] = false;
-//                if (previousGpi1.HasValue)
-//                {
-//                    if (_gpiPortStates[0] != previousGpi1.Value)
-//                    {
-//                        gpi1HasChanged = true;
-//                    }
-//                    else
-//                    {
-//                        gpi1HasChanged = false;
-//                    }
-//                }
-//                else
-//                {
-//                    gpi1HasChanged = true;
-//                }
-//                previousGpi1 = _gpiPortStates[0];
-//            }
-
-//            if (!string.IsNullOrEmpty(fileContent2) && fileContent2.Contains("1"))
-//            {
-//                _gpiPortStates[1] = true;
-//                if (previousGpi2.HasValue)
-//                {
-//                    if (_gpiPortStates[1] != previousGpi2.Value)
-//                    {
-//                        gpi2HasChanged = true;
-//                    }
-//                    else
-//                    {
-//                        gpi2HasChanged = false;
-//                    }
-//                }
-//                else
-//                {
-//                    gpi2HasChanged = true;
-//                }
-
-//                previousGpi2 = _gpiPortStates[1];
-//            }
-//            else
-//            {
-//                _gpiPortStates[1] = false;
-//                if (previousGpi2.HasValue)
-//                {
-//                    if (_gpiPortStates[1] != previousGpi2.Value)
-//                    {
-//                        gpi2HasChanged = true;
-//                    }
-//                    else
-//                    {
-//                        gpi2HasChanged = false;
-//                    }
-//                }
-//                else
-//                {
-//                    gpi2HasChanged = true;
-//                }
-//                previousGpi2 = _gpiPortStates[1];
-//            }
+    //    private async Task QueryGpiStatus(CancellationToken cancel = default)
+    //#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
+    //    {
+    //        try
+    //        {
 
 
+    //            var gpi1File = @"/dev/gpio/ext-gpi-0/value";
+    //            var gpi2File = @"/dev/gpio/ext-gpi-1/value";
+    //            var fileContent1 = "";
+    //            var fileContent2 = "";
+    //            if (File.Exists(gpi1File))
+    //                fileContent1 = File.ReadAllText(gpi1File);
+    //            if (File.Exists(gpi2File))
+    //                fileContent2 = File.ReadAllText(gpi2File);
 
-//            //if (File.Exists(gpi1File))
-//            //{
-//            //    if (!_gpiPortStates.ContainsKey(0)) _gpiPortStates.TryAdd(0, false);
-//            //    // read file content into a string
-//            //    var fileContent = File.ReadAllText(gpi1File);
+    //            if (!_gpiPortStates.ContainsKey(0)) _gpiPortStates.TryAdd(0, false);
+    //            if (!_gpiPortStates.ContainsKey(1)) _gpiPortStates.TryAdd(1, false);
 
-//            //    // compare TextBox content with file content
-//            //    if (fileContent.Contains("1"))
-//            //    {
-//            //        _gpiPortStates[0] = true;
-//            //        if (previousGpi1.HasValue)
-//            //        {
-//            //            if (_gpiPortStates[0] != previousGpi1.Value)
-//            //            {
-//            //                gpi1HasChanged = true;
-//            //            }
-//            //            else
-//            //            {
-//            //                gpi1HasChanged = false;
-//            //            }
-//            //        }
-//            //        else
-//            //        {
-//            //            gpi1HasChanged = true;
-//            //        }
+    //            if (!string.IsNullOrEmpty(fileContent1) && fileContent1.Contains("1"))
+    //            {
+    //                _gpiPortStates[0] = true;
+    //                if (previousGpi1.HasValue)
+    //                {
+    //                    if (_gpiPortStates[0] != previousGpi1.Value)
+    //                    {
+    //                        gpi1HasChanged = true;
+    //                    }
+    //                    else
+    //                    {
+    //                        gpi1HasChanged = false;
+    //                    }
+    //                }
+    //                else
+    //                {
+    //                    gpi1HasChanged = true;
+    //                }
 
-//            //        previousGpi1 = _gpiPortStates[0];
-//            //    }
-//            //    else
-//            //    {
-//            //        _gpiPortStates[0] = false;
-//            //        if (previousGpi1.HasValue)
-//            //        {
-//            //            if (_gpiPortStates[0] != previousGpi1.Value)
-//            //            {
-//            //                gpi1HasChanged = true;
-//            //            }
-//            //            else
-//            //            {
-//            //                gpi1HasChanged = false;
-//            //            }
-//            //        }
-//            //        else
-//            //        {
-//            //            gpi1HasChanged = true;
-//            //        }
+    //                previousGpi1 = _gpiPortStates[0];
+    //            }
+    //            else
+    //            {
+    //                _gpiPortStates[0] = false;
+    //                if (previousGpi1.HasValue)
+    //                {
+    //                    if (_gpiPortStates[0] != previousGpi1.Value)
+    //                    {
+    //                        gpi1HasChanged = true;
+    //                    }
+    //                    else
+    //                    {
+    //                        gpi1HasChanged = false;
+    //                    }
+    //                }
+    //                else
+    //                {
+    //                    gpi1HasChanged = true;
+    //                }
+    //                previousGpi1 = _gpiPortStates[0];
+    //            }
 
-//            //        //gpi1HasChanged = true;                    
+    //            if (!string.IsNullOrEmpty(fileContent2) && fileContent2.Contains("1"))
+    //            {
+    //                _gpiPortStates[1] = true;
+    //                if (previousGpi2.HasValue)
+    //                {
+    //                    if (_gpiPortStates[1] != previousGpi2.Value)
+    //                    {
+    //                        gpi2HasChanged = true;
+    //                    }
+    //                    else
+    //                    {
+    //                        gpi2HasChanged = false;
+    //                    }
+    //                }
+    //                else
+    //                {
+    //                    gpi2HasChanged = true;
+    //                }
 
-//            //        previousGpi1 = _gpiPortStates[0];
-//            //    }
-
-//            //}
-
-//            //if (File.Exists(gpi2File))
-//            //{
-//            //    if (!_gpiPortStates.ContainsKey(1)) _gpiPortStates.TryAdd(1, false);
-//            //    // read file content into a string
-//            //    var fileContent = File.ReadAllText(gpi2File);
-
-//            //    // compare TextBox content with file content
-//            //    //if (fileContent.Contains("1"))
-//            //    //    _gpiPortStates[1] = true;
-//            //    //else
-//            //    //    _gpiPortStates[1] = false;
-
-//            //    if (fileContent.Contains("1"))
-//            //    {
-//            //        _gpiPortStates[1] = true;
-//            //        if (previousGpi2.HasValue)
-//            //        {
-//            //            if (_gpiPortStates[1] != previousGpi2.Value)
-//            //            {
-//            //                gpi2HasChanged = true;
-//            //            }
-//            //            else
-//            //            {
-//            //                gpi2HasChanged = false;
-//            //            }
-//            //        }
-//            //        else
-//            //        {
-//            //            gpi2HasChanged = true;
-//            //        }
-
-//            //        previousGpi2 = _gpiPortStates[0];
-//            //    }
-//            //    else
-//            //    {
-//            //        _gpiPortStates[1] = false;
-//            //        if (previousGpi2.HasValue)
-//            //        {
-//            //            if (_gpiPortStates[1] != previousGpi2.Value)
-//            //            {
-//            //                gpi2HasChanged = true;
-//            //            }
-//            //            else
-//            //            {
-//            //                gpi2HasChanged = false;
-//            //            }
-//            //        }
-//            //        else
-//            //        {
-//            //            gpi2HasChanged = true;
-//            //        }
-//            //        //gpi1HasChanged = true;
-
-//            //        previousGpi2 = _gpiPortStates[1];
-//            //    }
-//            //}
-
-//            try
-//            {
-//                if (gpi1HasChanged || gpi2HasChanged)
-//                {
-//                    //fileContent1
-//                    _logger.LogInformation($"GPI status: gpi1: {fileContent1}, gpi2: {fileContent2}");
-//                    //_logger.LogInformation($"GPI status: gpi1HasChanged: {gpi1HasChanged}, gpi2HasChanged: {gpi2HasChanged}");
-//                    ProcessGpiStatus();
-//                }
-
-//            }
-//            catch (Exception)
-//            {
+    //                previousGpi2 = _gpiPortStates[1];
+    //            }
+    //            else
+    //            {
+    //                _gpiPortStates[1] = false;
+    //                if (previousGpi2.HasValue)
+    //                {
+    //                    if (_gpiPortStates[1] != previousGpi2.Value)
+    //                    {
+    //                        gpi2HasChanged = true;
+    //                    }
+    //                    else
+    //                    {
+    //                        gpi2HasChanged = false;
+    //                    }
+    //                }
+    //                else
+    //                {
+    //                    gpi2HasChanged = true;
+    //                }
+    //                previousGpi2 = _gpiPortStates[1];
+    //            }
 
 
-//            }
 
-//        }
-//        catch (Exception ex)
-//        {
-//            Console.WriteLine("QueryGpiStatus - " + ex.Message);
-//        }
-//    }
+    //            //if (File.Exists(gpi1File))
+    //            //{
+    //            //    if (!_gpiPortStates.ContainsKey(0)) _gpiPortStates.TryAdd(0, false);
+    //            //    // read file content into a string
+    //            //    var fileContent = File.ReadAllText(gpi1File);
+
+    //            //    // compare TextBox content with file content
+    //            //    if (fileContent.Contains("1"))
+    //            //    {
+    //            //        _gpiPortStates[0] = true;
+    //            //        if (previousGpi1.HasValue)
+    //            //        {
+    //            //            if (_gpiPortStates[0] != previousGpi1.Value)
+    //            //            {
+    //            //                gpi1HasChanged = true;
+    //            //            }
+    //            //            else
+    //            //            {
+    //            //                gpi1HasChanged = false;
+    //            //            }
+    //            //        }
+    //            //        else
+    //            //        {
+    //            //            gpi1HasChanged = true;
+    //            //        }
+
+    //            //        previousGpi1 = _gpiPortStates[0];
+    //            //    }
+    //            //    else
+    //            //    {
+    //            //        _gpiPortStates[0] = false;
+    //            //        if (previousGpi1.HasValue)
+    //            //        {
+    //            //            if (_gpiPortStates[0] != previousGpi1.Value)
+    //            //            {
+    //            //                gpi1HasChanged = true;
+    //            //            }
+    //            //            else
+    //            //            {
+    //            //                gpi1HasChanged = false;
+    //            //            }
+    //            //        }
+    //            //        else
+    //            //        {
+    //            //            gpi1HasChanged = true;
+    //            //        }
+
+    //            //        //gpi1HasChanged = true;                    
+
+    //            //        previousGpi1 = _gpiPortStates[0];
+    //            //    }
+
+    //            //}
+
+    //            //if (File.Exists(gpi2File))
+    //            //{
+    //            //    if (!_gpiPortStates.ContainsKey(1)) _gpiPortStates.TryAdd(1, false);
+    //            //    // read file content into a string
+    //            //    var fileContent = File.ReadAllText(gpi2File);
+
+    //            //    // compare TextBox content with file content
+    //            //    //if (fileContent.Contains("1"))
+    //            //    //    _gpiPortStates[1] = true;
+    //            //    //else
+    //            //    //    _gpiPortStates[1] = false;
+
+    //            //    if (fileContent.Contains("1"))
+    //            //    {
+    //            //        _gpiPortStates[1] = true;
+    //            //        if (previousGpi2.HasValue)
+    //            //        {
+    //            //            if (_gpiPortStates[1] != previousGpi2.Value)
+    //            //            {
+    //            //                gpi2HasChanged = true;
+    //            //            }
+    //            //            else
+    //            //            {
+    //            //                gpi2HasChanged = false;
+    //            //            }
+    //            //        }
+    //            //        else
+    //            //        {
+    //            //            gpi2HasChanged = true;
+    //            //        }
+
+    //            //        previousGpi2 = _gpiPortStates[0];
+    //            //    }
+    //            //    else
+    //            //    {
+    //            //        _gpiPortStates[1] = false;
+    //            //        if (previousGpi2.HasValue)
+    //            //        {
+    //            //            if (_gpiPortStates[1] != previousGpi2.Value)
+    //            //            {
+    //            //                gpi2HasChanged = true;
+    //            //            }
+    //            //            else
+    //            //            {
+    //            //                gpi2HasChanged = false;
+    //            //            }
+    //            //        }
+    //            //        else
+    //            //        {
+    //            //            gpi2HasChanged = true;
+    //            //        }
+    //            //        //gpi1HasChanged = true;
+
+    //            //        previousGpi2 = _gpiPortStates[1];
+    //            //    }
+    //            //}
+
+    //            try
+    //            {
+    //                if (gpi1HasChanged || gpi2HasChanged)
+    //                {
+    //                    //fileContent1
+    //                    _logger.LogInformation($"GPI status: gpi1: {fileContent1}, gpi2: {fileContent2}");
+    //                    //_logger.LogInformation($"GPI status: gpi1HasChanged: {gpi1HasChanged}, gpi2HasChanged: {gpi2HasChanged}");
+    //                    ProcessGpiStatus();
+    //                }
+
+    //            }
+    //            catch (Exception)
+    //            {
+
+
+    //            }
+
+    //        }
+    //        catch (Exception ex)
+    //        {
+    //            Console.WriteLine("QueryGpiStatus - " + ex.Message);
+    //        }
+    //    }
 
     private void StartUdpServer()
     {
@@ -917,7 +892,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         if (IsUdpServerEnabled())
             try
             {
-                if (_udpSocketServer != null) _udpSocketServer.Close();
+                _udpSocketServer?.Close();
             }
             catch (Exception ex)
             {
@@ -967,7 +942,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         _logger.LogError(exSymLink, "Error removing USB drive symbolic link as a dir.");
                                     }
 
-                                File.CreateSymbolicLink(webDir, R700UsbDrive);
+                                _ = File.CreateSymbolicLink(webDir, R700UsbDrive);
                                 _logger.LogInformation("Symbolic link created: " + webDir);
                                 R700UsbDrivePath = webDir;
 
@@ -1296,13 +1271,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     _expectedItems.Clear();
                                     string[] epcArray = Array.Empty<string>();
-                                    Dictionary<string, SkuSummary> skuSummaryList = new();
+                                    Dictionary<string, SkuSummary> skuSummaryList = [];
                                     var itemsFromExternalApi = _plugins[_standaloneConfigDTO.activePlugin].ExternalApiSearch(LastValidBarcode, skuSummaryList, epcArray);
                                     if (itemsFromExternalApi.Any())
                                     {
                                         foreach (KeyValuePair<string, int> entry in itemsFromExternalApi)
                                         {
-                                            _expectedItems.TryAdd(entry.Key, entry.Value);
+                                            _ = _expectedItems.TryAdd(entry.Key, entry.Value);
                                         }
                                     }
                                     return messageData;
@@ -1311,7 +1286,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     try
                                     {
-                                        _plugins[_standaloneConfigDTO.activePlugin].ExternalApiLogin();
+                                        _ = _plugins[_standaloneConfigDTO.activePlugin].ExternalApiLogin();
                                     }
                                     catch (Exception)
                                     {
@@ -1369,9 +1344,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     _logger.LogInformation(
                         "Starting tcp socket cmd server. " + _standaloneConfigDTO.socketCommandServerPort,
                         SeverityType.Debug);
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
                     _socketCommandServer.Start();
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
                 }
             }
             catch (Exception ex)
@@ -1411,7 +1384,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     //    }
     //}
 
-    
+
 
 
 
@@ -1546,22 +1519,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         var returnData = new List<SmartreaderSerialNumberDto>();
         try
         {
-            if (_iotDeviceInterfaceClient == null)
-            {
-                if (_readerAddress != null)
-                {
-                    _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
-                }
-                else
-                {
-                    // Handle the null:
-                    throw new InvalidOperationException("Reader address cannot be null when initializing the IoT reader interface.");
-                }
-            }
+            InitR700IoTClient();
 
             var info = await _iotDeviceInterfaceClient.GetSystemInfoAsync();
-            var serialData = new SmartreaderSerialNumberDto();
-            serialData.SerialNumber = info.SerialNumber;
+            var serialData = new SmartreaderSerialNumberDto
+            {
+                SerialNumber = info.SerialNumber
+            };
             try
             {
                 if (!string.IsNullOrEmpty(serialData.SerialNumber) && serialData.SerialNumber.StartsWith("370"))
@@ -1586,6 +1550,45 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         return returnData;
     }
 
+    private void InitR700IoTClient()
+    {
+        if (_iotDeviceInterfaceClient == null)
+        {
+            if (_readerAddress != null)
+            {
+                var healthMonitor = new HealthMonitor(_loggerFactory.CreateLogger<HealthMonitor>());
+                var readerConfiguration = ReaderConfiguration.CreateDefault();
+                readerConfiguration.Network.Hostname = _readerAddress;
+                readerConfiguration.Security.Username = _readerUsername;
+                readerConfiguration.Security.Password = _readerPassword;
+                readerConfiguration.Security.UseBasicAuth = true;
+                readerConfiguration.Network.UseHttps = true;
+
+
+
+                if (!string.IsNullOrEmpty(_proxyAddress))
+                {
+                    readerConfiguration.Network.Proxy = ProxySettings.CreateDefault();
+                    readerConfiguration.Network.Proxy.Address = _proxyAddress;
+                    readerConfiguration.Network.Proxy.Port = _proxyPort;
+                }
+
+                _iotDeviceInterfaceClient = new R700IotReader(
+                    _readerAddress,
+                    readerConfiguration,
+                    eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(),
+                    _loggerFactory,
+                    healthMonitor
+                );
+            }
+            else
+            {
+                // Handle the null:
+                throw new InvalidOperationException("Reader address cannot be null when initializing the IoT reader interface.");
+            }
+        }
+    }
+
     public async Task<List<SmartreaderRunningStatusDto>> GetReaderStatusAsync()
     {
         var returnData = new List<SmartreaderRunningStatusDto>();
@@ -1593,11 +1596,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (_readerAddress != null)
             {
-                if(_proxyAddress == null)
+                if (_proxyAddress == null)
                 {
                     _proxyAddress = "";
                 }
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
+                InitR700IoTClient();
             }
             else
             {
@@ -1618,7 +1621,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
         var readerStatusData = new SmartreaderRunningStatusDto();
 
-        if(readerStatus != null && readerStatus.Status.HasValue)
+        if (readerStatus != null && readerStatus.Status.HasValue)
         {
             if ("IDLE".Equals(readerStatus.Status.Value.ToString().ToUpper()))
                 readerStatusData.Status = "STOPPED";
@@ -1636,7 +1639,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (_readerAddress != null)
             {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
+                InitR700IoTClient();
             }
             else
             {
@@ -1719,18 +1722,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     public async Task StopPresetAsync()
     {
-        if (_iotDeviceInterfaceClient == null)
-        {
-            if (_readerAddress != null)
-            {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
-            }
-            else
-            {
-                // Handle the null case, e.g., log an error, throw an exception, or use a default value
-                throw new InvalidOperationException("Reader address cannot be null when initializing the IoT reader interface.");
-            }
-        }
+        InitR700IoTClient();
 
         if (_standaloneConfigDTO != null
                             && !string.IsNullOrEmpty(_standaloneConfigDTO.smartreaderEnabledForManagementOnly)
@@ -1782,18 +1774,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
         }
 
-        if (_iotDeviceInterfaceClient == null)
-        {
-            if (_readerAddress != null)
-            {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
-            }
-            else
-            {
-                // Handle the null case, e.g., log an error, throw an exception, or use a default value
-                throw new InvalidOperationException("Reader address cannot be null when initializing the IoT reader interface.");
-            }
-        }
+        InitR700IoTClient();
 
         if (_isStarted)
             try
@@ -1896,15 +1877,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _logger.LogError(ex, "Error starting tcp socket server. " + ex.Message);
         }
 
-        try
-        {
-            _webSocketService.Start(0);
-        }
-        catch (Exception ex)
-        {
+        //try
+        //{
+        //    _webSocketService.Start(_standaloneConfigDTO.webSocketPort);
+        //}
+        //catch (Exception ex)
+        //{
 
-            _logger.LogError(ex, "Error starting web socket server. " + ex.Message);
-        }
+        //    _logger.LogError(ex, "Error starting web socket server. " + ex.Message);
+        //}
 
         try
         {
@@ -1932,12 +1913,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (IsMqttEnabled())
             {
-                var mqttManagementEvents = new Dictionary<string, object>();
-                mqttManagementEvents.Add("smartreader-status", "started");
+                var mqttManagementEvents = new Dictionary<string, object>
+                {
+                    { "smartreader-status", "started" }
+                };
                 await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
             }
 
-            
+
         }
         catch (Exception ex)
         {
@@ -1951,18 +1934,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     public async Task StopTasksAsync()
     {
         _isStarted = false;
-        if (_iotDeviceInterfaceClient == null)
-        {
-            if (_readerAddress != null)
-            {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
-            }
-            else
-            {
-                // Handle the null case, e.g., log an error, throw an exception, or use a default value
-                throw new InvalidOperationException("Reader address cannot be null when initializing the IoT reader interface.");
-            }
-        }
+        InitR700IoTClient();
 
         if (_standaloneConfigDTO != null
                             && !string.IsNullOrEmpty(_standaloneConfigDTO.smartreaderEnabledForManagementOnly)
@@ -2011,7 +1983,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             _logger.LogInformation("Unable to stop TCP Socket Server. " + ex.Message);
         }
-        
+
         try
         {
             _webSocketService.Stop();
@@ -2020,14 +1992,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             _logger.LogInformation("Unable to stop Web Socket Server. " + ex.Message);
         }
-        
+
         StopUdpServer();
         StopTcpSocketCommandServer();
 
         if (IsMqttEnabled())
         {
-            var mqttManagementEvents = new Dictionary<string, object>();
-            mqttManagementEvents.Add("smartreader-status", "stopped");
+            var mqttManagementEvents = new Dictionary<string, object>
+            {
+                { "smartreader-status", "stopped" }
+            };
             await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
         }
     }
@@ -2035,18 +2009,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     public async Task ApplySettingsAsync()
     {
 #pragma warning disable CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
-        if (_iotDeviceInterfaceClient == null)
-        {
-            if (_readerAddress != null)
-            {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
-            }
-            else
-            {
-                // Handle the null case, e.g., log an error, throw an exception, or use a default value
-                throw new InvalidOperationException("Reader address cannot be null when initializing the IoT reader interface.");
-            }
-        }
+        InitR700IoTClient();
 
         try
         {
@@ -2078,12 +2041,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             if (IsMqttEnabled())
             {
-                var mqttManagementEvents = new Dictionary<string, object>();
-                mqttManagementEvents.Add("smartreader-status", "settings-applied");
+                var mqttManagementEvents = new Dictionary<string, object>
+                {
+                    { "smartreader-status", "settings-applied" }
+                };
                 await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
             }
 
-            await _iotDeviceInterfaceClient.GetReaderInventoryPresetListAsync();
+            _ = await _iotDeviceInterfaceClient.GetReaderInventoryPresetListAsync();
         }
         catch (Exception ex)
         {
@@ -2236,18 +2201,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     public async Task SetGpiPortsAsync()
     {
         //_isStarted = false;
-        if (_iotDeviceInterfaceClient == null)
-        {
-            if (_readerAddress != null)
-            {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
-            }
-            else
-            {
-                // Handle the null case, e.g., log an error, throw an exception, or use a default value
-                throw new InvalidOperationException("Reader address cannot be null when initializing the IoT reader interface.");
-            }
-        }
+        InitR700IoTClient();
 
 
         try
@@ -2256,11 +2210,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             var gpiConfig = new GpiConfigRoot
             {
-                GpiConfigurations = new List<GpiConfiguration>
-            {
+                GpiConfigurations =
+            [
                 new GpiConfiguration { DebounceMilliseconds = 20, Enabled = true, Gpi = 1, State = "low" },
                 new GpiConfiguration { DebounceMilliseconds = 20, Enabled = true, Gpi = 2, State = "low" }
-            },
+            ],
                 GpiTransitionEvents = "enabled"
             };
 
@@ -2279,18 +2233,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     public async Task SetGpoPortAsync(int port, bool state)
     {
         //_isStarted = false;
-        if (_iotDeviceInterfaceClient == null)
-        {
-            if (_readerAddress != null)
-            {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
-            }
-            else
-            {
-                // Handle the null case, e.g., log an error, throw an exception, or use a default value
-                throw new InvalidOperationException("Reader address cannot be null when initializing the IoT reader interface.");
-            }
-        }
+        InitR700IoTClient();
 
 
         try
@@ -2298,8 +2241,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             var gpoConfigurations = new GpoConfigurations();
             var gpoConfigList = new ObservableCollection<GpoConfiguration>();
             gpoConfigurations.GpoConfigurations1 = gpoConfigList;
-            var gpoConfiguration = new GpoConfiguration();
-            gpoConfiguration.Gpo = port;
+            var gpoConfiguration = new GpoConfiguration
+            {
+                Gpo = port
+            };
             if (state)
                 gpoConfiguration.State = GpoConfigurationState.High;
             else
@@ -2316,18 +2261,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     public async Task SetGpoPortsAsync(GpoVm gpos)
     {
         //_isStarted = false;
-        if (_iotDeviceInterfaceClient == null)
-        {
-            if (_readerAddress != null)
-            {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
-            }
-            else
-            {
-                // Handle the null case, e.g., log an error, throw an exception, or use a default value
-                throw new InvalidOperationException("Reader address cannot be null when initializing the IoT reader interface.");
-            }
-        }
+        InitR700IoTClient();
 
         try
         {
@@ -2337,8 +2271,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             foreach (var gpoVmConfig in gpos.GpoConfigurations)
             {
-                var gpoConfiguration = new GpoConfiguration();
-                gpoConfiguration.Gpo = gpoVmConfig.Gpo;
+                var gpoConfiguration = new GpoConfiguration
+                {
+                    Gpo = gpoVmConfig.Gpo
+                };
                 if (gpoVmConfig.State)
                     gpoConfiguration.State = GpoConfigurationState.High;
                 else
@@ -2553,18 +2489,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     public async Task<ObservableCollection<string>> GetPresetListAsync()
     {
-        if (_iotDeviceInterfaceClient == null)
-        {
-            if (_readerAddress != null)
-            {
-                _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
-            }
-            else
-            {
-                // Handle the null case, e.g., log an error, throw an exception, or use a default value
-                throw new InvalidOperationException("Reader address cannot be null when initializing the IoT reader interface.");
-            }
-        }
+        InitR700IoTClient();
 
         var presets = await _iotDeviceInterfaceClient.GetReaderInventoryPresetListAsync();
         return presets;
@@ -2576,22 +2501,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
         if (string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
         {
-            Dictionary<string, object> gpiStatusEvent = new Dictionary<string, object>();
-            Dictionary<object, object> gpiConfigurations1 = new Dictionary<object, object>();
-            Dictionary<object, object> gpiConfigurations2 = new Dictionary<object, object>();
+            Dictionary<string, object> gpiStatusEvent = [];
+            Dictionary<object, object> gpiConfigurations1 = [];
+            Dictionary<object, object> gpiConfigurations2 = [];
 
-            if (_iotDeviceInterfaceClient == null)
-            {
-                if (_readerAddress != null)
-                {
-                    _iotDeviceInterfaceClient = new R700IotReader(_readerAddress, "", true, true, _readerUsername, _readerPassword, 0, _proxyAddress, _proxyPort, eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(), _loggerFactory);
-                }
-                else
-                {
-                    // Handle the null case, e.g., log an error, throw an exception, or use a default value
-                    throw new InvalidOperationException("Reader address cannot be null when initializing the IoT reader interface.");
-                }
-            }
+            InitR700IoTClient();
 
             gpiStatusEvent.Add("eventType", "gpi-status");
             gpiStatusEvent.Add("readerName", _standaloneConfigDTO.readerName);
@@ -2648,7 +2562,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             var jsonData = JsonConvert.SerializeObject(gpiStatusEvent);
             var dataToPublish = JObject.Parse(jsonData);
 
-            if(IsMqttEnabled())
+            if (IsMqttEnabled())
             {
                 try
                 {
@@ -2662,8 +2576,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                     try
                     {
-                        int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
-                        bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
+                        _ = int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
+                        _ = bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
 
                         mqttQualityOfServiceLevel = qos switch
                         {
@@ -2692,7 +2606,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
             }
 
-            
+
         }
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
 
@@ -2702,11 +2616,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     {
         string commandResult = "success";
         string username = "admin";
-        string currentPassword = "admin";
         string newPassword = "admin";
         try
         {
-            JObject commandPayloadJObject = new();
+            JObject commandPayloadJObject = [];
             var deserializedConfigData = JsonConvert.DeserializeObject<JObject>(updateAdminPasswordCommandPayload);
 #pragma warning disable CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
             if (deserializedConfigData.ContainsKey("payload"))
@@ -2745,7 +2658,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var commandCurrentPassword = commandPayloadJObject["currentPassword"].Value<string>();
                     if (!string.IsNullOrEmpty(commandCurrentPassword))
                     {
-                        currentPassword = commandCurrentPassword;
+                        string currentPassword = commandCurrentPassword;
                     }
                 }
                 catch (Exception ex)
@@ -2784,14 +2697,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     // Read the JSON file content
                     string json = "";
-                    CustomAuth data = new CustomAuth();
+                    CustomAuth data = new();
                     try
                     {
                         using (StreamReader reader = File.OpenText("customsettings.json"))
                         {
                             json = reader.ReadToEndAsync().Result;
                         }
-                        if(!string.IsNullOrEmpty(json))
+                        if (!string.IsNullOrEmpty(json))
                         {
                             // Deserialize JSON to a data structure
                             data = System.Text.Json.JsonSerializer.Deserialize<CustomAuth>(json);
@@ -2809,7 +2722,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
                     data.BasicAuth.UserName = username;
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
-                    if(!data.BasicAuth.Password.Equals(newPassword))
+                    if (!data.BasicAuth.Password.Equals(newPassword))
                     {
                         data.BasicAuth.Password = newPassword;
                     }
@@ -2844,7 +2757,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     return commandResult;
 
                 }
-                
+
                 return commandResult;
             }
         }
@@ -2863,11 +2776,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     {
         string commandResult = "success";
         string username = "root";
-        string currentPassword = "impinj";
         string newPassword = "impinj";
         try
         {
-            JObject commandPayloadJObject = new();
+            JObject commandPayloadJObject = [];
             var deserializedConfigData = JsonConvert.DeserializeObject<JObject>(updateRShellPasswordCommandPayload);
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
             if (deserializedConfigData.ContainsKey("payload"))
@@ -2906,7 +2818,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var commandCurrentPassword = commandPayloadJObject["currentPassword"].Value<string>();
                     if (!string.IsNullOrEmpty(commandCurrentPassword))
                     {
-                        currentPassword = commandCurrentPassword;
+                        string currentPassword = commandCurrentPassword;
                     }
                 }
                 catch (Exception ex)
@@ -2945,7 +2857,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     // Read the JSON file content
                     string json = "";
-                    CustomAuth data = new CustomAuth();
+                    CustomAuth data = new();
                     try
                     {
                         using (StreamReader reader = File.OpenText("customsettings.json"))
@@ -2968,7 +2880,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
 
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
-                    if(string.IsNullOrEmpty(data.BasicAuth.UserName))
+                    if (string.IsNullOrEmpty(data.BasicAuth.UserName))
                     {
                         data.BasicAuth.UserName = "admin";
                     }
@@ -2979,11 +2891,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     }
                     // Modify the data
                     data.RShellAuth.UserName = username;
-                    if(!data.RShellAuth.Password.Equals(newPassword))
+                    if (!data.RShellAuth.Password.Equals(newPassword))
                     {
                         data.RShellAuth.Password = newPassword;
                     }
-                    
+
                     // Serialize the modified data back to JSON
                     var options = new JsonSerializerOptions { WriteIndented = true };
                     var updatedJson = System.Text.Json.JsonSerializer.Serialize(data, options);
@@ -3019,22 +2931,22 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private async void ProcessAppStatus()
     {
-        Dictionary<string, string> statusEvent = new Dictionary<string, string>();
-
-        statusEvent.Add("eventType", "status");
-
-        statusEvent.Add("component", "smartreader");
+        Dictionary<string, string> statusEvent = new()
+        {
+            { "eventType", "status" },
+            { "component", "smartreader" },
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
-        statusEvent.Add("readerName", _standaloneConfigDTO.readerName);
+            { "readerName", _standaloneConfigDTO.readerName },
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
-        statusEvent.Add("serialNumber", $"{_iotDeviceInterfaceClient.UniqueId}");
+            { "serialNumber", $"{_iotDeviceInterfaceClient.UniqueId}" },
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
-        statusEvent.Add("timestamp", DateTime.Now.ToUniversalTime().ToString("o"));
-        //statusEvent.Add("timestamp", $"{currentReaderStatus.Time.Value.ToUniversalTime().ToString("o")}");
-        //statusEvent.Add("displayName", _iotDeviceInterfaceClient.DisplayName);
-        //statusEvent.Add("hostname", _iotDeviceInterfaceClient.Hostname);
-        statusEvent.Add("macAddress", _iotDeviceInterfaceClient.MacAddress);
+            { "timestamp", DateTime.Now.ToUniversalTime().ToString("o") },
+            //statusEvent.Add("timestamp", $"{currentReaderStatus.Time.Value.ToUniversalTime().ToString("o")}");
+            //statusEvent.Add("displayName", _iotDeviceInterfaceClient.DisplayName);
+            //statusEvent.Add("hostname", _iotDeviceInterfaceClient.Hostname);
+            { "macAddress", _iotDeviceInterfaceClient.MacAddress }
+        };
         try
         {
             var antennaPorts = _standaloneConfigDTO.antennaPorts.Split(",");
@@ -3060,7 +2972,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                 var antennaTxPowerDescription = $"antenna{antennaPorts[i]}TxPower";
                 double txPowerValuecDbm = 30.00;
-                double.TryParse(txPower[i], NumberStyles.Float, CultureInfo.InvariantCulture, out txPowerValuecDbm);
+                _ = double.TryParse(txPower[i], NumberStyles.Float, CultureInfo.InvariantCulture, out txPowerValuecDbm);
                 double txPowerValue = txPowerValuecDbm / 100;
                 var antennaTxPowerValue = $"{txPowerValue}";
                 statusEvent.Add(antennaTxPowerDescription, antennaTxPowerValue);
@@ -3229,8 +3141,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                 try
                 {
-                    int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
-                    bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
+                    _ = int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
+                    _ = bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
 
                     mqttQualityOfServiceLevel = qos switch
                     {
@@ -3273,7 +3185,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 //cat /proc/driver/rtc
                 // Create a process info
-                ProcessStartInfo startInfo = new ProcessStartInfo
+                ProcessStartInfo startInfo = new()
                 {
                     FileName = "/bin/cat",  // Set the command (cat)
                     Arguments = "/proc/driver/rtc",  // Set the file to read
@@ -3283,9 +3195,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 };
 
                 // Start the process
-                using Process process = new Process();
+                using Process process = new();
                 process.StartInfo = startInfo;
-                process.Start();
+                _ = process.Start();
 
                 // Read the output
                 using var reader = process.StandardOutput;
@@ -3316,23 +3228,23 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private async void ProcessAppStatusDetailed()
     {
-        
 
-        Dictionary<string, string> statusEvent = new Dictionary<string, string>();
 
-        statusEvent.Add("eventType", "status");
-
-        statusEvent.Add("component", "smartreader");
+        Dictionary<string, string> statusEvent = new()
+        {
+            { "eventType", "status" },
+            { "component", "smartreader" },
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
-        statusEvent.Add("readerName", _standaloneConfigDTO.readerName);
+            { "readerName", _standaloneConfigDTO.readerName },
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
-        //statusEvent.Add("serialNumber", $"{_iotDeviceInterfaceClient.UniqueId}");
-        statusEvent.Add("timestamp", DateTime.Now.ToUniversalTime().ToString("o"));
-        //statusEvent.Add("timestamp", $"{currentReaderStatus.Time.Value.ToUniversalTime().ToString("o")}");
-        //statusEvent.Add("displayName", _iotDeviceInterfaceClient.DisplayName);
-        //statusEvent.Add("hostname", _iotDeviceInterfaceClient.Hostname);
+            //statusEvent.Add("serialNumber", $"{_iotDeviceInterfaceClient.UniqueId}");
+            { "timestamp", DateTime.Now.ToUniversalTime().ToString("o") },
+            //statusEvent.Add("timestamp", $"{currentReaderStatus.Time.Value.ToUniversalTime().ToString("o")}");
+            //statusEvent.Add("displayName", _iotDeviceInterfaceClient.DisplayName);
+            //statusEvent.Add("hostname", _iotDeviceInterfaceClient.Hostname);
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
-        statusEvent.Add("macAddress", _iotDeviceInterfaceClient.MacAddress);
+            { "macAddress", _iotDeviceInterfaceClient.MacAddress }
+        };
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
         try
         {
@@ -3359,7 +3271,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                 var antennaTxPowerDescription = $"antenna{antennaPorts[i]}TxPower";
                 double txPowerValuecDbm = 30.00;
-                double.TryParse(txPower[i], NumberStyles.Float, CultureInfo.InvariantCulture, out txPowerValuecDbm);
+                _ = double.TryParse(txPower[i], NumberStyles.Float, CultureInfo.InvariantCulture, out txPowerValuecDbm);
                 double txPowerValue = txPowerValuecDbm / 100;
                 var antennaTxPowerValue = $"{txPowerValue}";
                 statusEvent.Add(antennaTxPowerDescription, antennaTxPowerValue);
@@ -3691,8 +3603,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                 try
                 {
-                    int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
-                    bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
+                    _ = int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
+                    _ = bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
 
                     mqttQualityOfServiceLevel = qos switch
                     {
@@ -3712,10 +3624,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 if (statusEvent.Count > 0)
                 {
                     _logger.LogInformation($"Publishing status event (1): {serializedData}");
-                    await _mqttService.PublishAsync(mqttCommandResponseTopic, 
-                        serializedData, 
-                        _iotDeviceInterfaceClient.MacAddress, 
-                        mqttQualityOfServiceLevel, 
+                    await _mqttService.PublishAsync(mqttCommandResponseTopic,
+                        serializedData,
+                        _iotDeviceInterfaceClient.MacAddress,
+                        mqttQualityOfServiceLevel,
                         retain);
                 }
 
@@ -3730,30 +3642,34 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private JObject CreateSmartReaderTagReadEvent(bool addEmptytagRead)
     {
-        var smartReaderTagReadEvent = new SmartReaderTagReadEvent();
-        smartReaderTagReadEvent.TagReads = new List<TagRead>();     
-        smartReaderTagReadEvent.ReaderName = _standaloneConfigDTO.readerName;
+        var smartReaderTagReadEvent = new SmartReaderTagReadEvent
+        {
+            TagReads = [],
+            ReaderName = _standaloneConfigDTO.readerName,
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
-        smartReaderTagReadEvent.Mac = _iotDeviceInterfaceClient.MacAddress;
+            Mac = _iotDeviceInterfaceClient.MacAddress
+        };
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
 
         if (string.Equals("1", _standaloneConfigDTO.siteEnabled, StringComparison.OrdinalIgnoreCase))
             smartReaderTagReadEvent.Site = _standaloneConfigDTO.site;
 
-        
-        if(addEmptytagRead)
+
+        if (addEmptytagRead)
         {
-            var tagRead = new TagRead();
-            tagRead.FirstSeenTimestamp = Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now);
-            tagRead.Epc = "*****";
-            tagRead.IsHeartBeat = true;
+            var tagRead = new TagRead
+            {
+                FirstSeenTimestamp = Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now),
+                Epc = "*****",
+                IsHeartBeat = true
+            };
             smartReaderTagReadEvent.TagReads.Add(tagRead);
 
             if (IsGpiEnabled())
             {
                 if (_gpiPortStates.ContainsKey(0))
                 {
-                    if(_gpiPortStates[0])
+                    if (_gpiPortStates[0])
                     {
                         tagRead.Gpi1Status = "high";
                     }
@@ -3776,7 +3692,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
             }
         }
-        
+
         var jsonData = JsonConvert.SerializeObject(smartReaderTagReadEvent);
         var dataToPublish = JObject.Parse(jsonData);
 
@@ -3821,16 +3737,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 _logger.LogWarning($"Error enqueuing keepalive event.");
             }
         }
-            
+
 
         if (IsSocketServerEnabled())
         {
             try
             {
-                if(_tcpSocketService.IsSocketServerConnectedToClients())
+                if (_tcpSocketService.IsSocketServerConnectedToClients())
                 {
                     _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(dataToPublish);
-                } 
+                }
             }
             catch (Exception)
             {
@@ -3866,10 +3782,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 _logger.LogWarning($"Error enqueuing keepalive event.");
             }
         }
-            
 
 
-        if (dataToPublish != null 
+
+        if (dataToPublish != null
             && IsMqttEnabled())
         {
             try
@@ -3884,8 +3800,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                 try
                 {
-                    int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
-                    bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
+                    _ = int.TryParse(_standaloneConfigDTO.mqttManagementEventsQoS, out qos);
+                    _ = bool.TryParse(_standaloneConfigDTO.mqttManagementEventsRetainMessages, out retain);
 
                     mqttQualityOfServiceLevel = qos switch
                     {
@@ -3914,7 +3830,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 await ProcessGpoErrorPortAsync();
             }
         }
-            
+
     }
 
     private async void OnInventoryStatusEvent(object sender, InventoryStatusEvent eventStatus)
@@ -4005,7 +3921,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             StringComparison.OrdinalIgnoreCase))
                     {
                         long stopTiggerDuration = 100;
-                        long.TryParse(_standaloneConfigDTO.stopTriggerDuration, out stopTiggerDuration);
+                        _ = long.TryParse(_standaloneConfigDTO.stopTriggerDuration, out stopTiggerDuration);
                         //if (stopTiggerDuration > 0 && _stopwatchStopTriggerDuration.IsRunning && _stopwatchStopTriggerDuration.ElapsedMilliseconds < stopTiggerDuration)
                         //{
                         //    _logger.LogInformation("OnRunPeriodicStopTriggerDurationEvent - Inventory already Running. for duration " + stopTiggerDuration + " [" + _stopwatchStopTriggerDuration.ElapsedMilliseconds + "]", SeverityType.Debug);
@@ -4189,7 +4105,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     {
                     }
                 }
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
         }
         catch (Exception exOnInventoryStatusEvent)
         {
@@ -4212,7 +4127,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 while (_messageQueueBarcode.Count > 0
                        && string.IsNullOrEmpty(localBarcode))
                 {
-                    _messageQueueBarcode.TryDequeue(out localBarcode);
+                    _ = _messageQueueBarcode.TryDequeue(out localBarcode);
 
                     _logger.LogInformation("ProcessBarcodeQueue - Dequeued barcode: " + localBarcode);
                     if (!string.IsNullOrEmpty(localBarcode))
@@ -4271,15 +4186,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 currentGpiStatus = false;
                 _logger.LogInformation($"Setting Gpi {gpiInternalPort} to [{currentGpiStatus}]");
-            }   
+            }
             else if (gpiEvent.GpiTransitionEvent.Transition == TransitionType.LowToHigh)
             {
                 currentGpiStatus = true;
                 _logger.LogInformation($"Setting Gpi {gpiInternalPort} to [{currentGpiStatus}]");
             }
-                
-            
-            if(gpiInternalPort == 0 || gpiInternalPort == 1)
+
+
+            if (gpiInternalPort == 0 || gpiInternalPort == 1)
             {
                 if (_gpiPortStates.ContainsKey(gpiInternalPort))
                 {
@@ -4288,7 +4203,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
                 else
                 {
-                    _gpiPortStates.TryAdd(gpiInternalPort, currentGpiStatus);
+                    _ = _gpiPortStates.TryAdd(gpiInternalPort, currentGpiStatus);
                     _logger.LogInformation($"Gpi {gpiInternalPort} updated to [{_gpiPortStates[gpiInternalPort]}]");
                 }
             }
@@ -4296,8 +4211,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 _logger.LogWarning($"Gpi port number not supported: {gpiInternalPort}");
             }
-            
-                
+
+
 
 
 
@@ -4333,7 +4248,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             await Task.Run(() => ProcessGpoBlinkAnyTagGpoPortAsync());
 
 
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
             //if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
             //                StringComparison.OrdinalIgnoreCase))
             //{
@@ -4377,13 +4291,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             //    }
 
             //}
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
             if (!string.IsNullOrEmpty(_standaloneConfigDTO.stopTriggerDuration)
                 && string.Equals("1", _standaloneConfigDTO.stopTriggerType,
                             StringComparison.OrdinalIgnoreCase))
             {
                 long stopTiggerDuration = 100;
-                long.TryParse(_standaloneConfigDTO.stopTriggerDuration, out stopTiggerDuration);
+                _ = long.TryParse(_standaloneConfigDTO.stopTriggerDuration, out stopTiggerDuration);
                 //if (stopTiggerDuration > 0 && _stopwatchStopTriggerDuration.IsRunning && _stopwatchStopTriggerDuration.ElapsedMilliseconds < stopTiggerDuration)
                 //{
                 //    _logger.LogInformation("OnRunPeriodicStopTriggerDurationEvent - Inventory already Running. for duration " + stopTiggerDuration + " [" + _stopwatchStopTriggerDuration.ElapsedMilliseconds + "]", SeverityType.Debug);
@@ -4419,28 +4332,30 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     }
                     if (!string.Equals("0", _standaloneConfigDTO.softwareFilterReadCountTimeoutIntervalInSec,
                             StringComparison.OrdinalIgnoreCase))
-                        long.TryParse(_standaloneConfigDTO.softwareFilterReadCountTimeoutIntervalInSec,
+                        _ = long.TryParse(_standaloneConfigDTO.softwareFilterReadCountTimeoutIntervalInSec,
                             out timeoutInSec);
 
                     if (!string.Equals("0", _standaloneConfigDTO.softwareFilterReadCountTimeoutSeenCount,
                             StringComparison.OrdinalIgnoreCase))
-                        int.TryParse(_standaloneConfigDTO.softwareFilterReadCountTimeoutSeenCount,
+                        _ = int.TryParse(_standaloneConfigDTO.softwareFilterReadCountTimeoutSeenCount,
                             out seenCountThreshold);
 
                     if (!_softwareFilterReadCountTimeoutDictionary.ContainsKey(tagEvent.EpcHex))
                     {
-                         // Add size check
+                        // Add size check
                         if (_softwareFilterReadCountTimeoutDictionary.Count >= MaxTimeoutDictionarySize)
                         {
                             _logger.LogWarning($"_softwareFilterReadCountTimeoutDictionary reached max size {MaxTimeoutDictionarySize}");
                             // Optionally remove oldest entries
                             RemoveOldestEntries(_softwareFilterReadCountTimeoutDictionary, MaxTimeoutDictionarySize * 0.2);
                         }
-                        var readCountTimeoutEvent = new ReadCountTimeoutEvent();
-                        readCountTimeoutEvent.Epc = tagEvent.EpcHex;
-                        readCountTimeoutEvent.EventTimestamp = currentEventTimestamp;
+                        var readCountTimeoutEvent = new ReadCountTimeoutEvent
+                        {
+                            Epc = tagEvent.EpcHex,
+                            EventTimestamp = currentEventTimestamp
+                        };
                         if (tagEvent.AntennaPort.HasValue) readCountTimeoutEvent.Antenna = tagEvent.AntennaPort.Value;
-                        _softwareFilterReadCountTimeoutDictionary.TryAdd(tagEvent.EpcHex, readCountTimeoutEvent);
+                        _ = _softwareFilterReadCountTimeoutDictionary.TryAdd(tagEvent.EpcHex, readCountTimeoutEvent);
                         shouldProcess = true;
                     }
                     else
@@ -4503,11 +4418,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     return;
                 }
 
-                var tagCollections = new ThreadSafeCollections(
-                _logger,
-                _readEpcs,
-                _currentSkus,
-                _currentSkuReadEpcs);
+            var tagCollections = new ThreadSafeCollections(
+            _logger,
+            _readEpcs,
+            _currentSkus,
+            _currentSkuReadEpcs);
 
 
             if (!string.Equals("0", _standaloneConfigDTO.softwareFilterEnabled, StringComparison.OrdinalIgnoreCase))
@@ -4522,7 +4437,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                 if (!_readEpcs.ContainsKey(tagEvent.EpcHex))
                 {
-                     // Add size check before adding new entries
+                    // Add size check before adding new entries
                     if (_readEpcs.Count >= MaxReadEpcsSize)
                     {
                         _logger.LogWarning($"_readEpcs collection reached max size {MaxReadEpcsSize}, skipping new entries");
@@ -4653,10 +4568,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
-
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
     private async void OnRunPeriodicTagPublisherRetryTasksEvent(object sender, ElapsedEventArgs e)
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
     {
         if (Monitor.TryEnter(_timerTagPublisherHttpLock))
             try
@@ -4726,9 +4638,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 _logger.LogInformation(
                     "ProcessBarcodeQueue - NO DATA FOUND TO PROCESS, processing empty event to barcode [" + barcode +
                     "]");
-                var skuSummary = new SkuSummary();
-                skuSummary.Sku = "00000000000000";
-                skuSummary.Qty = 0;
+                var skuSummary = new SkuSummary
+                {
+                    Sku = "00000000000000",
+                    Qty = 0
+                };
                 if (!string.IsNullOrEmpty(barcode))
                     skuSummary.Barcode = barcode;
                 else
@@ -4852,21 +4766,23 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 {
                                     skuSummaryList[tagDataKeyValue].Qty = skuSummaryList[tagDataKeyValue].Qty + 1;
                                     if (skuSummaryList[tagDataKeyValue].Epcs == null)
-                                        skuSummaryList[tagDataKeyValue].Epcs = new List<string>();
+                                        skuSummaryList[tagDataKeyValue].Epcs = [];
                                     if (!string.IsNullOrEmpty(epcValue) &&
                                         !skuSummaryList[tagDataKeyValue].Epcs.Contains(epcValue))
                                         skuSummaryList[tagDataKeyValue].Epcs.Add(epcValue);
                                 }
                                 else
                                 {
-                                    var skuSummary = new SkuSummary();
-                                    skuSummary.Sku = tagDataKeyValue;
-                                    skuSummary.Qty = 1;
+                                    var skuSummary = new SkuSummary
+                                    {
+                                        Sku = tagDataKeyValue,
+                                        Qty = 1
+                                    };
                                     if (!string.IsNullOrEmpty(barcode))
                                         skuSummary.Barcode = barcode;
                                     else
                                         skuSummary.Barcode = "";
-                                    if (skuSummary.Epcs == null) skuSummary.Epcs = new List<string>();
+                                    if (skuSummary.Epcs == null) skuSummary.Epcs = [];
                                     if (!string.IsNullOrEmpty(epcValue) && !skuSummary.Epcs.Contains(epcValue))
                                         skuSummary.Epcs.Add(epcValue);
                                     skuSummary.EventTimestamp = eventTimestamp;
@@ -4874,7 +4790,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     {
                                         var site = smartReaderTagReadEventAggregated["site"].Value<string>();
                                         if (skuSummary.AdditionalData == null)
-                                            skuSummary.AdditionalData = new Dictionary<string, string>();
+                                            skuSummary.AdditionalData = [];
                                         if (!skuSummary.AdditionalData.ContainsKey("site"))
                                             skuSummary.AdditionalData.Add("site", site);
                                     }
@@ -4885,7 +4801,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         if (!string.IsNullOrEmpty(customField))
                                         {
                                             if (skuSummary.AdditionalData == null)
-                                                skuSummary.AdditionalData = new Dictionary<string, string>();
+                                                skuSummary.AdditionalData = [];
                                             if (!skuSummary.AdditionalData.ContainsKey("status"))
                                                 skuSummary.AdditionalData.Add("status", customField);
                                         }
@@ -4897,7 +4813,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         if (!string.IsNullOrEmpty(customField))
                                         {
                                             if (skuSummary.AdditionalData == null)
-                                                skuSummary.AdditionalData = new Dictionary<string, string>();
+                                                skuSummary.AdditionalData = [];
                                             if (!skuSummary.AdditionalData.ContainsKey("bizStep"))
                                                 skuSummary.AdditionalData.Add("bizStep", customField);
                                         }
@@ -4910,7 +4826,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         if (!string.IsNullOrEmpty(customField))
                                         {
                                             if (skuSummary.AdditionalData == null)
-                                                skuSummary.AdditionalData = new Dictionary<string, string>();
+                                                skuSummary.AdditionalData = [];
                                             if (!skuSummary.AdditionalData.ContainsKey("bizLocation"))
                                                 skuSummary.AdditionalData.Add("bizLocation", customField);
                                         }
@@ -4924,7 +4840,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         {
                                             smartReaderTagReadEventAggregated["contentFormat"] = customField;
                                             if (skuSummary.AdditionalData == null)
-                                                skuSummary.AdditionalData = new Dictionary<string, string>();
+                                                skuSummary.AdditionalData = [];
                                             if (!skuSummary.AdditionalData.ContainsKey("contentFormat"))
                                                 skuSummary.AdditionalData.Add("contentFormat", customField);
                                         }
@@ -5043,12 +4959,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                                 shouldPublish = true;
                             }
-                            else if (_standaloneConfigDTO != null && (
-                                                                    (!string.IsNullOrEmpty(_standaloneConfigDTO.enableBarcodeSerial)
-                                                                    && string.Equals("0", _standaloneConfigDTO.enableBarcodeSerial, StringComparison.OrdinalIgnoreCase))
-                                                                && (!string.IsNullOrEmpty(_standaloneConfigDTO.enableBarcodeHid)
-                                                                        && string.Equals("0", _standaloneConfigDTO.enableBarcodeHid, StringComparison.OrdinalIgnoreCase))
-                                                                )
+                            else if (_standaloneConfigDTO != null &&
+                                                                    !string.IsNullOrEmpty(_standaloneConfigDTO.enableBarcodeSerial)
+                                                                    && string.Equals("0", _standaloneConfigDTO.enableBarcodeSerial, StringComparison.OrdinalIgnoreCase)
+                                                                && !string.IsNullOrEmpty(_standaloneConfigDTO.enableBarcodeHid)
+                                                                        && string.Equals("0", _standaloneConfigDTO.enableBarcodeHid, StringComparison.OrdinalIgnoreCase)
+
                                                              && !string.IsNullOrEmpty(barcode))
                             {
                                 _logger.LogInformation("skuSummaryList.count [" + skuSummaryList.Count +
@@ -5097,8 +5013,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     {
                                         try
                                         {
-                                            if(skuEntry.Value != null && skuEntry.Value.Qty != null)
-                                                skusToValidate.TryAdd(skuEntry.Key, unchecked((int)skuEntry.Value.Qty.Value));
+                                            if (skuEntry.Value != null && skuEntry.Value.Qty != null)
+                                                _ = skusToValidate.TryAdd(skuEntry.Key, unchecked((int)skuEntry.Value.Qty.Value));
                                         }
                                         catch (Exception ex)
                                         {
@@ -5238,7 +5154,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     {
                                         _logger.LogInformation("Publishing data to external API...");
                                         string[] epcArray = Array.Empty<string>();
-                                        _plugins[_standaloneConfigDTO.activePlugin].ExternalApiPublish(barcode, skuSummaryList, epcArray);
+                                        _ = _plugins[_standaloneConfigDTO.activePlugin].ExternalApiPublish(barcode, skuSummaryList, epcArray);
                                         //return;
                                     }
                                 }
@@ -5618,7 +5534,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             using (await _batchLock.WaitAsyncWithTimeout(TimeSpan.FromSeconds(5)))
             {
                 // Monitor collection sizes
-                await MonitorCollectionSizesAsync();
+                MonitorCollectionSizes();
 
                 // Process software filters
                 await ProcessSoftwareFiltersAsync();
@@ -5645,7 +5561,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
-    private async Task MonitorCollectionSizesAsync()
+    private void MonitorCollectionSizes()
     {
         const int WarningThreshold = 800;
 
@@ -5664,12 +5580,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _logger.LogWarning($"_smartReaderTagEventsListBatch size ({_smartReaderTagEventsListBatch.Count}) approaching limit");
         }
     }
-    
+
 
     private bool IsSoftwareFilterEnabled()
     {
-        return _standaloneConfigDTO != null &&
-               (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterEnabled) &&
+        return (_standaloneConfigDTO != null &&
+               !string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterEnabled) &&
                 string.Equals("1", _standaloneConfigDTO.softwareFilterEnabled, StringComparison.OrdinalIgnoreCase)) ||
                (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled) &&
                 string.Equals("1", _standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled, StringComparison.OrdinalIgnoreCase));
@@ -5679,12 +5595,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     {
         if (IsSoftwareFilterEnabled())
         {
-            await CleanupExpiredReadEpcsAsync();
+            CleanupExpiredReadEpcs();
             await CleanupTimeoutDictionaryAsync();
         }
     }
 
-    private async Task CleanupExpiredReadEpcsAsync()
+    private void CleanupExpiredReadEpcs()
     {
         try
         {
@@ -5702,7 +5618,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                     foreach (var key in oldestKeys)
                     {
-                        _readEpcs.TryRemove(key, out _);
+                        _ = _readEpcs.TryRemove(key, out _);
                     }
                     _logger.LogInformation($"Removed {count} oldest entries from _readEpcs to maintain size limit");
                 }
@@ -5726,7 +5642,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                 foreach (var key in expiredKeys)
                 {
-                    _readEpcs.TryRemove(key, out _);
+                    _ = _readEpcs.TryRemove(key, out _);
                 }
 
                 if (expiredKeys.Any())
@@ -5743,7 +5659,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             foreach (var key in oldKeys)
             {
-                _readEpcs.TryRemove(key, out _);
+                _ = _readEpcs.TryRemove(key, out _);
             }
 
             if (oldKeys.Any())
@@ -5774,7 +5690,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     // Remove the entry if it has expired
                     if (expirationTime < now)
                     {
-                        _softwareFilterReadCountTimeoutDictionary.TryRemove(key, out _);
+                        _ = _softwareFilterReadCountTimeoutDictionary.TryRemove(key, out _);
                         _logger.LogDebug($"Removed expired entry for key {key} with Epc {entry.Epc}");
                     }
                 }
@@ -5792,7 +5708,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     }
 
 
-    
+
 
     //private async Task HandleExpiredTagEventAsync(string epc, JObject removedEvent)
     //{
@@ -5803,9 +5719,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     //    await Task.CompletedTask;
     //}
 
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
     private async void OnRunPeriodicKeepaliveCheck(object sender, ElapsedEventArgs e)
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
     {
         _timerKeepalive.Enabled = false;
         _timerKeepalive.Stop();
@@ -5839,9 +5753,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _timerKeepalive.Start();
     }
 
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
     private async void OnRunPeriodicStopTriggerDurationEvent(object sender, ElapsedEventArgs e)
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
     {
         _timerStopTriggerDuration.Enabled = false;
         _timerStopTriggerDuration.Stop();
@@ -5852,7 +5764,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             if (!string.IsNullOrEmpty(_standaloneConfigDTO.stopTriggerDuration))
             {
                 long stopTiggerDuration = 100;
-                long.TryParse(_standaloneConfigDTO.stopTriggerDuration, out stopTiggerDuration);
+                _ = long.TryParse(_standaloneConfigDTO.stopTriggerDuration, out stopTiggerDuration);
                 //if (stopTiggerDuration > 0 && _stopwatchStopTriggerDuration.IsRunning && _stopwatchStopTriggerDuration.ElapsedMilliseconds < stopTiggerDuration)
                 //{
                 //    _logger.LogInformation("OnRunPeriodicStopTriggerDurationEvent - Inventory already Running. for duration " + stopTiggerDuration + " [" + _stopwatchStopTriggerDuration.ElapsedMilliseconds + "]", SeverityType.Debug);
@@ -5949,7 +5861,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             if (!string.IsNullOrEmpty(_standaloneConfigDTO.httpPostIntervalSec))
             {
-                int.TryParse(_standaloneConfigDTO.httpPostIntervalSec, out httpPostIntervalInSec);
+                _ = int.TryParse(_standaloneConfigDTO.httpPostIntervalSec, out httpPostIntervalInSec);
                 if (httpPostIntervalInSec < 1) httpPostIntervalInSec = 1;
             }
 
@@ -5974,7 +5886,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             // Remove oldest entries to make room for new ones
                             RemoveOldestBatchEntries(_smartReaderTagEventsListBatch, MaxBatchSize * 0.2);
                         }
-                        
+
                         if (_smartReaderTagEventsListBatch.Count > 0)
                         {
                             foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
@@ -6015,7 +5927,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     {
                         _logger.LogError(ex, "Error managing batch size");
                     }
-                    
+
 
                 }
                 else
@@ -6087,7 +5999,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 #pragma warning restore CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
     }
 
-    private readonly object _socketQueueLock = new object();
+    private readonly object _socketQueueLock = new();
     //private volatile bool _isSocketProcessing = false;
 
 
@@ -6107,7 +6019,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
 
             // Delegate batch processing to TcpSocketService
-            await _tcpSocketService.ProcessMessageBatchAsync(
+            _ = await _tcpSocketService.ProcessMessageBatchAsync(
                 _messageQueueTagSmartReaderTagEventSocketServer,
                 BatchSize,
                 MaxQueueSize
@@ -6133,7 +6045,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _timerTagPublisherWebSocket.Enabled = false;
 
             // Delegate batch processing to TcpSocketService
-            await _webSocketService.ProcessMessageBatchAsync(
+            _ = await _webSocketService.ProcessMessageBatchAsync(
                 _messageQueueTagSmartReaderTagEventWebSocketServer,
                 BatchSize,
                 MaxQueueSize
@@ -6541,20 +6453,20 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 if (IsMqttEnabled())
                 {
-                    if(IsMqttBatchListsEnabled())
+                    if (IsMqttBatchListsEnabled())
                     {
                         await ProcessTagPublishingMqtt();
                     }
                     else
                     {
                         await ProcessMqttMessagesAsync();
-                    }                    
+                    }
                 }
                 else
                 {
-                    Task.Delay(100);
+                    _ = Task.Delay(100);
                 }
-                
+
             }
             catch (Exception ex)
             {
@@ -6562,7 +6474,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             finally
             {
-                _publishSemaphore.Release();
+                _ = _publishSemaphore.Release();
             }
         }
         catch (Exception ex)
@@ -6575,7 +6487,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             _timerTagPublisherMqtt.Start();
         }
 
-        
+
     }
 
     private MqttPublishingConfiguration LoadMqttPublishingConfiguration()
@@ -6583,13 +6495,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         var config = new MqttPublishingConfiguration();
 
         double mqttPublishIntervalInSec = 1;
-        if(_standaloneConfigDTO == null)
+        if (_standaloneConfigDTO == null)
         {
             _standaloneConfigDTO = _configurationService.LoadConfig();
         }
         if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttPuslishIntervalSec))
         {
-            double.TryParse(_standaloneConfigDTO.mqttPuslishIntervalSec,
+            _ = double.TryParse(_standaloneConfigDTO.mqttPuslishIntervalSec,
                 NumberStyles.Float,
                 CultureInfo.InvariantCulture,
                 out mqttPublishIntervalInSec);
@@ -6599,46 +6511,46 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         double batchUpdateIntervalInSec = 1;
         if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChangeIntervalInSec))
         {
-            double.TryParse(_standaloneConfigDTO.updateTagEventsListBatchOnChangeIntervalInSec,
+            _ = double.TryParse(_standaloneConfigDTO.updateTagEventsListBatchOnChangeIntervalInSec,
                 NumberStyles.Float,
                 CultureInfo.InvariantCulture,
                 out batchUpdateIntervalInSec);
         }
         config.BatchUpdateIntervalMs = batchUpdateIntervalInSec == 0 ? 5 : batchUpdateIntervalInSec * 1000;
 
-        
+
         bool enableTagEventsListBatch = true;
         if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatch))
         {
-            Utils.TryParseBoolFromString(_standaloneConfigDTO.enableTagEventsListBatch, out enableTagEventsListBatch);
+            _ = Utils.TryParseBoolFromString(_standaloneConfigDTO.enableTagEventsListBatch, out enableTagEventsListBatch);
         }
         config.BatchListEnabled = enableTagEventsListBatch;
 
         bool enableTagEventsListBatchPublishing = true;
         if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableTagEventsListBatchPublishing))
         {
-            Utils.TryParseBoolFromString(_standaloneConfigDTO.enableTagEventsListBatchPublishing, out enableTagEventsListBatchPublishing);
+            _ = Utils.TryParseBoolFromString(_standaloneConfigDTO.enableTagEventsListBatchPublishing, out enableTagEventsListBatchPublishing);
         }
         config.BatchListPublishingEnabled = enableTagEventsListBatchPublishing;
 
         bool batchListCleanupTagEventsOnReload = true;
         if (!string.IsNullOrEmpty(_standaloneConfigDTO.cleanupTagEventsListBatchOnReload))
         {
-            Utils.TryParseBoolFromString(_standaloneConfigDTO.cleanupTagEventsListBatchOnReload, out batchListCleanupTagEventsOnReload);
+            _ = Utils.TryParseBoolFromString(_standaloneConfigDTO.cleanupTagEventsListBatchOnReload, out batchListCleanupTagEventsOnReload);
         }
         config.BatchListCleanupTagEventsOnReload = batchListCleanupTagEventsOnReload;
 
         bool updateTagEventsListBatchOnChange = true;
         if (!string.IsNullOrEmpty(_standaloneConfigDTO.updateTagEventsListBatchOnChange))
         {
-            Utils.TryParseBoolFromString(_standaloneConfigDTO.updateTagEventsListBatchOnChange, out updateTagEventsListBatchOnChange);
+            _ = Utils.TryParseBoolFromString(_standaloneConfigDTO.updateTagEventsListBatchOnChange, out updateTagEventsListBatchOnChange);
         }
         config.BatchListUpdateTagEventsOnChange = updateTagEventsListBatchOnChange;
 
         bool filterTagEventsListBatchOnChangeBasedOnAntennaZone = true;
         if (!string.IsNullOrEmpty(_standaloneConfigDTO.filterTagEventsListBatchOnChangeBasedOnAntennaZone))
         {
-            Utils.TryParseBoolFromString(_standaloneConfigDTO.filterTagEventsListBatchOnChangeBasedOnAntennaZone, out filterTagEventsListBatchOnChangeBasedOnAntennaZone);
+            _ = Utils.TryParseBoolFromString(_standaloneConfigDTO.filterTagEventsListBatchOnChangeBasedOnAntennaZone, out filterTagEventsListBatchOnChangeBasedOnAntennaZone);
 
         }
         config.BatchListUpdateTagEventsOnAntennaZoneChange = filterTagEventsListBatchOnChangeBasedOnAntennaZone;
@@ -6979,7 +6891,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     //    {
     //        _logger.LogError(ex, "Error in ProcessBatchPublishing.");
     //    }
-        
+
 
     //}
 
@@ -7013,9 +6925,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
 
 
-    
 
-    
+
+
 
     //private void ProcessTagEvent(
     //JObject? smartReaderTagReadEvent,
@@ -7062,7 +6974,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     //    }
     //}
 
-    
+
 
 
     //private void ProcessOnChangeUpdates(ref JObject? smartReaderTagReadEventAggregated, JArray smartReaderTagReadEventsArray)
@@ -7214,7 +7126,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     //                {
     //                    _smartReaderTagEventsListBatch.TryAdd(kvp.Key, kvp.Value);
     //                }
-                    
+
     //            }
 
     //            // Clear the on-change updates list after processing
@@ -7228,7 +7140,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     //            return; // Exit early as on-change updates are published immediately
     //        }
     //    }
-        
+
     //    // Run periodically batch list publishing
     //    if(_mqttPublishingConfiguration.BatchListPublishingEnabled)
     //    {
@@ -7577,9 +7489,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     //    _timerTagPublisherUdpServer.Start();
     //}
 
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
     private async Task ProcessUdpDataTagEventDataAsync(JObject smartReaderTagEventData)
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
 #pragma warning disable CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
     {
         try
@@ -7617,71 +7527,71 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 if (string.Equals("1", _standaloneConfigDTO.includeAntennaPort, StringComparison.OrdinalIgnoreCase) &&
                     !string.IsNullOrEmpty(antennaPort))
                 {
-                    sb.Append(antennaPort);
-                    sb.Append(fieldDelim);
+                    _ = sb.Append(antennaPort);
+                    _ = sb.Append(fieldDelim);
                 }
 
                 var antennaZone = (string)tagReads["antennaZone"];
                 if (string.Equals("1", _standaloneConfigDTO.includeAntennaZone, StringComparison.OrdinalIgnoreCase) &&
                     !string.IsNullOrEmpty(antennaZone))
                 {
-                    sb.Append(antennaZone);
-                    sb.Append(fieldDelim);
+                    _ = sb.Append(antennaZone);
+                    _ = sb.Append(fieldDelim);
                 }
 
                 var epc = (string)tagReads["epc"];
                 if (!string.IsNullOrEmpty(epc))
                 {
-                    sb.Append(epc);
-                    sb.Append(fieldDelim);
+                    _ = sb.Append(epc);
+                    _ = sb.Append(fieldDelim);
                 }
 
                 var firstSeenTimestamp = (string)tagReads["firstSeenTimestamp"];
                 if (string.Equals("1", _standaloneConfigDTO.includeFirstSeenTimestamp,
                         StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(firstSeenTimestamp))
                 {
-                    sb.Append(firstSeenTimestamp);
-                    sb.Append(fieldDelim);
+                    _ = sb.Append(firstSeenTimestamp);
+                    _ = sb.Append(fieldDelim);
                 }
 
                 var peakRssi = (string)tagReads["peakRssi"];
                 if (string.Equals("1", _standaloneConfigDTO.includePeakRssi, StringComparison.OrdinalIgnoreCase) &&
                     !string.IsNullOrEmpty(peakRssi))
                 {
-                    sb.Append(peakRssi);
-                    sb.Append(fieldDelim);
+                    _ = sb.Append(peakRssi);
+                    _ = sb.Append(fieldDelim);
                 }
 
                 var tid = (string)tagReads["tid"];
                 if (string.Equals("1", _standaloneConfigDTO.includeTid, StringComparison.OrdinalIgnoreCase) &&
                     !string.IsNullOrEmpty(tid))
                 {
-                    sb.Append(tid);
-                    sb.Append(fieldDelim);
+                    _ = sb.Append(tid);
+                    _ = sb.Append(fieldDelim);
                 }
 
                 var rfPhase = (string)tagReads["rfPhase"];
                 if (string.Equals("1", _standaloneConfigDTO.includeRFPhaseAngle, StringComparison.OrdinalIgnoreCase) &&
                     !string.IsNullOrEmpty(rfPhase))
                 {
-                    sb.Append(rfPhase);
-                    sb.Append(fieldDelim);
+                    _ = sb.Append(rfPhase);
+                    _ = sb.Append(fieldDelim);
                 }
 
                 var rfDoppler = (string)tagReads["frequency"];
                 if (string.Equals("1", _standaloneConfigDTO.includeRFDopplerFrequency,
                         StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(rfDoppler))
                 {
-                    sb.Append(rfDoppler);
-                    sb.Append(fieldDelim);
+                    _ = sb.Append(rfDoppler);
+                    _ = sb.Append(fieldDelim);
                 }
 
                 var rfChannel = (string)tagReads["rfChannel"];
                 if (string.Equals("1", _standaloneConfigDTO.includeRFChannelIndex,
                         StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(rfChannel))
                 {
-                    sb.Append(rfChannel);
-                    sb.Append(fieldDelim);
+                    _ = sb.Append(rfChannel);
+                    _ = sb.Append(fieldDelim);
                 }
 
 
@@ -7690,49 +7600,49 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var gpi1Status = (string)tagReads["gpi1Status"];
                     if (!string.IsNullOrEmpty(gpi1Status))
                     {
-                        sb.Append(gpi1Status);
-                        sb.Append(fieldDelim);
+                        _ = sb.Append(gpi1Status);
+                        _ = sb.Append(fieldDelim);
                     }
                     else
                     {
-                        sb.Append("0");
-                        sb.Append(fieldDelim);
+                        _ = sb.Append("0");
+                        _ = sb.Append(fieldDelim);
                     }
 
                     var gpi2Status = (string)tagReads["gpi2Status"];
                     if (!string.IsNullOrEmpty(gpi2Status))
                     {
-                        sb.Append(gpi2Status);
-                        sb.Append(fieldDelim);
+                        _ = sb.Append(gpi2Status);
+                        _ = sb.Append(fieldDelim);
                     }
                     else
                     {
-                        sb.Append("0");
-                        sb.Append(fieldDelim);
+                        _ = sb.Append("0");
+                        _ = sb.Append(fieldDelim);
                     }
 
                     var gpi3Status = (string)tagReads["gpi3Status"];
                     if (!string.IsNullOrEmpty(gpi3Status))
                     {
-                        sb.Append(gpi3Status);
-                        sb.Append(fieldDelim);
+                        _ = sb.Append(gpi3Status);
+                        _ = sb.Append(fieldDelim);
                     }
                     else
                     {
-                        sb.Append("0");
-                        sb.Append(fieldDelim);
+                        _ = sb.Append("0");
+                        _ = sb.Append(fieldDelim);
                     }
 
                     var gpi4Status = (string)tagReads["gpi4Status"];
                     if (!string.IsNullOrEmpty(gpi4Status))
                     {
-                        sb.Append(gpi4Status);
-                        sb.Append(fieldDelim);
+                        _ = sb.Append(gpi4Status);
+                        _ = sb.Append(fieldDelim);
                     }
                     else
                     {
-                        sb.Append("0");
-                        sb.Append(fieldDelim);
+                        _ = sb.Append("0");
+                        _ = sb.Append(fieldDelim);
                     }
                 }
 
@@ -7742,16 +7652,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     if (string.Equals("1", _standaloneConfigDTO.parseSgtinIncludeKeyType,
                             StringComparison.OrdinalIgnoreCase))
                     {
-                        sb.Append(tagDataKeyName);
-                        sb.Append(fieldDelim);
+                        _ = sb.Append(tagDataKeyName);
+                        _ = sb.Append(fieldDelim);
                     }
 
                 var tagDataKey = (string)tagReads["tagDataKey"];
                 if (string.Equals("1", _standaloneConfigDTO.parseSgtinEnabled, StringComparison.OrdinalIgnoreCase) &&
                     !string.IsNullOrEmpty(tagDataKey))
                 {
-                    sb.Append(tagDataKey);
-                    sb.Append(fieldDelim);
+                    _ = sb.Append(tagDataKey);
+                    _ = sb.Append(fieldDelim);
                 }
 
                 var tagDataSerial = (string)tagReads["tagDataSerial"];
@@ -7760,8 +7670,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     if (string.Equals("1", _standaloneConfigDTO.parseSgtinIncludeSerial,
                             StringComparison.OrdinalIgnoreCase))
                     {
-                        sb.Append(tagDataSerial);
-                        sb.Append(fieldDelim);
+                        _ = sb.Append(tagDataSerial);
+                        _ = sb.Append(fieldDelim);
                     }
 
                 var tagDataPureIdentity = (string)tagReads["tagDataPureIdentity"];
@@ -7770,22 +7680,22 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     if (string.Equals("1", _standaloneConfigDTO.parseSgtinIncludePureIdentity,
                             StringComparison.OrdinalIgnoreCase))
                     {
-                        sb.Append(tagDataPureIdentity);
-                        sb.Append(fieldDelim);
+                        _ = sb.Append(tagDataPureIdentity);
+                        _ = sb.Append(fieldDelim);
                     }
 
                 var readerName = (string)smartReaderTagEventData["readerName"];
                 if (!string.IsNullOrEmpty(_standaloneConfigDTO.readerName))
                 {
-                    sb.Append(readerName);
-                    sb.Append(fieldDelim);
+                    _ = sb.Append(readerName);
+                    _ = sb.Append(fieldDelim);
                 }
 
                 var site = (string)smartReaderTagEventData["site"];
                 if (!string.IsNullOrEmpty(_standaloneConfigDTO.site))
                 {
-                    sb.Append(site);
-                    sb.Append(fieldDelim);
+                    _ = sb.Append(site);
+                    _ = sb.Append(fieldDelim);
                 }
 
                 if (string.Equals("1", _standaloneConfigDTO.customField1Enabled, StringComparison.OrdinalIgnoreCase) &&
@@ -7794,8 +7704,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var customField1Value = (string)smartReaderTagEventData[_standaloneConfigDTO.customField1Name];
                     if (!string.IsNullOrEmpty(customField1Value))
                     {
-                        sb.Append(customField1Value);
-                        sb.Append(fieldDelim);
+                        _ = sb.Append(customField1Value);
+                        _ = sb.Append(fieldDelim);
                     }
                 }
 
@@ -7806,8 +7716,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var customField2Value = (string)smartReaderTagEventData[_standaloneConfigDTO.customField2Name];
                     if (!string.IsNullOrEmpty(customField2Value))
                     {
-                        sb.Append(customField2Value);
-                        sb.Append(fieldDelim);
+                        _ = sb.Append(customField2Value);
+                        _ = sb.Append(fieldDelim);
                     }
                 }
 
@@ -7817,8 +7727,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var customField3Value = (string)smartReaderTagEventData[_standaloneConfigDTO.customField3Name];
                     if (!string.IsNullOrEmpty(customField3Value))
                     {
-                        sb.Append(customField3Value);
-                        sb.Append(fieldDelim);
+                        _ = sb.Append(customField3Value);
+                        _ = sb.Append(fieldDelim);
                     }
                 }
 
@@ -7828,12 +7738,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var customField4Value = (string)smartReaderTagEventData[_standaloneConfigDTO.customField4Name];
                     if (!string.IsNullOrEmpty(customField4Value))
                     {
-                        sb.Append(customField4Value);
-                        sb.Append(fieldDelim);
+                        _ = sb.Append(customField4Value);
+                        _ = sb.Append(fieldDelim);
                     }
                 }
 
-                sb.Append(lineEnd);
+                _ = sb.Append(lineEnd);
             }
 
             var line = sb.ToString();
@@ -7950,9 +7860,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 #pragma warning restore CS8600, CS8602, CS8604 // Dereference of a possibly null reference.    
     }
 
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
     private async Task ProcessHttpJsonPostTagEventDataAsync(JObject smartReaderTagEventData)
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
     {
 #pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.
         try
@@ -8204,9 +8112,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     //    }
     //}
 
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
     private async Task ProcessUsbDriveJsonTagEventDataAsync(JObject smartReaderTagEventData)
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
     {
         try
         {
@@ -8277,7 +8183,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 await HandleHttpPostTimeoutAsync();
                 await RefreshBearerTokenAsync();
-                
+
             }
         }
         catch (Exception ex)
@@ -8326,7 +8232,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         await Task.Delay(TimeSpan.FromSeconds(2));
         var process = Process.GetCurrentProcess();
         process.StartInfo.WorkingDirectory = Directory.GetCurrentDirectory();
-        Process.Start(process.MainModule?.FileName ?? throw new InvalidOperationException("Main module not found"));
+        _ = Process.Start(process.MainModule?.FileName ?? throw new InvalidOperationException("Main module not found"));
         Environment.Exit(1); // Exit the current process
     }
 
@@ -8361,7 +8267,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
-    
+
 
 
     private async Task ProcessReaderCommandsAsync()
@@ -8377,7 +8283,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 _logger.LogDebug($"Processing Reader Command {command.Id}");
                 await ExecuteCommandAsync(command);
-                dbContext.ReaderCommands.Remove(command);
+                _ = dbContext.ReaderCommands.Remove(command);
             }
             catch (Exception ex)
             {
@@ -8385,7 +8291,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
         }
 
-        await dbContext.SaveChangesAsync();
+        _ = await dbContext.SaveChangesAsync();
     }
 
     private async Task ExecuteCommandAsync(ReaderCommands command)
@@ -8427,7 +8333,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     break;
 
                 case "UPGRADE_SYSTEM_IMAGE":
-                    await HandleUpgradeSystemImageAsync(command);
+                    HandleUpgradeSystemImage(command);
                     break;
 
                 case "MODE_COMMAND":
@@ -8564,7 +8470,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
-    private async Task HandleUpgradeSystemImageAsync(ReaderCommands command)
+    private void HandleUpgradeSystemImage(ReaderCommands command)
     {
         _logger.LogInformation("Upgrading system image...");
         try
@@ -8600,7 +8506,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _logger.LogInformation("Processing mode command: {CommandValue}", commandValue);
         try
         {
-            ProcessMqttModeJsonCommand(commandValue);
+            _ = ProcessMqttModeJsonCommand(commandValue);
         }
         catch (Exception ex)
         {
@@ -8635,12 +8541,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 if (existingStatus != null)
                 {
                     existingStatus.Value = JsonConvert.SerializeObject(statusData);
-                    dbContext.ReaderStatus.Update(existingStatus);
+                    _ = dbContext.ReaderStatus.Update(existingStatus);
                     //_logger.LogInformation("Reader status updated in the database.");
                 }
                 else
                 {
-                    dbContext.ReaderStatus.Add(new ReaderStatus
+                    _ = dbContext.ReaderStatus.Add(new ReaderStatus
                     {
                         Id = "READER_STATUS",
                         Value = JsonConvert.SerializeObject(statusData)
@@ -8649,8 +8555,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 }
 
                 // Save changes to the database
-                await dbContext.SaveChangesAsync();
-               //_logger.LogInformation("Database changes committed successfully.");
+                _ = await dbContext.SaveChangesAsync();
+                //_logger.LogInformation("Database changes committed successfully.");
             }
             catch (Exception dbEx)
             {
@@ -8694,7 +8600,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 _logger.LogError("StandaloneConfigDTO is null. Cannot update reader serial.");
                 return;
-                
+
             }
 
             if (!string.Equals(_standaloneConfigDTO.readerSerial, serialFromReader, StringComparison.OrdinalIgnoreCase))
@@ -8735,7 +8641,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
 
             await InitializeServicesAsync();
-            await ConfigurePluginsAsync();           
+            await ConfigurePluginsAsync();
             await ConfigureCommunicationChannelsAsync();
             await ConfigureAndStartTimersAsync();
             await StartMainProcessingLoopAsync(stoppingToken);
@@ -8752,7 +8658,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         await InitializeReaderDeviceAsync();
         await ConfigureRegionalParametersAsync();
         InitializeProxySettings();
-        await InitializeMqttTopics();
+        InitializeMqttTopics();
         await ConfigureAntennaHubAsync();
         InitializePositioningConfiguration();
         await UpdateReaderConfigurationAsync();
@@ -8778,19 +8684,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (_readerAddress != null)
             {
-                _iotDeviceInterfaceClient = new R700IotReader(
-                    _readerAddress,
-                    string.Empty,
-                    true,
-                    true,
-                    _readerUsername,
-                    _readerPassword,
-                    0,
-                    _proxyAddress,
-                    _proxyPort,
-                    eventProcessorLogger: _loggerFactory.CreateLogger<R700IotReader>(),
-                    _loggerFactory
-                );
+                InitR700IoTClient();
 
                 await ConfigureReaderInterfaceAsync();
             }
@@ -8813,7 +8707,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         : 8080; // Default proxy port
     }
 
-    private async Task InitializeMqttTopics()
+    private void InitializeMqttTopics()
     {
         if (_standaloneConfigDTO == null) return;
 
@@ -8898,7 +8792,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         var systemInfo = await _iotDeviceInterfaceClient.GetSystemInfoAsync();
         var readerRegionInfo = await _iotDeviceInterfaceClient.GetSystemRegionInfoAsync();
         await ConfigurePowerAndTransmitLevels(systemInfo, readerRegionInfo.OperatingRegion);
-        await ConfigureRegionSpecificSettings(readerRegionInfo);
+        ConfigureRegionSpecificSettings(readerRegionInfo);
     }
 
     private async Task ConfigurePowerAndTransmitLevels(SystemInfo systemInfo, string operatingRegion)
@@ -8922,7 +8816,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _configurationService.SaveConfigDtoToDb(_standaloneConfigDTO);
     }
 
-    private async Task ConfigureRegionSpecificSettings(Impinj.Atlas.RegionInfo regionInfo)
+    private void ConfigureRegionSpecificSettings(Impinj.Atlas.RegionInfo regionInfo)
     {
         if (_standaloneConfigDTO == null || string.IsNullOrEmpty(regionInfo?.OperatingRegion)) return;
 
@@ -8950,7 +8844,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 try
                 {
-                    if(_standaloneConfigDTO == null)
+                    if (_standaloneConfigDTO == null)
                     {
                         _standaloneConfigDTO = _configurationService.LoadConfig();
                     }
@@ -8960,7 +8854,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 {
                     _logger.LogError(ex, "Error retrieving SN");
                 }
-                
+
 
                 if (_standaloneConfigDTO.readerName.Equals("impinj-xx-xx-xx"))
                 {
@@ -8974,7 +8868,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             }
 
-            
+
 
             // Get system info to verify connection and get device details
             var systemInfo = await _iotDeviceInterfaceClient.GetSystemInfoAsync();
@@ -9018,20 +8912,22 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
 
             // Initialize GPI port states
-            if (!_gpiPortStates.ContainsKey(0)) _gpiPortStates.TryAdd(0, false);
-            if (!_gpiPortStates.ContainsKey(1)) _gpiPortStates.TryAdd(1, false);
+            if (!_gpiPortStates.ContainsKey(0)) _ = _gpiPortStates.TryAdd(0, false);
+            if (!_gpiPortStates.ContainsKey(1)) _ = _gpiPortStates.TryAdd(1, false);
 
             // Initialize the HTTP Stream
             try
             {
                 _logger.LogInformation("Initializing the HTTP Stream setup.");
-                var httpStreamConfig = new HttpStreamConfig();
-                httpStreamConfig.EventBufferSize = 0;
-                httpStreamConfig.EventPerSecondLimit = 50;
-                httpStreamConfig.EventAgeLimitMinutes = 1;
-                httpStreamConfig.KeepAliveIntervalSeconds = 1;
+                var httpStreamConfig = new HttpStreamConfig
+                {
+                    EventBufferSize = 0,
+                    EventPerSecondLimit = 50,
+                    EventAgeLimitMinutes = 1,
+                    KeepAliveIntervalSeconds = 1
+                };
                 await _iotDeviceInterfaceClient.UpdateHttpStreamConfigAsync(httpStreamConfig);
-                
+
             }
             catch (Exception ex)
             {
@@ -9086,29 +8982,29 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         var hubInfo = await _iotDeviceInterfaceClient.GetSystemAntennaHubInfoAsync();
         if (hubInfo?.Status == AntennaHubInfoStatus.Enabled)
         {
-            await ConfigureEnabledAntennaHub();
+            ConfigureEnabledAntennaHub();
         }
         else if (hubInfo?.Status == AntennaHubInfoStatus.Disabled)
         {
-            await ConfigureDisabledAntennaHub();
+            ConfigureDisabledAntennaHub();
         }
     }
 
-    private async Task ConfigureEnabledAntennaHub()
+    private void ConfigureEnabledAntennaHub()
     {
         if (_standaloneConfigDTO?.antennaPorts?.Split(",").Length < 32)
         {
             var config = BuildAntennaConfig(32);
-            await SaveAntennaConfiguration(config);
+            SaveAntennaConfiguration(config);
         }
     }
 
-    private async Task ConfigureDisabledAntennaHub()
+    private void ConfigureDisabledAntennaHub()
     {
         if (_standaloneConfigDTO?.antennaPorts?.Split(",").Length > 4)
         {
             var config = BuildAntennaConfig(4);
-            await SaveAntennaConfiguration(config);
+            SaveAntennaConfiguration(config);
         }
     }
 
@@ -9146,7 +9042,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         );
     }
 
-    private async Task SaveAntennaConfiguration(AntennaConfig config)
+    private void SaveAntennaConfiguration(AntennaConfig config)
     {
         _standaloneConfigDTO.antennaPorts = config.Ports;
         _standaloneConfigDTO.antennaStates = config.States;
@@ -9200,8 +9096,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
 
             // Apply reader settings if management-only mode is not enabled
-            if (_standaloneConfigDTO != null &&
-                string.IsNullOrEmpty(_standaloneConfigDTO.smartreaderEnabledForManagementOnly) ||
+            if ((_standaloneConfigDTO != null &&
+                string.IsNullOrEmpty(_standaloneConfigDTO.smartreaderEnabledForManagementOnly)) ||
                 !string.Equals("1", _standaloneConfigDTO.smartreaderEnabledForManagementOnly))
             {
                 await ApplySettingsAsync();
@@ -9276,7 +9172,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         var pluginsDir = Path.Combine(AppContext.BaseDirectory, "plugins");
         var pluginLoaders = _configurationService.LoadPluginAssemblies(pluginsDir);
-        await _configurationService.InitializePluginsAsync(DeviceId, pluginLoaders);
+        _ = await _configurationService.InitializePluginsAsync(DeviceId, pluginLoaders);
     }
 
     private async Task ConfigureCommunicationChannelsAsync()
@@ -9318,11 +9214,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             try
             {
-                if(IsGpiEnabled())
+                if (IsGpiEnabled())
                 {
                     await SetGpiPortsAsync();
                 }
-                
+
             }
             catch (Exception ex)
             {
@@ -9346,13 +9242,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     private async Task HandleFatalErrorAsync(Exception ex, CancellationToken stoppingToken)
     {
         _logger.LogError(ex, "Fatal error in ExecuteAsync. Restarting process.");
-        await CleanupResourcesAsync();
+        CleanupResources();
 
         await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
         RestartProcess();
     }
 
-    private async Task CleanupResourcesAsync()
+    private void CleanupResources()
     {
 
         _serialTty?.Dispose();
@@ -9367,7 +9263,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             WorkingDirectory = Directory.GetCurrentDirectory(),
             UseShellExecute = true
         };
-        Process.Start(startInfo);
+        _ = Process.Start(startInfo);
         Environment.Exit(1);
     }
 
@@ -9472,7 +9368,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     }
     private async Task InitializeMqttAsync()
     {
-        if (_standaloneConfigDTO == null || 
+        if (_standaloneConfigDTO == null ||
             !string.Equals("1", _standaloneConfigDTO.mqttEnabled, StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -9509,8 +9405,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     private bool ShouldInitializeSerialPorts()
     {
         return _standaloneConfigDTO != null &&
-               ((string.Equals("1", _standaloneConfigDTO.serialPort, StringComparison.OrdinalIgnoreCase)) ||
-                (string.Equals("1", _standaloneConfigDTO.enableBarcodeSerial, StringComparison.OrdinalIgnoreCase)));
+               (string.Equals("1", _standaloneConfigDTO.serialPort, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals("1", _standaloneConfigDTO.enableBarcodeSerial, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task ProcessMqttMessagesAsync()
@@ -9691,47 +9587,47 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private void ConfigurePeriodicTimers()
     {
-        
+
         ConfigureTimer(_timerPeriodicTasksJob, OnRunPeriodicTasksJobManagerEvent, 1000);
         ConfigureTimer(_timerTagFilterLists, OnRunPeriodicTagFilterListsEvent, 100);
-        if(IsHeartbeatEnabled())
+        if (IsHeartbeatEnabled())
         {
             ConfigureTimer(_timerKeepalive, OnRunPeriodicKeepaliveCheck, 100);
         }
-        
+
         ConfigureTimer(_timerStopTriggerDuration, OnRunPeriodicStopTriggerDurationEvent, 100);
 
-        if(IsHttpPostEnabled())
+        if (IsHttpPostEnabled())
         {
             ConfigureTimer(_timerTagPublisherHttp, OnRunPeriodicTagPublisherHttpTasksEvent, 100);
             ConfigureTimer(_timerTagPublisherRetry, OnRunPeriodicTagPublisherRetryTasksEvent, 500);
         }
 
-        if(IsSocketServerEnabled())
+        if (IsSocketServerEnabled())
         {
             ConfigureTimer(_timerTagPublisherSocket, OnRunPeriodicTagPublisherSocketTasksEvent, 10);
         }
 
         ConfigureTimer(_timerTagPublisherWebSocket, OnRunPeriodicTagPublisherWebSocketTasksEvent, 10);
-        
+
         if (IsSummaryStreamEnabled())
         {
             ConfigureTimer(_timerSummaryStreamPublisher, OnRunPeriodicSummaryStreamPublisherTasksEvent, 10);
         }
 
-        if(IsBackupToInternalFlashEnabled() ||
+        if (IsBackupToInternalFlashEnabled() ||
             IsBackupToFlashDriveOnGpiEventEnabled() ||
             IsUsbFlashDriveEnabled())
         {
             ConfigureTimer(_timerTagPublisherUsbDrive, OnRunPeriodicUsbDriveTasksEvent, 100);
         }
-        if(IsUdpServerEnabled())
+        if (IsUdpServerEnabled())
         {
             ConfigureTimer(_timerTagPublisherUdpServer, OnRunPeriodicTagPublisherUdpTasksEvent, 500);
         }
-        
 
-        if(IsMqttEnabled())
+
+        if (IsMqttEnabled())
         {
             ConfigureTimer(_timerTagPublisherMqtt, OnRunPeriodicTagPublisherMqttTasksEvent, 10);
         }
@@ -9763,7 +9659,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 _logger.LogError("Error loading _standaloneConfigDTO to trigger timers.");
             }
-            
+
         }
 
 
@@ -9910,9 +9806,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 _logger.LogInformation("Selected serial port: " + serialPortName);
 
                 var baudrate = int.Parse(_standaloneConfigDTO.baudRate);
-                _serialTty = new SerialPort(serialPortName, baudrate);
-                _serialTty.ReadTimeout = 1000;
-                _serialTty.DiscardNull = true;
+                _serialTty = new SerialPort(serialPortName, baudrate)
+                {
+                    ReadTimeout = 1000,
+                    DiscardNull = true
+                };
 
                 _serialTty.DataReceived += BarcodeSerialDataReceivedHandler;
                 if (!_serialTty.IsOpen)
@@ -10008,7 +9906,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             var bytesToRead = sp.BytesToRead;
             var bytes = new byte[bytesToRead];
 
-            sp.Read(bytes, 0, bytesToRead);
+            _ = sp.Read(bytes, 0, bytesToRead);
             var messageData = Encoding.ASCII.GetString(bytes);
 
             sp.DiscardInBuffer();
@@ -10033,7 +9931,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             var bytesToRead = sp.BytesToRead;
             var bytes = new byte[bytesToRead];
 
-            sp.Read(bytes, 0, bytesToRead);
+            _ = sp.Read(bytes, 0, bytesToRead);
             var messageData = Encoding.ASCII.GetString(bytes);
 
             sp.DiscardInBuffer();
@@ -10096,7 +9994,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     {
                         double latDegrees = double.Parse(lat.Substring(0, 2));
                         double latMinutes = double.Parse(lat.Substring(2));
-                        double latDecimal = latDegrees + latMinutes / 60;
+                        double latDecimal = latDegrees + (latMinutes / 60);
                         if (latDir == "S")
                         {
                             latDecimal = -latDecimal;
@@ -10107,7 +10005,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                         double lonDegrees = double.Parse(lon.Substring(0, 3));
                         double lonMinutes = double.Parse(lon.Substring(3));
-                        double lonDecimal = lonDegrees + lonMinutes / 60;
+                        double lonDecimal = lonDegrees + (lonMinutes / 60);
                         if (lonDir == "W")
                         {
                             lonDecimal = -lonDecimal;
@@ -10327,7 +10225,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     //    }
     //}
 
-    
+
     public async Task<string> ProcessMqttControlCommandJsonAsync(string controlCommandJson, bool shouldPublishToMqtt)
     {
 #pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.
@@ -10363,7 +10261,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         }
                         if (!string.IsNullOrEmpty(commandIdValue))
                         {
-                            await _configurationService.WriteMqttCommandIdToFile(commandIdValue);
+                            _ = await _configurationService.WriteMqttCommandIdToFile(commandIdValue);
                             if (!string.IsNullOrEmpty(previousCommandId))
                                 if (previousCommandId.Trim().Equals(commandIdValue.Trim()))
                                 {
@@ -10385,9 +10283,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         deserializedCmdData.Add(commandResponse);
                                     }
 
-                                    var payloadCommandStatus = new Dictionary<string, string>();
-                                    payloadCommandStatus.Add("detail",
-                                        $"id {commandIdValue} already processed.");
+                                    var payloadCommandStatus = new Dictionary<string, string>
+                                    {
+                                        {
+                                            "detail",
+                                            $"id {commandIdValue} already processed."
+                                        }
+                                    };
                                     if (deserializedCmdData.ContainsKey("message"))
                                     {
                                         deserializedCmdData["message"] =
@@ -10408,8 +10310,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                         var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                                         try
                                         {
-                                            int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
-                                            bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages,
+                                            _ = int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
+                                            _ = bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages,
                                                 out retain);
 
                                             mqttQualityOfServiceLevel = qos switch
@@ -10478,8 +10380,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                             try
                             {
-                                int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
-                                bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages, out retain);
+                                _ = int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
+                                _ = bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages, out retain);
 
                                 mqttQualityOfServiceLevel = qos switch
                                 {
@@ -10541,8 +10443,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                             try
                             {
-                                int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
-                                bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages, out retain);
+                                _ = int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
+                                _ = bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages, out retain);
 
                                 mqttQualityOfServiceLevel = qos switch
                                 {
@@ -10556,10 +10458,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             }
 
                             var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                            await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                            await _mqttService.PublishAsync(mqttCommandResponseTopic,
                                 serializedData,
                                 _iotDeviceInterfaceClient.MacAddress,
-                                mqttQualityOfServiceLevel, 
+                                mqttQualityOfServiceLevel,
                                 retain);
 
                         }
@@ -10620,8 +10522,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                             try
                             {
-                                int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
-                                bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages, out retain);
+                                _ = int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
+                                _ = bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages, out retain);
 
                                 mqttQualityOfServiceLevel = qos switch
                                 {
@@ -10698,8 +10600,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                         try
                         {
-                            int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
-                            bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages, out retain);
+                            _ = int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
+                            _ = bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages, out retain);
 
                             mqttQualityOfServiceLevel = qos switch
                             {
@@ -10713,12 +10615,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         }
 
                         var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                        await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                        await _mqttService.PublishAsync(mqttCommandResponseTopic,
                             serializedData,
                             _iotDeviceInterfaceClient.MacAddress,
-                            mqttQualityOfServiceLevel, 
+                            mqttQualityOfServiceLevel,
                             retain);
-                        
+
                         //if ("success".Equals(commandStatus))
                         //{
                         //    // exits the app to reload the settings
@@ -10734,7 +10636,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             if (deserializedCmdData.ContainsKey("payload") || deserializedCmdData.ContainsKey("fields"))
                                 try
                                 {
-                                    JObject commandPayloadJObject = new();
+                                    JObject commandPayloadJObject = [];
                                     if (deserializedCmdData.ContainsKey("payload"))
                                     {
                                         commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
@@ -10808,8 +10710,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                             try
                             {
-                                int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
-                                bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages, out retain);
+                                _ = int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
+                                _ = bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages, out retain);
 
                                 mqttQualityOfServiceLevel = qos switch
                                 {
@@ -10823,12 +10725,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             }
 
                             var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                            await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                            await _mqttService.PublishAsync(mqttCommandResponseTopic,
                                 serializedData,
                                 _iotDeviceInterfaceClient.MacAddress,
-                                mqttQualityOfServiceLevel, 
+                                mqttQualityOfServiceLevel,
                                 retain);
-                            
+
 
                         }
 
@@ -10905,8 +10807,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                             try
                             {
-                                int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
-                                bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages, out retain);
+                                _ = int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
+                                _ = bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages, out retain);
 
                                 mqttQualityOfServiceLevel = qos switch
                                 {
@@ -10939,7 +10841,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var impinjIotApiEndpoint = "";
                                 var impinjIotApiVerb = "";
                                 var impinjIotApiRequest = "";
-                                JObject commandPayloadJObject = new();
+                                JObject commandPayloadJObject = [];
                                 if (deserializedCmdData.ContainsKey("payload"))
                                 {
                                     commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
@@ -11041,8 +10943,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                             try
                             {
-                                int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
-                                bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages, out retain);
+                                _ = int.TryParse(_standaloneConfigDTO.mqttControlResponseQoS, out qos);
+                                _ = bool.TryParse(_standaloneConfigDTO.mqttControlResponseRetainMessages, out retain);
 
                                 mqttQualityOfServiceLevel = qos switch
                                 {
@@ -11056,13 +10958,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             }
 
                             var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttControlResponseTopic}";
-                            await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                            await _mqttService.PublishAsync(mqttCommandResponseTopic,
                                 serializedData,
                                 _iotDeviceInterfaceClient.MacAddress,
-                                mqttQualityOfServiceLevel, 
+                                mqttQualityOfServiceLevel,
                                 retain);
 
-                            
+
 
                         }
 
@@ -11116,7 +11018,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
                                 if (!string.IsNullOrEmpty(commandIdValue))
                                 {
-                                    await _configurationService.WriteMqttCommandIdToFile(commandIdValue);
+                                    _ = await _configurationService.WriteMqttCommandIdToFile(commandIdValue);
                                     if (!string.IsNullOrEmpty(previousCommandId))
                                         if (previousCommandId.Trim().Equals(commandIdValue.Trim()))
                                         {
@@ -11141,9 +11043,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                                 deserializedCmdData.Add(commandResponse);
                                             }
 
-                                            var payloadCommandStatus = new Dictionary<string, string>();
-                                            payloadCommandStatus.Add("detail",
-                                                $"command_id {commandIdValue} already processed.");
+                                            var payloadCommandStatus = new Dictionary<string, string>
+                                            {
+                                                {
+                                                    "detail",
+                                                    $"command_id {commandIdValue} already processed."
+                                                }
+                                            };
                                             if (deserializedCmdData.ContainsKey("message"))
                                             {
                                                 deserializedCmdData["message"] =
@@ -11165,9 +11071,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                                 var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                                                 try
                                                 {
-                                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS,
+                                                    _ = int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS,
                                                         out qos);
-                                                    bool.TryParse(
+                                                    _ = bool.TryParse(
                                                         _standaloneConfigDTO.mqttManagementResponseRetainMessages,
                                                         out retain);
 
@@ -11187,9 +11093,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                                 await _mqttService.PublishAsync(mqttCommandResponseTopic,
                                                     serializedData,
                                                     _iotDeviceInterfaceClient.MacAddress,
-                                                    mqttQualityOfServiceLevel, 
+                                                    mqttQualityOfServiceLevel,
                                                     retain);
-                                                
+
 
                                             }
 
@@ -11246,8 +11152,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                                 try
                                 {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                    _ = int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                    _ = bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
                                         out retain);
 
                                     mqttQualityOfServiceLevel = qos switch
@@ -11316,8 +11222,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                                 try
                                 {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                    _ = int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                    _ = bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
                                         out retain);
 
                                     mqttQualityOfServiceLevel = qos switch
@@ -11332,13 +11238,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                                await _mqttService.PublishAsync(mqttCommandResponseTopic,
                                     serializedData,
                                     _iotDeviceInterfaceClient.MacAddress,
-                                    mqttQualityOfServiceLevel, 
+                                    mqttQualityOfServiceLevel,
                                     retain);
 
-                                
+
 
                             }
 
@@ -11383,8 +11289,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                                 try
                                 {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                    _ = int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                    _ = bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
                                         out retain);
 
                                     mqttQualityOfServiceLevel = qos switch
@@ -11451,8 +11357,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                                 try
                                 {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                    _ = int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                    _ = bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
                                         out retain);
 
                                     mqttQualityOfServiceLevel = qos switch
@@ -11467,13 +11373,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                                await _mqttService.PublishAsync(mqttCommandResponseTopic,
                                     serializedData,
                                     _iotDeviceInterfaceClient.MacAddress,
-                                    mqttQualityOfServiceLevel, 
+                                    mqttQualityOfServiceLevel,
                                     retain);
 
-                                
+
 
                             }
 
@@ -11514,7 +11420,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             catch (Exception)
                             {
 
-                                
+
                             }
                             try
                             {
@@ -11549,8 +11455,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                                 try
                                 {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                    _ = int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                    _ = bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
                                         out retain);
 
                                     mqttQualityOfServiceLevel = qos switch
@@ -11565,12 +11471,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 }
 
                                 var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                                await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                                await _mqttService.PublishAsync(mqttCommandResponseTopic,
                                     serializedData,
                                     _iotDeviceInterfaceClient.MacAddress,
-                                    mqttQualityOfServiceLevel, 
+                                    mqttQualityOfServiceLevel,
                                     retain);
-                                
+
 
                             }
 
@@ -11642,8 +11548,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                                 try
                                 {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                    _ = int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                    _ = bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
                                         out retain);
 
                                     mqttQualityOfServiceLevel = qos switch
@@ -11727,8 +11633,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                                 try
                                 {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                    _ = int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                    _ = bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
                                         out retain);
 
                                     mqttQualityOfServiceLevel = qos switch
@@ -11808,8 +11714,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                             try
                             {
-                                int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                _ = int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                _ = bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
                                     out retain);
 
                                 mqttQualityOfServiceLevel = qos switch
@@ -11824,10 +11730,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             }
 
                             var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttManagementResponseTopic}";
-                            await _mqttService.PublishAsync(mqttCommandResponseTopic, 
+                            await _mqttService.PublishAsync(mqttCommandResponseTopic,
                                 serializedData,
                                 _iotDeviceInterfaceClient.MacAddress,
-                                mqttQualityOfServiceLevel, 
+                                mqttQualityOfServiceLevel,
                                 retain);
                         }
                         else if ("retrieve-settings".Equals(commandValue))
@@ -11888,8 +11794,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                                 try
                                 {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                    _ = int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                    _ = bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
                                         out retain);
 
                                     mqttQualityOfServiceLevel = qos switch
@@ -11916,8 +11822,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         }
                         else if ("apply-settings".Equals(commandValue))
                         {
-                            var resultPayload = "";
-
                             if (deserializedCmdData.ContainsKey("payload") || deserializedCmdData.ContainsKey("fields"))
                             {
                                 if (deserializedCmdData.ContainsKey("payload"))
@@ -11979,8 +11883,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                                 try
                                 {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                    _ = int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                    _ = bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
                                         out retain);
 
                                     mqttQualityOfServiceLevel = qos switch
@@ -12011,7 +11915,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             {
                                 if (deserializedCmdData.ContainsKey("payload") || deserializedCmdData.ContainsKey("fields"))
                                 {
-                                    JObject commandPayloadJObject = new();
+                                    JObject commandPayloadJObject = [];
 
                                     var remoteUrl = _standaloneConfigDTO.systemImageUpgradeUrl;
 
@@ -12139,8 +12043,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                                 try
                                 {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                    _ = int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                    _ = bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
                                         out retain);
 
                                     mqttQualityOfServiceLevel = qos switch
@@ -12175,7 +12079,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     var impinjIotApiEndpoint = "";
                                     var impinjIotApiVerb = "";
                                     var impinjIotApiRequest = "";
-                                    JObject commandPayloadJObject = new();
+                                    JObject commandPayloadJObject = [];
                                     if (deserializedCmdData.ContainsKey("payload"))
                                     {
                                         commandPayloadJObject = deserializedCmdData["payload"].Value<JObject>();
@@ -12279,8 +12183,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 var mqttQualityOfServiceLevel = MqttQualityOfServiceLevel.AtMostOnce;
                                 try
                                 {
-                                    int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
-                                    bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
+                                    _ = int.TryParse(_standaloneConfigDTO.mqttManagementResponseQoS, out qos);
+                                    _ = bool.TryParse(_standaloneConfigDTO.mqttManagementResponseRetainMessages,
                                         out retain);
 
                                     mqttQualityOfServiceLevel = qos switch
@@ -12360,7 +12264,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         _standaloneConfigDTO.readerName)))
                 try
                 {
-                    await ProcessMqttManagementCommandJsonAsync(mqttMessage, true);
+                    _ = await ProcessMqttManagementCommandJsonAsync(mqttMessage, true);
 
 
                 }
@@ -12374,7 +12278,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                              _standaloneConfigDTO.readerName)))
                 try
                 {
-                    await ProcessMqttControlCommandJsonAsync(mqttMessage, true);
+                    _ = await ProcessMqttControlCommandJsonAsync(mqttMessage, true);
                 }
                 catch (Exception ex)
                 {
@@ -12420,7 +12324,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
                     await _mqttService.PublishAsync(mqttCommandResponseTopic, serializedData);
 
-                    
+
 
                 }
                 catch (Exception ex)
@@ -12437,7 +12341,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var serializedData = JsonConvert.SerializeObject(serial.Result);
                     var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
                     await _mqttService.PublishAsync(mqttCommandResponseTopic, serializedData);
-                    
+
 
                 }
                 catch (Exception ex)
@@ -12455,7 +12359,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
                     await _mqttService.PublishAsync(mqttCommandResponseTopic, serializedData);
 
-                    
+
 
                 }
                 catch (Exception ex)
@@ -12472,7 +12376,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
                     await _mqttService.PublishAsync(mqttCommandResponseTopic, "OK");
 
-                    
+
 
                 }
                 catch (Exception ex)
@@ -12489,7 +12393,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
                     await _mqttService.PublishAsync(mqttCommandResponseTopic, "OK");
 
-                    
+
 
                 }
                 catch (Exception ex)
@@ -12509,7 +12413,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         var mqttCommandResponseTopic = $"{_standaloneConfigDTO.mqttTagEventsTopic}/response";
                         await _mqttService.PublishAsync(mqttCommandResponseTopic, "OK");
 
-                        
+
 
                     }
                 }
@@ -12548,7 +12452,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         method = "DELETE";
                     }
 
-                    await CallIotRestFulInterfaceAsync(mqttMessage, endpointString, method, mqttCommandResponseTopic, true);
+                    _ = await CallIotRestFulInterfaceAsync(mqttMessage, endpointString, method, mqttCommandResponseTopic, true);
                 }
                 catch (Exception ex)
                 {
@@ -12556,7 +12460,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     //_mqttCommandClient.EnqueueAsync(_standaloneConfigDTO.mqttTopic, ex.Message);
                     await _mqttService.PublishAsync(mqttCommandResponseTopic, ex.Message);
 
-                    
+
 
                 }
             }
@@ -12578,7 +12482,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             if (deserializedConfigData != null)
                 try
                 {
-                    JObject commandPayloadJObject = new();
+                    JObject commandPayloadJObject = [];
                     if (deserializedConfigData.ContainsKey("payload"))
                     {
                         commandPayloadJObject = deserializedConfigData["payload"].Value<JObject>();
@@ -12599,12 +12503,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         var transmitPowerCdbm = 3000;
                         var rssiThreshold = -92;
                         double groupIntervalInMs = 400;
-                        var softwareFilterTagIdValue = "E280";
-                        var softwareFilterTagIdMatch = "prefix";
-                        var softwareFilterTagIdOperation = "include";
-                        var softwareFilterTagIdEnabled = "0";
-                        var softwareFilterIncludeEpcHeaderListEnabled = "0";
-                        var softwareFilterIncludeEpcHeaderListValue = "E280,3031";
 
 
                         var newAntennaZoneConfigLine = _standaloneConfigDTO.antennaZones;
@@ -12684,7 +12582,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             if (commandPayloadJObject.ContainsKey("antennas") || commandPayloadJObject.ContainsKey("ants"))
                                 try
                                 {
-                                    JArray antennaListJArray = new();
+                                    JArray antennaListJArray = [];
                                     if (commandPayloadJObject.ContainsKey("antennas"))
                                     {
                                         antennaListJArray = commandPayloadJObject["antennas"].Value<JArray>(); // Value<List<int>>();
@@ -12875,7 +12773,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     var receivedSession = commandPayloadJObject["session"].Value<string>();
                                     int convertedSession = -1;
 
-                                    int.TryParse(receivedSession, out convertedSession);
+                                    _ = int.TryParse(receivedSession, out convertedSession);
 
                                     if (convertedSession >= 0 && convertedSession < 4)
                                     {
@@ -13270,7 +13168,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     succeeded = true;
 
                                     _logger.LogInformation($"UpgradeSystemImage: Upload done for image: {imageRemoteUrl}");
-                                    rshell.SendCommand("reboot");
+                                    _ = rshell.SendCommand("reboot");
                                     _logger.LogInformation($"UpgradeSystemImage: restarting reader.");
                                     break;
                                 }
@@ -13374,8 +13272,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         var httpClientHandler = new HttpClientHandler
         {
             ServerCertificateCustomValidationCallback =
-                (Func<HttpRequestMessage, X509Certificate2, X509Chain, SslPolicyErrors, bool>)((
-                    message, cert, chain, errors) => true)
+                (
+                    message, cert, chain, errors) => true
         };
         HttpClient httpClient = new(httpClientHandler)
         {
@@ -13452,9 +13350,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             Log.Debug(requestResult);
             //_mqttCommandClient.EnqueueAsync(_standaloneConfigDTO.mqttTopic, requestResult);
             await _mqttService.PublishAsync(mqttCommandResponseTopic, requestResult);
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-            
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
         }
         else
         {
@@ -13464,9 +13359,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 await _mqttService.PublishAsync(mqttCommandResponseTopic,
                     response.Result.Content.ReadAsStringAsync().Result);
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
             }
 
         }
@@ -13474,9 +13366,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         return requestResult;
     }
 
-    
 
-    
+
+
 
     private async Task ProcessHttpPostTagEventDataAsync(SmartReaderTagEventData smartReaderTagEventData)
     {
@@ -13497,7 +13389,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 #pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.
         try
         {
-           // Validate input
+            // Validate input
             if (tagInventoryEvent == null)
             {
                 _logger.LogError("Received null tag event");
@@ -13527,13 +13419,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         _logger.LogInformation("Invalid license key. ");
                         if (IsMqttEnabled())
                         {
-                            var mqttManagementEvents = new Dictionary<string, object>();
-                            mqttManagementEvents.Add("readerName", _standaloneConfigDTO.readerName);
-                            mqttManagementEvents.Add("mac", _iotDeviceInterfaceClient.MacAddress);
-                            mqttManagementEvents.Add("ip", _iotDeviceInterfaceClient.IpAddresses);
-                            mqttManagementEvents.Add("serial", _standaloneConfigDTO.readerSerial);
-                            mqttManagementEvents.Add("timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now));
-                            mqttManagementEvents.Add("smartreader-status", "invalid-license-key");
+                            var mqttManagementEvents = new Dictionary<string, object>
+                            {
+                                { "readerName", _standaloneConfigDTO.readerName },
+                                { "mac", _iotDeviceInterfaceClient.MacAddress },
+                                { "ip", _iotDeviceInterfaceClient.IpAddresses },
+                                { "serial", _standaloneConfigDTO.readerSerial },
+                                { "timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now) },
+                                { "smartreader-status", "invalid-license-key" }
+                            };
                             await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
                         }
                         return;
@@ -13550,15 +13444,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     _logger.LogInformation("Invalid license key. ");
                     if (IsMqttEnabled())
                     {
-                        var mqttManagementEvents = new Dictionary<string, object>();
-                        mqttManagementEvents.Add("readerName", _standaloneConfigDTO.readerName);
-
-                        mqttManagementEvents.Add("mac", _iotDeviceInterfaceClient.MacAddress);
-
-                        mqttManagementEvents.Add("ip", _iotDeviceInterfaceClient.IpAddresses);
-                        mqttManagementEvents.Add("serial", _standaloneConfigDTO.readerSerial);
-                        mqttManagementEvents.Add("timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now));
-                        mqttManagementEvents.Add("smartreader-status", "invalid-license-key");
+                        var mqttManagementEvents = new Dictionary<string, object>
+                        {
+                            { "readerName", _standaloneConfigDTO.readerName },
+                            { "mac", _iotDeviceInterfaceClient.MacAddress },
+                            { "ip", _iotDeviceInterfaceClient.IpAddresses },
+                            { "serial", _standaloneConfigDTO.readerSerial },
+                            { "timestamp", Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now) },
+                            { "smartreader-status", "invalid-license-key" }
+                        };
                         await _mqttService.PublishMqttManagementEventAsync(mqttManagementEvents);
                     }
                     return;
@@ -13568,13 +13462,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
 
 
-            var smartReaderTagReadEvent = new SmartReaderTagReadEvent();
-
-
-            smartReaderTagReadEvent.TagReads = new List<TagRead>();
-            var tagRead = new TagRead();
-
-            tagRead.FirstSeenTimestamp = Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now);
+            var smartReaderTagReadEvent = new SmartReaderTagReadEvent
+            {
+                TagReads = []
+            };
+            var tagRead = new TagRead
+            {
+                FirstSeenTimestamp = Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now)
+            };
 
             //if (tagInventoryEvent.LastSeenTime.HasValue)
             //    tagRead.FirstSeenTimestamp = Utils.CSharpMillisToJavaLongMicroseconds(tagInventoryEvent.LastSeenTime.Value);
@@ -13640,7 +13535,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                     StringComparison.OrdinalIgnoreCase))
                                 if (!string.IsNullOrEmpty(sku))
                                 {
-                                   // Create an instance of ThreadSafeCollections to handle concurrent access
+                                    // Create an instance of ThreadSafeCollections to handle concurrent access
                                     var collections = new ThreadSafeCollections(
                                         _logger,
                                         _readEpcs,
@@ -13659,7 +13554,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                             // The EPC was already processed, so we log it and continue
                                             _logger.LogInformation($"Skipping duplicate EPC: {epc} for SKU: {sku}");
                                         }
-                                        else 
+                                        else
                                         {
                                             // If we're tracking SKU counts separately, use the thread-safe collection
                                             // This provides an additional layer of safety for SKU counting
@@ -13864,9 +13759,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 var positioningEvents = GetLastPositioningDataAsync(tagRead.FirstSeenTimestamp.Value, true);
                 lastPositioningReferecenceEpcs = positioningEvents.Result;
 
-                var smartReaderTagReadPositioningEvent = new SmartReaderTagReadEvent();
-
-                smartReaderTagReadPositioningEvent.ReaderName = _standaloneConfigDTO.readerName;
+                var smartReaderTagReadPositioningEvent = new SmartReaderTagReadEvent
+                {
+                    ReaderName = _standaloneConfigDTO.readerName
+                };
 
 
                 smartReaderTagReadEvent.Mac = _iotDeviceInterfaceClient.MacAddress;
@@ -13874,7 +13770,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 if (string.Equals("1", _standaloneConfigDTO.siteEnabled, StringComparison.OrdinalIgnoreCase))
                     smartReaderTagReadPositioningEvent.Site = _standaloneConfigDTO.site;
 
-                smartReaderTagReadPositioningEvent.TagReadsPositioning = new List<TagReadPositioning>();
+                smartReaderTagReadPositioningEvent.TagReadsPositioning = [];
 
                 var tagReadPositioning = GetPositioningDataToReportAsync(tagRead.Epc).Result;
 
@@ -13891,8 +13787,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                 if (lastPositioningReferecenceEpcs.Any())
                 {
-                    tagReadPositioning.LastPositioningReferecenceEpcs = new List<LastPositioningReferecenceEpc>();
-                    tagReadPositioning.LastPositioningReferecenceEpcs.AddRange(lastPositioningReferecenceEpcs);
+                    tagReadPositioning.LastPositioningReferecenceEpcs = [.. lastPositioningReferecenceEpcs];
                 }
 
                 smartReaderTagReadPositioningEvent.TagReadsPositioning.Add(tagReadPositioning);
@@ -14025,14 +13920,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 dataToPublish.Add(newPropertyData);
             }
 
-            if (_mqttPublishingConfiguration.BatchListEnabled 
+            if (_mqttPublishingConfiguration.BatchListEnabled
                 || _mqttPublishingConfiguration.BatchListPublishingEnabled)
             {
-                await _batchProcessor.ProcessEventBatchAsync(tagRead, dataToPublish);
+                _ = await _batchProcessor.ProcessEventBatchAsync(tagRead, dataToPublish);
             }
             else
             {
-                if (string.Equals("1", _standaloneConfigDTO.enableValidation, 
+                if (string.Equals("1", _standaloneConfigDTO.enableValidation,
                     StringComparison.OrdinalIgnoreCase)
                     || string.Equals("1", _standaloneConfigDTO.groupEventsOnInventoryStatus,
                         StringComparison.OrdinalIgnoreCase))
@@ -14137,56 +14032,56 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 #pragma warning restore CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.   
     }
 
-//    private void EnqueueToPublishers(JObject dataToPublish)
-//    {
-//        try
-//        {
-//#pragma warning disable CS8602 // Dereference of a possibly null reference.
-//            if (string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
-//                if (!string.Equals("1", _standaloneConfigDTO.groupEventsOnInventoryStatus,
-//                        StringComparison.OrdinalIgnoreCase))
-//                {
-//                    var defaultTagEvent =
-//                        dataToPublish.Property("tag_reads").ToList().FirstOrDefault().FirstOrDefault();
-//#pragma warning disable CS8602 // Dereference of a possibly null reference.
-//                    if (((JObject)defaultTagEvent).ContainsKey("tagDataKey"))
-//                    {
-//                        var eventTimestamp = Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now);
-//                        var localBarcode = "";
-//                        if (((JObject)defaultTagEvent).ContainsKey("barcode"))
-//                            localBarcode = ((JObject)defaultTagEvent)["barcode"].Value<string>();
-//                        var skuSummaryList = new Dictionary<string, SkuSummary>();
-//                        var tagDataKeyValue = ((JObject)defaultTagEvent)["tagDataKey"].Value<string>();
-//                        var skuSummary = new SkuSummary();
-//                        skuSummary.Sku = tagDataKeyValue;
-//                        skuSummary.Qty = 1;
-//                        skuSummary.Barcode = localBarcode;
-//                        skuSummary.EventTimestamp = eventTimestamp;
-//                        skuSummaryList.Add(tagDataKeyValue, skuSummary);
-//                        var skuArray = JArray.FromObject(skuSummaryList.Values);
-//                        AddJsonSkuSummaryToQueue(skuArray);
-//                    }
-//#pragma warning restore CS8602 // Dereference of a possibly null reference.
-//                }
-//#pragma warning restore CS8602 // Dereference of a possibly null reference.
+    //    private void EnqueueToPublishers(JObject dataToPublish)
+    //    {
+    //        try
+    //        {
+    //#pragma warning disable CS8602 // Dereference of a possibly null reference.
+    //            if (string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
+    //                if (!string.Equals("1", _standaloneConfigDTO.groupEventsOnInventoryStatus,
+    //                        StringComparison.OrdinalIgnoreCase))
+    //                {
+    //                    var defaultTagEvent =
+    //                        dataToPublish.Property("tag_reads").ToList().FirstOrDefault().FirstOrDefault();
+    //#pragma warning disable CS8602 // Dereference of a possibly null reference.
+    //                    if (((JObject)defaultTagEvent).ContainsKey("tagDataKey"))
+    //                    {
+    //                        var eventTimestamp = Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now);
+    //                        var localBarcode = "";
+    //                        if (((JObject)defaultTagEvent).ContainsKey("barcode"))
+    //                            localBarcode = ((JObject)defaultTagEvent)["barcode"].Value<string>();
+    //                        var skuSummaryList = new Dictionary<string, SkuSummary>();
+    //                        var tagDataKeyValue = ((JObject)defaultTagEvent)["tagDataKey"].Value<string>();
+    //                        var skuSummary = new SkuSummary();
+    //                        skuSummary.Sku = tagDataKeyValue;
+    //                        skuSummary.Qty = 1;
+    //                        skuSummary.Barcode = localBarcode;
+    //                        skuSummary.EventTimestamp = eventTimestamp;
+    //                        skuSummaryList.Add(tagDataKeyValue, skuSummary);
+    //                        var skuArray = JArray.FromObject(skuSummaryList.Values);
+    //                        AddJsonSkuSummaryToQueue(skuArray);
+    //                    }
+    //#pragma warning restore CS8602 // Dereference of a possibly null reference.
+    //                }
+    //#pragma warning restore CS8602 // Dereference of a possibly null reference.
 
-//            if (string.Equals("1", _standaloneConfigDTO.enableTagEventStream, StringComparison.OrdinalIgnoreCase))
-//                SaveJsonTagEventToDb(dataToPublish);
+    //            if (string.Equals("1", _standaloneConfigDTO.enableTagEventStream, StringComparison.OrdinalIgnoreCase))
+    //                SaveJsonTagEventToDb(dataToPublish);
 
-//            if (string.Equals("1", _standaloneConfigDTO.httpPostEnabled, StringComparison.OrdinalIgnoreCase))
-//                try
-//                {
-//                    if (_messageQueueTagSmartReaderTagEventHttpPost.Count < 1000)
-//                        _messageQueueTagSmartReaderTagEventHttpPost.Enqueue(dataToPublish);
-//                }
-//                catch (Exception)
-//                {
-//                }
-//        }
-//        catch (Exception)
-//        {
-//        }
-//    }
+    //            if (string.Equals("1", _standaloneConfigDTO.httpPostEnabled, StringComparison.OrdinalIgnoreCase))
+    //                try
+    //                {
+    //                    if (_messageQueueTagSmartReaderTagEventHttpPost.Count < 1000)
+    //                        _messageQueueTagSmartReaderTagEventHttpPost.Enqueue(dataToPublish);
+    //                }
+    //                catch (Exception)
+    //                {
+    //                }
+    //        }
+    //        catch (Exception)
+    //        {
+    //        }
+    //    }
 
     public void EnqueueToExternalPublishers(JObject dataToPublish, bool shouldValidate)
     {
@@ -14230,24 +14125,24 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 else
                                 {
                                     _logger.LogError($"Socket queue full ({MaxQueueSize}), dropping message");
-                                    _logger.LogWarning($"Cleaning up Socket queue due to full Socket queue.");
+                                    _logger.LogDebug($"Cleaning up Socket queue due to full Socket queue.");
                                     _messageQueueTagSmartReaderTagEventSocketServer.Clear();
                                 }
                             }
                             else
                             {
-                                _logger.LogWarning($"Cleaning up Socket queue due to lack of socket clients.");
+                                _logger.LogDebug($"Cleaning up Socket queue due to lack of socket clients.");
                                 _messageQueueTagSmartReaderTagEventSocketServer.Clear();
 
                             }
                         }
                         catch (Exception)
                         {
-                            _logger.LogWarning($"Error enqueuing keepalive event. Cleaning up Socket queue.");
+                            _logger.LogDebug($"Error enqueuing keepalive event. Cleaning up Socket queue.");
                             _messageQueueTagSmartReaderTagEventSocketServer.Clear();
                         }
                     }
-                    
+
                 }
                 catch (Exception ex)
                 {
@@ -14293,7 +14188,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 && !string.Equals("127.0.0.1", _standaloneConfigDTO.mqttBrokerAddress, StringComparison.OrdinalIgnoreCase))
                 try
                 {
-                    if(_mqttService.CheckConnection())
+                    if (_mqttService.CheckConnection())
                     {
                         if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttTagEventsTopic))
                         {
@@ -14555,29 +14450,31 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 postioningEpcsData.RfPhase = tagRead.RfPhase;
                 postioningEpcsData.IsPositioningHeader = IsPositioningHeader;
 
-                dbContext.PostioningEpcs.Update(postioningEpcsData);
-                await dbContext.SaveChangesAsync();
+                _ = dbContext.PostioningEpcs.Update(postioningEpcsData);
+                _ = await dbContext.SaveChangesAsync();
             }
             else
             {
-                postioningEpcsData = new PostioningEpcs();
-                postioningEpcsData.Epc = tagRead.Epc;
-                postioningEpcsData.PeakRssi = tagRead.PeakRssi;
-                postioningEpcsData.AntennaPort = tagRead.AntennaPort.Value;
-                postioningEpcsData.TxPower = tagRead.TxPower;
-                postioningEpcsData.FirstSeenTimestamp = tagRead.FirstSeenTimestamp;
-                postioningEpcsData.LastSeenTimestamp = tagRead.FirstSeenTimestamp;
-                postioningEpcsData.FirstSeenOn =
-                    DateTimeOffset.FromUnixTimeMilliseconds(tagRead.FirstSeenTimestamp.Value);
-                postioningEpcsData.LastSeenOn =
-                    DateTimeOffset.FromUnixTimeMilliseconds(tagRead.FirstSeenTimestamp.Value);
-                postioningEpcsData.AntennaZone = tagRead.AntennaZone;
-                postioningEpcsData.RfChannel = tagRead.RfChannel;
-                postioningEpcsData.RfPhase = tagRead.RfPhase;
-                postioningEpcsData.IsPositioningHeader = IsPositioningHeader;
+                postioningEpcsData = new PostioningEpcs
+                {
+                    Epc = tagRead.Epc,
+                    PeakRssi = tagRead.PeakRssi,
+                    AntennaPort = tagRead.AntennaPort.Value,
+                    TxPower = tagRead.TxPower,
+                    FirstSeenTimestamp = tagRead.FirstSeenTimestamp,
+                    LastSeenTimestamp = tagRead.FirstSeenTimestamp,
+                    FirstSeenOn =
+                    DateTimeOffset.FromUnixTimeMilliseconds(tagRead.FirstSeenTimestamp.Value),
+                    LastSeenOn =
+                    DateTimeOffset.FromUnixTimeMilliseconds(tagRead.FirstSeenTimestamp.Value),
+                    AntennaZone = tagRead.AntennaZone,
+                    RfChannel = tagRead.RfChannel,
+                    RfPhase = tagRead.RfPhase,
+                    IsPositioningHeader = IsPositioningHeader
+                };
 
-                dbContext.PostioningEpcs.Add(postioningEpcsData);
-                await dbContext.SaveChangesAsync();
+                _ = dbContext.PostioningEpcs.Add(postioningEpcsData);
+                _ = await dbContext.SaveChangesAsync();
             }
         }
         catch (Exception ex)
@@ -14655,8 +14552,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 try
                 {
                     positioningEpc.LastPublishedOn = positioningEpc.LastSeenOn;
-                    dbContext.PostioningEpcs.Update(positioningEpc);
-                    await dbContext.SaveChangesAsync();
+                    _ = dbContext.PostioningEpcs.Update(positioningEpc);
+                    _ = await dbContext.SaveChangesAsync();
                 }
                 catch (Exception)
                 {
@@ -14671,11 +14568,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         return tagReadPositioning;
 #pragma warning restore CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.
     }
-
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-
-
- 
 
     public async void AddJsonSkuSummaryToQueue(JArray dto)
     {
@@ -14703,7 +14595,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
         finally
         {
-            readLock.Release();
+            _ = readLock.Release();
         }
     }
 
@@ -14730,13 +14622,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     //    }
     //}
 
-    
-
-    
 
 
 
-    
+
+
+
+
 
     public async Task<List<LastPositioningReferecenceEpc>> GetLastPositioningDataAsync(long currentEventTimestamp,
         bool lookupForPositioningHeaderOnly)
@@ -14762,12 +14654,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
                 for (var i = 0; i < postioningEpcsList.Count; i++)
                 {
-                    var positioningEpc = new LastPositioningReferecenceEpc();
-                    positioningEpc.AntennaPort = postioningEpcsList[i].AntennaPort;
-                    positioningEpc.Epc = postioningEpcsList[i].Epc;
-                    positioningEpc.AntennaZone = postioningEpcsList[i].AntennaZone;
-                    positioningEpc.LastPositionEpcAntTimestamp = postioningEpcsList[i].LastSeenTimestamp;
-                    positioningEpc.PeakRssi = postioningEpcsList[i].PeakRssi;
+                    var positioningEpc = new LastPositioningReferecenceEpc
+                    {
+                        AntennaPort = postioningEpcsList[i].AntennaPort,
+                        Epc = postioningEpcsList[i].Epc,
+                        AntennaZone = postioningEpcsList[i].AntennaZone,
+                        LastPositionEpcAntTimestamp = postioningEpcsList[i].LastSeenTimestamp,
+                        PeakRssi = postioningEpcsList[i].PeakRssi
+                    };
                     positioningReferecenceEpcs.Add(positioningEpc);
 
                     try
@@ -14779,8 +14673,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
                         if (timeDiff.TotalSeconds > expiration)
                         {
-                            dbContext.PostioningEpcs.Remove(postioningEpcsList[i]);
-                            await dbContext.SaveChangesAsync();
+                            _ = dbContext.PostioningEpcs.Remove(postioningEpcsList[i]);
+                            _ = await dbContext.SaveChangesAsync();
                         }
                     }
                     catch (Exception)
@@ -14815,8 +14709,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 if (Utils.GetDateTime((ulong)postioningEpcsList[i].FirstSeenTimestamp).AddSeconds(expiration) >
                     Utils.GetDateTime((ulong)postioningEpcsList[i].LastSeenTimestamp))
                 {
-                    dbContext.PostioningEpcs.Remove(postioningEpcsList[i]);
-                    await dbContext.SaveChangesAsync();
+                    _ = dbContext.PostioningEpcs.Remove(postioningEpcsList[i]);
+                    _ = await dbContext.SaveChangesAsync();
                 }
         }
 #pragma warning restore CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.
@@ -14825,10 +14719,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     public JArray GetIotInterfaceTagEventReport(JObject smartReaderTagEventData)
     {
 #pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.
-        JArray iotTagEventReportObject = new JArray();
+        JArray iotTagEventReportObject = [];
         try
         {
-            List<object> iotTagEventReport = new List<object>();
+            List<object> iotTagEventReport = [];
 
             string hostname = "";
             string eventType = "tagInventory";
@@ -14836,11 +14730,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             if (smartReaderTagEventData.ContainsKey("readerName"))
             {
-                if(smartReaderTagEventData["readerName"].HasValues)
+                if (smartReaderTagEventData["readerName"].HasValues)
                 {
                     hostname = smartReaderTagEventData["readerName"].Value<String>();
                 }
-                
+
             }
 
             if (smartReaderTagEventData.ContainsKey("readerName"))
@@ -14879,13 +14773,17 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     {
                         txPower = currentEventItem["txPower"].Value<double>();
                     }
-                    Dictionary<object, object> iotEvent = new Dictionary<object, object>();
-                    iotEvent.Add("timestamp", dateTimeOffsetLastSeenTimestamp.ToString("o"));
-                    iotEvent.Add("hostname", hostname);
-                    iotEvent.Add("eventType", eventType);
+                    Dictionary<object, object> iotEvent = new()
+                    {
+                        { "timestamp", dateTimeOffsetLastSeenTimestamp.ToString("o") },
+                        { "hostname", hostname },
+                        { "eventType", eventType }
+                    };
 
-                    Dictionary<object, object> iotEventItem = new Dictionary<object, object>();
-                    iotEventItem.Add("epcHex", tagEpc);
+                    Dictionary<object, object> iotEventItem = new()
+                    {
+                        { "epcHex", tagEpc }
+                    };
                     if (!string.IsNullOrEmpty(antennaZone))
                     {
                         iotEventItem.Add("antennaName", antennaZone);
@@ -14932,18 +14830,19 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private void RemoveOldestEntries<TKey, TValue>(ConcurrentDictionary<TKey, TValue> dictionary, double removeCount)
     {
-        var orderedEntries = dictionary.OrderBy(x => 
+        var orderedEntries = dictionary.OrderBy(x =>
             (x.Value as ReadCountTimeoutEvent)?.EventTimestamp ?? 0).Take((int)removeCount);
-        
+
         foreach (var entry in orderedEntries)
         {
-            dictionary.TryRemove(entry.Key, out _);
+            _ = dictionary.TryRemove(entry.Key, out _);
         }
     }
 
     private void RemoveOldestBatchEntries(ConcurrentDictionary<string, JObject> dictionary, double removeCount)
     {
-        var orderedEntries = dictionary.OrderBy(x => {
+        var orderedEntries = dictionary.OrderBy(x =>
+        {
             try
             {
                 if (x.Value["firstSeenTimestamp"] != null)
@@ -14960,7 +14859,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         foreach (var entry in orderedEntries)
         {
-            dictionary.TryRemove(entry.Key, out _);
+            _ = dictionary.TryRemove(entry.Key, out _);
         }
     }
 }

@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Text.Json.Serialization;
-using System.Threading.Tasks;
+﻿using System.Text.Json.Serialization;
 
 namespace plugin_contract.ViewModel.Gpi
 {
@@ -30,7 +25,7 @@ namespace plugin_contract.ViewModel.Gpi
     public class GpiConfigRoot
     {
         [JsonPropertyName("gpiConfigurations")]
-        public List<GpiConfiguration> GpiConfigurations { get; set; } = new();
+        public List<GpiConfiguration> GpiConfigurations { get; set; } = [];
 
         [JsonPropertyName("gpiTransitionEvents")]
         public string GpiTransitionEvents { get; set; } = string.Empty;

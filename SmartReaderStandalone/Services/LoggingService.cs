@@ -49,14 +49,14 @@ namespace SmartReaderStandalone.Services
     // Create a DTO for the log level request
     public class LogLevelRequest
     {
-        public string Level { get; set; }
+        public required string Level { get; set; }
     }
 
     // Create a DTO for the log level response
     public class LogLevelResponse
     {
-        public string CurrentLevel { get; set; }
-        public string Message { get; set; }
+        public required string CurrentLevel { get; set; }
+        public required string Message { get; set; }
         public bool Success { get; set; }
     }
 }

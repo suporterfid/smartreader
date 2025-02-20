@@ -132,13 +132,12 @@ namespace SmartReaderStandalone.IotDeviceInterface
         {
             _logger.LogInformation("Tags left read zone, publishing empty event list");
 
-            Dictionary<string, object> emptyEvent = new Dictionary<string, object>();
-
-            emptyEvent.Add("readerName", _readerName);
-
-            emptyEvent.Add("mac", _macAddress);
-
-            emptyEvent.Add("tag_reads", new List<TagRead>());
+            Dictionary<string, object> emptyEvent = new()
+            {
+                { "readerName", _readerName },
+                { "mac", _macAddress },
+                { "tag_reads", new List<TagRead>() }
+            };
             //var smartReaderTagReadEvent = new SmartReaderTagReadEvent();
             //smartReaderTagReadEvent.TagReads = new List<TagRead>();
             //var tagRead = new TagRead();
@@ -310,7 +309,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
         {
             try
             {
-                Dictionary<string, object> newEvent = new Dictionary<string, object>();
+                Dictionary<string, object> newEvent = [];
                 var tagReadList = new List<JToken>();
                 newEvent.Add("readerName", _readerName);
                 newEvent.Add("mac", _macAddress);

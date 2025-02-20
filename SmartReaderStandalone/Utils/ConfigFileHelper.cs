@@ -50,7 +50,7 @@ public class ConfigFileHelper
 
     public static StandaloneConfigDTO? ReadFile()
     {
-        StandaloneConfigDTO standaloneConfigDTO = null;
+        StandaloneConfigDTO? standaloneConfigDTO = null;
         var fileName = @"/customer/config/smartreader.json";
         if (File.Exists(fileName))
         {
@@ -67,7 +67,7 @@ public class ConfigFileHelper
 
     public static StandaloneConfigDTO? GetSmartreaderDefaultConfigDTO()
     {
-        StandaloneConfigDTO standaloneConfigDTO = null;
+        StandaloneConfigDTO? standaloneConfigDTO = null;
         var fileName = @"/customer/config/smartreader-default.json";
         if (File.Exists(fileName))
         {

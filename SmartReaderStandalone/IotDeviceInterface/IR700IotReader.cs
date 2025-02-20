@@ -43,7 +43,7 @@ public interface IR700IotReader : IDisposable
 
     List<string> IpAddresses { get; }
 
-    Task StartAsync(string presetId);
+    Task StartAsync(string presetId, CancellationToken cancellationToken = default);
 
     Task StartPresetAsync(string presetId);
 

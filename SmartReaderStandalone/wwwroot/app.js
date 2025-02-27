@@ -21,9 +21,9 @@ var vueApplication = new Vue({
 		rshellCurrentPassword: "",
 		rshellNewPassword: "",
 		rshellNewPasswordCheck: "",
-		applicationLabel: 'version 4.0.1.7',
-		applicationBy: 'Smartreader R700',
-		//applicationBy: 'SoLink R700',
+		applicationLabel: 'version 4.0.1.9',
+		//applicationBy: 'Smartreader R700',
+		applicationBy: 'SoLink R700',
 
 		applicationLogo: 'none',
 		selectTxPowerOptions: [],

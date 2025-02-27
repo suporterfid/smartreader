@@ -3,17 +3,19 @@ using SmartReader.Infrastructure.ViewModel;
 using SuperSimpleTcp;
 using System.Collections.Concurrent;
 using System.Text;
+using System.Threading.RateLimiting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace SmartReaderStandalone.Services
 {
-    public interface ITcpSocketService
+    public interface ITcpSocketService : IMetricProvider
     {
         Task EnsureSocketServerConnectionAsync();
         bool IsHealthy();
         bool IsSocketServerHealthy();
         bool IsSocketServerConnectedToClients();
 
-        Task<int> ProcessMessageBatchAsync(ConcurrentQueue<JObject> messageQueue, int batchSize, int maxQueueSize);
+        Task<int> ProcessMessageBatchAsync(BoundedConcurrentQueue<JObject> messageQueue, int batchSize, int maxQueueSize);
         void InitializeSocketServer();
         void Start(int port);
         void Stop();
@@ -38,6 +40,10 @@ namespace SmartReaderStandalone.Services
 
         private volatile bool _isSocketProcessing = false;
 
+        private long _totalMessagesSent = 0;
+        private DateTime _lastMessageSentTime = DateTime.MinValue;
+        private DateTime _serverStartTime = DateTime.MinValue;
+
         public TcpSocketService(IServiceProvider services,
             IConfiguration configuration,
             ILogger<TcpSocketService> logger,
@@ -50,6 +56,19 @@ namespace SmartReaderStandalone.Services
 
             _standaloneConfigDTO = _configurationService.LoadConfig();
         }
+
+
+        private readonly BoundedConcurrentQueue<JObject> _messageQueue = new BoundedConcurrentQueue<JObject>(1000); // Adjust capacity as needed
+
+        private readonly TokenBucketRateLimiter _sendRateLimiter = new TokenBucketRateLimiter(new TokenBucketRateLimiterOptions
+        {
+            TokensPerPeriod = 10,
+            QueueLimit = 0,
+            AutoReplenishment = true,
+            TokenLimit = 10, // Adjust as needed
+            ReplenishmentPeriod = TimeSpan.FromSeconds(1), // Adjust as needed            
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+        });
 
         public void InitializeSocketServer()
         {
@@ -69,8 +88,8 @@ namespace SmartReaderStandalone.Services
         {
             var server = new SimpleTcpServer("*", int.Parse(_standaloneConfigDTO.socketPort));
             server.Settings.NoDelay = true;
-            //server.Settings.IdleClientTimeoutMs = 30000;
-            //server.Settings.IdleClientEvaluationIntervalMs = 10000;
+            // server.Settings.IdleClientTimeoutMs = 30000; // Enable client timeout
+            // server.Settings.IdleClientEvaluationIntervalMs = 10000; // Adjust interval as needed
             return server;
         }
 
@@ -81,6 +100,7 @@ namespace SmartReaderStandalone.Services
                 _tcpServer = CreateSocketServer();
             }
             StartTcpSocketServer(_tcpServer);
+            _serverStartTime = DateTime.UtcNow;  // Track when server starts
             _logger.LogInformation($"Socket server started on {port}");
         }
 
@@ -129,6 +149,7 @@ namespace SmartReaderStandalone.Services
                         //_logger.LogInformation("Starting tcp socket server. " + _standaloneConfigDTO.socketPort, SeverityType.Debug);
                         _logger.LogInformation("Starting tcp socket server. [" + _standaloneConfigDTO.socketPort + "] ");
                         socketServer.Start();
+                        _serverStartTime = DateTime.UtcNow; // Reset start time
                         //_ = ProcessGpoErrorPortRecoveryAsync();
                     }
                 }
@@ -416,115 +437,148 @@ namespace SmartReaderStandalone.Services
         }
 
         public async Task<int> ProcessMessageBatchAsync(
-            ConcurrentQueue<JObject> messageQueue,
+            BoundedConcurrentQueue<JObject> messageQueue,
             int batchSize,
             int maxQueueSize)
         {
-            if (!await _socketLock.WaitAsync(TimeSpan.FromSeconds(5)))
+            try
             {
-                _logger.LogDebug("Another process is already handling socket messages.");
+                // Use a lock to prevent multiple concurrent access.
+                if (!await _socketLock.WaitAsync(TimeSpan.FromSeconds(5)))
+                {
+                    _logger.LogDebug("Another process is already handling socket messages.");
+                    return 0;
+                }
+
+                try
+                {
+                    int processedCount = 0;
+                    // Configure timeouts and retry parameters
+                    const int SendTimeoutMs = 5000; // 5 second timeout for sends
+                    const int MaxRetries = 1;
+                    const int RetryDelayMs = 1000; // 1 second between retries
+
+
+                    // Use the bounded queue for better memory management
+                    while (processedCount < batchSize 
+                        && messageQueue.TryDequeue(out var message))
+                    {
+                        try
+                        {
+                            if (_tcpServer?.GetClients()?.Any() ?? false)
+                            {
+                                // Retrieve clients only once per batch
+                                var clients = _tcpServer.GetClients().ToList();
+                                string jsonMessage = message.ToString(Newtonsoft.Json.Formatting.None);
+                                var line = SmartReaderJobs.Utils.Utils.ExtractLineFromJsonObject(message, _standaloneConfigDTO, _logger);
+                                if (string.IsNullOrEmpty(line))
+                                {
+                                    _logger.LogWarning("Empty line extracted from event data");
+                                    continue;
+                                }
+
+                                byte[] messageBytes = Encoding.UTF8.GetBytes(line);
+                                // Use rate limiter to avoid overwhelming the network
+                                var sendTasks = clients.Select(client => SendMessageAsync(client, messageBytes, SendTimeoutMs, MaxRetries, RetryDelayMs));
+                                await Task.WhenAll(sendTasks);
+
+                                processedCount++;
+                            }
+                            else
+                            {
+                                processedCount++;
+                                _logger.LogWarning($"No clients connected; discarding {processedCount} messages.");
+                                messageQueue.Clear();
+                                break;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error processing socket message");
+                        }
+                    }
+                    if (processedCount > 0)
+                        _logger.LogDebug($"Processed {processedCount} socket message(s).");
+
+                    return processedCount;
+                }
+                finally
+                {
+                    _socketLock.Release();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ProcessMessageBatchAsync - Error processing socket messages");
                 return 0;
             }
+            
+        }
+
+        //Asynchronous sending
+        private async Task SendMessageAsync(string client, byte[] messageBytes, int timeoutMs, int maxRetries, int retryDelayMs)
+        {
+            int retryCount = 0;
+            while (retryCount < maxRetries)
+            {
+                try
+                {
+                    // Acquire a permit from the rate limiter
+                    using RateLimitLease lease = await _sendRateLimiter.AcquireAsync(1);
+                    if (!lease.IsAcquired)
+                    {
+                        // If a token is not available (e.g. due to cancellation or immediate rate limit rejection),
+                        // handle the situation appropriately.
+                        throw new Exception("Rate limit exceeded. Please try again later.");
+                    }
+                    using (var cts = new CancellationTokenSource(timeoutMs))
+                    {
+                        await _tcpServer.SendAsync(client, messageBytes, cts.Token);
+                    }
+                    // Update Metrics
+                    Interlocked.Increment(ref _totalMessagesSent);
+                    _lastMessageSentTime = DateTime.UtcNow;
+
+                    return; // Success
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.LogWarning($"Send operation timed out for client {client} after {timeoutMs}ms");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"Error sending to client {client} (attempt {retryCount + 1}/{maxRetries})");
+                }
+                retryCount++;
+                await Task.Delay(retryDelayMs);
+            }
+            _logger.LogError($"Failed to send message to client {client} after {maxRetries} retries.");
+        }
+        public async Task<Dictionary<string, object>> GetMetricsAsync()
+        {
+            var metrics = new Dictionary<string, object>();
 
             try
             {
-                int processedCount = 0;
-                // Configure timeouts and retry parameters
-                const int SendTimeoutMs = 5000; // 5 second timeout for sends
-                const int MaxRetries = 1;
-                const int RetryDelayMs = 1000; // 1 second between retries
-
-                while (processedCount < batchSize && messageQueue.TryDequeue(out var message))
-                {
-                    try
-                    {
-                        if (_tcpServer?.GetClients()?.Any() ?? false)
-                        {
-                            var clientCount = _tcpServer?.GetClients().Count();
-                            _logger.LogDebug($"Publishing data to {clientCount} clients. Queue size [{messageQueue.Count()}]");
-                            string jsonMessage = message.ToString(Newtonsoft.Json.Formatting.None);
-                            // Extract data once to avoid repeated processing
-                            var line = SmartReaderJobs.Utils.Utils.ExtractLineFromJsonObject(message, _standaloneConfigDTO, _logger);
-                            if (string.IsNullOrEmpty(line))
-                            {
-                                _logger.LogWarning("Empty line extracted from event data");
-                                continue;
-                            }
-
-                            byte[] messageBytes = Encoding.UTF8.GetBytes(line);
-
-                            foreach (string client in _tcpServer.GetClients())
-                            {
-                                int retryCount = 0;
-                                bool sendSuccess = false;
-                                // _tcpServer.Send(client, jsonMessage);
-                                while (!sendSuccess && retryCount < MaxRetries)
-                                {
-                                    try
-                                    {
-                                        using var cts = new CancellationTokenSource(SendTimeoutMs);
-
-                                        // Wrap the sync Send in a task to support timeout
-                                        await Task.Run(() =>
-                                        {
-                                            _tcpServer.Send(client, messageBytes);
-                                        }, cts.Token);
-
-                                        sendSuccess = true;
-                                        _logger.LogDebug($"Successfully sent message to client after {retryCount} retries");
-                                    }
-                                    catch (OperationCanceledException)
-                                    {
-                                        _logger.LogWarning($"Send operation timed out for client after {SendTimeoutMs}ms");
-                                        retryCount++;
-                                        if (retryCount < MaxRetries)
-                                        {
-                                            await Task.Delay(RetryDelayMs);
-                                        }
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        _logger.LogError(ex, $"Error sending to client (attempt {retryCount + 1}/{MaxRetries})");
-                                        retryCount++;
-                                        if (retryCount < MaxRetries)
-                                        {
-                                            await Task.Delay(RetryDelayMs);
-                                        }
-                                    }
-                                }
-                            }
-
-                            processedCount++;
-                        }
-                        else
-                        {
-                            _logger.LogWarning("No clients connected; discarding message.");
-                            break;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error processing socket message");
-                        //if (messageQueue.Count < maxQueueSize)
-                        //{
-                        //    messageQueue.Enqueue(message);
-                        //}
-                        //else
-                        //{
-                        //    _logger.LogError("Message queue is full; dropping message.");
-                        //}
-                    }
-                }
-                if (processedCount > 0)
-                    _logger.LogDebug($"Processed {processedCount} socket message(s).");
-
-                return processedCount;
+                metrics["Socket Server Healthy"] = IsSocketServerHealthy();
+                metrics["Connected Clients"] = _tcpServer?.GetClients().Count() ?? 0;
+                metrics["Message Queue Size"] = _messageQueue.Count;
+                metrics["Total Messages Sent"] = _totalMessagesSent;
+                metrics["Last Message Sent (Seconds Ago)"] = (_lastMessageSentTime == DateTime.MinValue)
+                    ? -1 // No message has been sent
+                    : (DateTime.UtcNow - _lastMessageSentTime).TotalSeconds;
+                metrics["Socket Server Uptime (Seconds)"] = (_serverStartTime == DateTime.MinValue)
+                    ? 0
+                    : (DateTime.UtcNow - _serverStartTime).TotalSeconds;
             }
-            finally
+            catch (Exception ex)
             {
-                _ = _socketLock.Release();
+                _logger.LogError(ex, "Error collecting socket server metrics");
             }
-        }
 
+            return await Task.FromResult(metrics);
+        }
     }
+
+
 }

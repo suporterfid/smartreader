@@ -117,6 +117,10 @@ builder.WebHost.ConfigureKestrel(opt =>
     opt.ListenAnyIP(8443, listOpt => { listOpt.UseHttps(@"/customer/localhost.pfx", "r700"); });
 });
 
+// Register MetricsMonitoringService ONLY as IHostedService (NOT as IMetricProvider)
+builder.Services.AddSingleton<MetricsMonitoringService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<MetricsMonitoringService>());
+
 // Register the LoggingService
 builder.Services.AddSingleton(levelSwitch);
 builder.Services.AddSingleton<LoggingService>();
@@ -273,6 +277,48 @@ if (Directory.Exists("/customer/wwwroot/logs"))
         EnableDirectoryBrowsing = true
     });
 
+
+app.MapGet("/metrics", async (IServiceProvider serviceProvider) =>
+{
+    var metricsOutput = new List<string>();
+
+    // Retrieve all services that implement IMetricProvider
+    var metricProviders = serviceProvider.GetServices<IMetricProvider>().ToList();
+
+    // Add specific services if registered
+    var metricsMonitoringService = serviceProvider.GetService<MetricsMonitoringService>();
+    if (metricsMonitoringService != null) metricProviders.Add(metricsMonitoringService);
+
+    var tcpSocketService = serviceProvider.GetService<ITcpSocketService>() as IMetricProvider;
+    if (tcpSocketService != null) metricProviders.Add(tcpSocketService);
+
+    var mqttService = serviceProvider.GetService<IMqttService>() as IMetricProvider;
+    if (mqttService != null) metricProviders.Add(mqttService);
+
+    // Collect metrics from all providers
+    foreach (var provider in metricProviders)
+    {
+        var metrics = await provider.GetMetricsAsync();
+
+        foreach (var metric in metrics)
+        {
+            // Format metric name: lowercase, no spaces, no special chars
+            string metricName = $"{provider.GetType().Name}_{metric.Key}"
+                                .ToLower()
+                                .Replace(" ", "_")
+                                .Replace(".", "_")
+                                .Replace("-", "_");
+
+            // Generate Prometheus formatted output
+            metricsOutput.Add($"# HELP {metricName} Auto-generated metric");
+            metricsOutput.Add($"# TYPE {metricName} gauge");
+            metricsOutput.Add($"{metricName} {metric.Value}");
+        }
+    }
+
+    // Return as plain text
+    return Results.Text(string.Join("\n", metricsOutput));
+});
 
 
 

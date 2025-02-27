@@ -14,7 +14,7 @@ namespace SmartReaderStandalone.Services
         bool IsSocketServerHealthy();
         bool IsSocketServerConnectedToClients();
 
-        Task<int> ProcessMessageBatchAsync(ConcurrentQueue<JObject> messageQueue, int batchSize, int maxQueueSize);
+        Task<int> ProcessMessageBatchAsync(BoundedConcurrentQueue<JObject> messageQueue, int batchSize, int maxQueueSize);
         void InitializeSocketServer();
         void Start(int port);
         void Stop();
@@ -326,7 +326,7 @@ namespace SmartReaderStandalone.Services
 
 
         public async Task<int> ProcessMessageBatchAsync(
-            ConcurrentQueue<JObject> messageQueue,
+            BoundedConcurrentQueue<JObject> messageQueue,
             int batchSize,
             int maxQueueSize)
         {

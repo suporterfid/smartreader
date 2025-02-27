@@ -1,4 +1,4 @@
-﻿#region copyright
+﻿﻿#region copyright
 //****************************************************************************************************
 // Copyright ©2023 Impinj, Inc.All rights reserved.              
 //                                    
@@ -51,6 +51,8 @@ using static SmartReader.IotDeviceInterface.R700IotReader;
 using DataReceivedEventArgs = SuperSimpleTcp.DataReceivedEventArgs;
 using ReaderStatus = SmartReaderStandalone.Entities.ReaderStatus;
 using Timer = System.Timers.Timer;
+using System.Threading.RateLimiting;
+using System.Threading.Channels;
 
 namespace SmartReader.IotDeviceInterface;
 
@@ -311,39 +313,38 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private readonly ILogger<IotInterfaceService> _logger;
 
-    private readonly ConcurrentQueue<string> _messageQueueBarcode = new();
+    private readonly BoundedConcurrentQueue<string> _messageQueueBarcode = new BoundedConcurrentQueue<string>(1000);
 
-    private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventGroupToValidate = new();
+    private readonly BoundedConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventGroupToValidate = new BoundedConcurrentQueue<JObject>(1000);
 
     //private static object _locker = new object();
 
-    //private readonly ConcurrentQueue<SmartReaderTagEventData> _messageQueueTagSmartReaderTagEventData = new ConcurrentQueue<SmartReaderTagEventData>();
+    //private readonly BoundedConcurrentQueue<SmartReaderTagEventData> _messageQueueTagSmartReaderTagEventData = new BoundedConcurrentQueue<SmartReaderTagEventData>();
 
-    private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventHttpPost = new();
+    private readonly BoundedConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventHttpPost = new BoundedConcurrentQueue<JObject>(1000);
 
-    private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventHttpPostRetry = new();
+    // private readonly BoundedConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventHttpPostRetry = new BoundedConcurrentQueue<JObject>(1000);
+    
 
-    private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventMqtt = new();
+    // private readonly BoundedConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventSocketServerRetry = new BoundedConcurrentQueue<JObject>();
 
-    // private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventSocketServerRetry = new ConcurrentQueue<JObject>();
+    //private readonly BoundedConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventSocketClient = new BoundedConcurrentQueue<JObject>();
 
-    //private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventSocketClient = new ConcurrentQueue<JObject>();
+    //private readonly BoundedConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventSocketClientRetry = new BoundedConcurrentQueue<JObject>();
 
-    //private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventSocketClientRetry = new ConcurrentQueue<JObject>();
+    //private readonly BoundedConcurrentQueue<TagInventoryEvent> _messageQueueTagInventoryEvent = new BoundedConcurrentQueue<TagInventoryEvent>();
 
-    //private readonly ConcurrentQueue<TagInventoryEvent> _messageQueueTagInventoryEvent = new ConcurrentQueue<TagInventoryEvent>();
+    private readonly BoundedConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventOpcUa = new BoundedConcurrentQueue<JObject>(1000);
 
-    private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventOpcUa = new();
+    private readonly BoundedConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventMqtt = new BoundedConcurrentQueue<JObject>(1000);
 
-    //private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventMqttRetry = new ConcurrentQueue<JObject>();
+    private readonly BoundedConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventSocketServer = new BoundedConcurrentQueue<JObject>(1000);
 
-    private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventSocketServer = new();
+    private readonly BoundedConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventWebSocketServer = new BoundedConcurrentQueue<JObject>(1000);
 
-    private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventWebSocketServer = new();
+    private readonly BoundedConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventUdpServer = new BoundedConcurrentQueue<JObject>(1000);
 
-    private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventUdpServer = new();
-
-    private readonly ConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventUsbDrive = new();
+    private readonly BoundedConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventUsbDrive = new BoundedConcurrentQueue<JObject>(1000);
 
     private static List<string> _oldReadEpcList = [];
 
@@ -388,7 +389,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private readonly Timer _timerTagPublisherOpcUa;
 
-    private readonly Timer _timerTagPublisherRetry;
+    //private readonly Timer _timerTagPublisherRetry;
 
     private readonly Timer _timerTagPublisherSocket;
 
@@ -458,6 +459,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     private readonly ILoggerFactory _loggerFactory;
 
     private string _buildConfiguration = "Release"; // Default to Debug if unable to determine
+
+    private readonly Channel<TagInventoryEvent> _filteringQueue = Channel.CreateBounded<TagInventoryEvent>(new BoundedChannelOptions(1000)
+    {
+        FullMode = BoundedChannelFullMode.DropOldest
+    });
 
     public IotInterfaceService(IServiceProvider services,
         IConfiguration configuration,
@@ -529,7 +535,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         _timerTagPublisherUdpServer = new Timer(100);
 
-        _timerTagPublisherRetry = new Timer(100);
+        // _timerTagPublisherRetry = new Timer(100);
 
         _timerTagPublisherMqtt = new Timer(100);
 
@@ -589,6 +595,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         //    _logger.LogError(ex, "HandleGpiTimerAsync init - " + ex.Message);
 
         //}
+
+        _ = Task.Run(ProcessFilteringQueueAsync);
     }
 
     public IServiceProvider Services { get; }
@@ -605,272 +613,20 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _gpiCts.Cancel();
     }
 
-    //    private async Task HandleGpiTimerAsync(PeriodicTimer timer, CancellationToken cancel = default)
-    //    {
-    //        try
-    //        {
-    //            if (_standaloneConfigDTO == null)
-    //            {
-    //                _standaloneConfigDTO = ConfigFileHelper.ReadFile();
-    //            }
-    //#pragma warning disable CS8602 // Dereference of a possibly null reference.
-    //            if (string.Equals("1", _standaloneConfigDTO.includeGpiEvent,
-    //                                             StringComparison.OrdinalIgnoreCase))
-    //            {
-    //                while (await timer.WaitForNextTickAsync(cancel)) await Task.Run(() => QueryGpiStatus(cancel), cancel);
-    //            }
-    //            else
-    //            {
-    //                await Task.Delay(100);
-    //            }
-    //#pragma warning restore CS8602 // Dereference of a possibly null reference.
+    private void CleanupExpiredReadEpcs()
+    {
+        long expirationWindow = 60; // seconds
+        long currentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
-    //        }
-    //        catch (Exception ex)
-    //        {
-    //            Console.WriteLine("QueryGpiStatus - " + ex.Message);
-    //        }
-    //    }
+        foreach (var key in _readEpcs.Keys)
+        {
+            if (_readEpcs.TryGetValue(key, out long lastSeen) && (currentTime - lastSeen) > expirationWindow)
+            {
+                _readEpcs.TryRemove(key, out _);
+            }
+        }
+    }
 
-    //    private async Task QueryGpiStatus(CancellationToken cancel = default)
-    //#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
-    //    {
-    //        try
-    //        {
-
-
-    //            var gpi1File = @"/dev/gpio/ext-gpi-0/value";
-    //            var gpi2File = @"/dev/gpio/ext-gpi-1/value";
-    //            var fileContent1 = "";
-    //            var fileContent2 = "";
-    //            if (File.Exists(gpi1File))
-    //                fileContent1 = File.ReadAllText(gpi1File);
-    //            if (File.Exists(gpi2File))
-    //                fileContent2 = File.ReadAllText(gpi2File);
-
-    //            if (!_gpiPortStates.ContainsKey(0)) _gpiPortStates.TryAdd(0, false);
-    //            if (!_gpiPortStates.ContainsKey(1)) _gpiPortStates.TryAdd(1, false);
-
-    //            if (!string.IsNullOrEmpty(fileContent1) && fileContent1.Contains("1"))
-    //            {
-    //                _gpiPortStates[0] = true;
-    //                if (previousGpi1.HasValue)
-    //                {
-    //                    if (_gpiPortStates[0] != previousGpi1.Value)
-    //                    {
-    //                        gpi1HasChanged = true;
-    //                    }
-    //                    else
-    //                    {
-    //                        gpi1HasChanged = false;
-    //                    }
-    //                }
-    //                else
-    //                {
-    //                    gpi1HasChanged = true;
-    //                }
-
-    //                previousGpi1 = _gpiPortStates[0];
-    //            }
-    //            else
-    //            {
-    //                _gpiPortStates[0] = false;
-    //                if (previousGpi1.HasValue)
-    //                {
-    //                    if (_gpiPortStates[0] != previousGpi1.Value)
-    //                    {
-    //                        gpi1HasChanged = true;
-    //                    }
-    //                    else
-    //                    {
-    //                        gpi1HasChanged = false;
-    //                    }
-    //                }
-    //                else
-    //                {
-    //                    gpi1HasChanged = true;
-    //                }
-    //                previousGpi1 = _gpiPortStates[0];
-    //            }
-
-    //            if (!string.IsNullOrEmpty(fileContent2) && fileContent2.Contains("1"))
-    //            {
-    //                _gpiPortStates[1] = true;
-    //                if (previousGpi2.HasValue)
-    //                {
-    //                    if (_gpiPortStates[1] != previousGpi2.Value)
-    //                    {
-    //                        gpi2HasChanged = true;
-    //                    }
-    //                    else
-    //                    {
-    //                        gpi2HasChanged = false;
-    //                    }
-    //                }
-    //                else
-    //                {
-    //                    gpi2HasChanged = true;
-    //                }
-
-    //                previousGpi2 = _gpiPortStates[1];
-    //            }
-    //            else
-    //            {
-    //                _gpiPortStates[1] = false;
-    //                if (previousGpi2.HasValue)
-    //                {
-    //                    if (_gpiPortStates[1] != previousGpi2.Value)
-    //                    {
-    //                        gpi2HasChanged = true;
-    //                    }
-    //                    else
-    //                    {
-    //                        gpi2HasChanged = false;
-    //                    }
-    //                }
-    //                else
-    //                {
-    //                    gpi2HasChanged = true;
-    //                }
-    //                previousGpi2 = _gpiPortStates[1];
-    //            }
-
-
-
-    //            //if (File.Exists(gpi1File))
-    //            //{
-    //            //    if (!_gpiPortStates.ContainsKey(0)) _gpiPortStates.TryAdd(0, false);
-    //            //    // read file content into a string
-    //            //    var fileContent = File.ReadAllText(gpi1File);
-
-    //            //    // compare TextBox content with file content
-    //            //    if (fileContent.Contains("1"))
-    //            //    {
-    //            //        _gpiPortStates[0] = true;
-    //            //        if (previousGpi1.HasValue)
-    //            //        {
-    //            //            if (_gpiPortStates[0] != previousGpi1.Value)
-    //            //            {
-    //            //                gpi1HasChanged = true;
-    //            //            }
-    //            //            else
-    //            //            {
-    //            //                gpi1HasChanged = false;
-    //            //            }
-    //            //        }
-    //            //        else
-    //            //        {
-    //            //            gpi1HasChanged = true;
-    //            //        }
-
-    //            //        previousGpi1 = _gpiPortStates[0];
-    //            //    }
-    //            //    else
-    //            //    {
-    //            //        _gpiPortStates[0] = false;
-    //            //        if (previousGpi1.HasValue)
-    //            //        {
-    //            //            if (_gpiPortStates[0] != previousGpi1.Value)
-    //            //            {
-    //            //                gpi1HasChanged = true;
-    //            //            }
-    //            //            else
-    //            //            {
-    //            //                gpi1HasChanged = false;
-    //            //            }
-    //            //        }
-    //            //        else
-    //            //        {
-    //            //            gpi1HasChanged = true;
-    //            //        }
-
-    //            //        //gpi1HasChanged = true;                    
-
-    //            //        previousGpi1 = _gpiPortStates[0];
-    //            //    }
-
-    //            //}
-
-    //            //if (File.Exists(gpi2File))
-    //            //{
-    //            //    if (!_gpiPortStates.ContainsKey(1)) _gpiPortStates.TryAdd(1, false);
-    //            //    // read file content into a string
-    //            //    var fileContent = File.ReadAllText(gpi2File);
-
-    //            //    // compare TextBox content with file content
-    //            //    //if (fileContent.Contains("1"))
-    //            //    //    _gpiPortStates[1] = true;
-    //            //    //else
-    //            //    //    _gpiPortStates[1] = false;
-
-    //            //    if (fileContent.Contains("1"))
-    //            //    {
-    //            //        _gpiPortStates[1] = true;
-    //            //        if (previousGpi2.HasValue)
-    //            //        {
-    //            //            if (_gpiPortStates[1] != previousGpi2.Value)
-    //            //            {
-    //            //                gpi2HasChanged = true;
-    //            //            }
-    //            //            else
-    //            //            {
-    //            //                gpi2HasChanged = false;
-    //            //            }
-    //            //        }
-    //            //        else
-    //            //        {
-    //            //            gpi2HasChanged = true;
-    //            //        }
-
-    //            //        previousGpi2 = _gpiPortStates[0];
-    //            //    }
-    //            //    else
-    //            //    {
-    //            //        _gpiPortStates[1] = false;
-    //            //        if (previousGpi2.HasValue)
-    //            //        {
-    //            //            if (_gpiPortStates[1] != previousGpi2.Value)
-    //            //            {
-    //            //                gpi2HasChanged = true;
-    //            //            }
-    //            //            else
-    //            //            {
-    //            //                gpi2HasChanged = false;
-    //            //            }
-    //            //        }
-    //            //        else
-    //            //        {
-    //            //            gpi2HasChanged = true;
-    //            //        }
-    //            //        //gpi1HasChanged = true;
-
-    //            //        previousGpi2 = _gpiPortStates[1];
-    //            //    }
-    //            //}
-
-    //            try
-    //            {
-    //                if (gpi1HasChanged || gpi2HasChanged)
-    //                {
-    //                    //fileContent1
-    //                    _logger.LogInformation($"GPI status: gpi1: {fileContent1}, gpi2: {fileContent2}");
-    //                    //_logger.LogInformation($"GPI status: gpi1HasChanged: {gpi1HasChanged}, gpi2HasChanged: {gpi2HasChanged}");
-    //                    ProcessGpiStatus();
-    //                }
-
-    //            }
-    //            catch (Exception)
-    //            {
-
-
-    //            }
-
-    //        }
-    //        catch (Exception ex)
-    //        {
-    //            Console.WriteLine("QueryGpiStatus - " + ex.Message);
-    //        }
-    //    }
 
     private void StartUdpServer()
     {
@@ -1082,7 +838,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             //_logger.LogInformation("Events_DataReceived. " + ex.Message, SeverityType.Error);
             _logger.LogError(ex, "Events_DataReceived. ");
-            _ = ProcessGpoErrorPortAsync();
+            // _ = ProcessGpoErrorPortAsync();
         }
     }
 
@@ -1230,7 +986,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     if (_standaloneConfigDTO != null
                         && !string.IsNullOrEmpty(_standaloneConfigDTO.barcodeEnableQueue)
                         && "1".Equals(_standaloneConfigDTO.barcodeEnableQueue))
-                        _messageQueueBarcode.Enqueue(messageData);
+                        _messageQueueBarcode.TryEnqueue(messageData);
                     else
                         LastValidBarcode = messageData;
                     //Console.WriteLine("ReceiveBarcode NOREAD  ======================================== ");
@@ -1249,7 +1005,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     if (_standaloneConfigDTO != null
                         && !string.IsNullOrEmpty(_standaloneConfigDTO.barcodeEnableQueue)
                         && "1".Equals(_standaloneConfigDTO.barcodeEnableQueue))
-                        _messageQueueBarcode.Enqueue(messageData);
+                        _messageQueueBarcode.TryEnqueue(messageData);
                     else
                         LastValidBarcode = messageData;
                     //Console.WriteLine("ReceiveBarcode ======================================== ");
@@ -1611,8 +1367,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         var readerStatus = await _iotDeviceInterfaceClient.GetStatusAsync();
         if (!_iotDeviceInterfaceClient.IsNetworkConnected)
         {
-            await ProcessGpoErrorPortAsync();
-            await ProcessGpoErrorNetworkPortAsync(true);
+            _ = ProcessGpoErrorPortAsync();
+            _ = ProcessGpoErrorNetworkPortAsync(true);
         }
         else
         {
@@ -1664,7 +1420,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             try
             {
-                _iotDeviceInterfaceClient.TagInventoryEvent -= OnTagInventoryEvent!;
+                _iotDeviceInterfaceClient.TagInventoryEvent -= OnTagInventoryEventAsync!;
                 _iotDeviceInterfaceClient.GpiTransitionEvent -= OnGpiTransitionEvent!;
                 await _iotDeviceInterfaceClient.StopAsync();
             }
@@ -1674,7 +1430,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
             try
             {
-                _iotDeviceInterfaceClient.TagInventoryEvent += OnTagInventoryEvent!;
+                _iotDeviceInterfaceClient.TagInventoryEvent += OnTagInventoryEventAsync!;
                 _iotDeviceInterfaceClient.GpiTransitionEvent += OnGpiTransitionEvent!;
             }
             catch (Exception)
@@ -1689,7 +1445,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             catch (Exception ex)
             {
                 _logger.LogInformation("Error applying settings. " + ex.Message);
-                await ProcessGpoErrorPortAsync();
+                _ = ProcessGpoErrorPortAsync();
             }
 
             try
@@ -1714,7 +1470,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             catch (Exception)
             {
-                await ProcessGpoErrorPortAsync();
+                _ = ProcessGpoErrorPortAsync();
             }
         }
 
@@ -1783,7 +1539,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                             && !string.IsNullOrEmpty(_standaloneConfigDTO.smartreaderEnabledForManagementOnly)
                             && !"1".Equals(_standaloneConfigDTO.smartreaderEnabledForManagementOnly))
                 {
-                    _iotDeviceInterfaceClient.TagInventoryEvent -= OnTagInventoryEvent!;
+                    _iotDeviceInterfaceClient.TagInventoryEvent -= OnTagInventoryEventAsync!;
                     _iotDeviceInterfaceClient.GpiTransitionEvent -= OnGpiTransitionEvent!;
                     await _iotDeviceInterfaceClient.StopAsync();
                 }
@@ -1829,7 +1585,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 _logger.LogInformation(ex, "Error applying settings. " + ex.Message);
             }
 
-            _iotDeviceInterfaceClient.TagInventoryEvent += OnTagInventoryEvent!;
+            _iotDeviceInterfaceClient.TagInventoryEvent += OnTagInventoryEventAsync!;
             _iotDeviceInterfaceClient.InventoryStatusEvent += OnInventoryStatusEvent!;
             _iotDeviceInterfaceClient.GpiTransitionEvent += OnGpiTransitionEvent!;
             try
@@ -1851,7 +1607,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 catch (Exception exPreset)
                 {
                     _logger.LogInformation("Error applying settings. " + exPreset.Message);
-                    await ProcessGpoErrorPortAsync();
+                    _ = ProcessGpoErrorPortAsync();
                 }
             }
         }
@@ -2129,74 +1885,74 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-    public async Task SetGpoPortValidationAsync(bool ValidationState)
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
+    public async Task SetGpoPortValidationAsync(bool validationState)
     {
         try
         {
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-            if (!string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoEnabled)
-                && string.Equals("1", _standaloneConfigDTO.advancedGpoEnabled, StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoEnabled) &&
+                string.Equals("1", _standaloneConfigDTO.advancedGpoEnabled, StringComparison.OrdinalIgnoreCase))
             {
-                if (ValidationState && !string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoMode1)
-                                    && string.Equals("7", _standaloneConfigDTO.advancedGpoMode1,
-                                        StringComparison.OrdinalIgnoreCase))
+                // Process for advancedGpoMode1
+                if (validationState &&
+                    !string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoMode1) &&
+                    string.Equals("7", _standaloneConfigDTO.advancedGpoMode1, StringComparison.OrdinalIgnoreCase))
                 {
-                    _ = SetGpoPortAsync(1, true);
-                    Task.Delay(1000).Wait();
-                    _ = SetGpoPortAsync(1, false);
+                    await SetGpoPortAsync(1, true);
+                    await Task.Delay(1000);
+                    await SetGpoPortAsync(1, false);
                 }
-                else if (!ValidationState && !string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoMode1)
-                                          && string.Equals("8", _standaloneConfigDTO.advancedGpoMode1,
-                                              StringComparison.OrdinalIgnoreCase))
+                else if (!validationState &&
+                         !string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoMode1) &&
+                         string.Equals("8", _standaloneConfigDTO.advancedGpoMode1, StringComparison.OrdinalIgnoreCase))
                 {
-                    _ = SetGpoPortAsync(1, true);
-                    Task.Delay(2000).Wait();
-                    _ = SetGpoPortAsync(1, false);
-                }
-
-                if (ValidationState && !string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoMode2)
-                                    && string.Equals("7", _standaloneConfigDTO.advancedGpoMode2,
-                                        StringComparison.OrdinalIgnoreCase))
-                {
-                    _ = SetGpoPortAsync(2, true);
-                    Task.Delay(2000).Wait();
-                    _ = SetGpoPortAsync(2, false);
-                }
-                else if (!ValidationState && !string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoMode2)
-                                          && string.Equals("8", _standaloneConfigDTO.advancedGpoMode2,
-                                              StringComparison.OrdinalIgnoreCase))
-                {
-                    _ = SetGpoPortAsync(2, true);
-                    Task.Delay(2000).Wait();
-                    _ = SetGpoPortAsync(2, false);
+                    await SetGpoPortAsync(1, true);
+                    await Task.Delay(2000);
+                    await SetGpoPortAsync(1, false);
                 }
 
-                if (ValidationState && !string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoMode3)
-                                    && string.Equals("7", _standaloneConfigDTO.advancedGpoMode3,
-                                        StringComparison.OrdinalIgnoreCase))
+                // Process for advancedGpoMode2
+                if (validationState &&
+                    !string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoMode2) &&
+                    string.Equals("7", _standaloneConfigDTO.advancedGpoMode2, StringComparison.OrdinalIgnoreCase))
                 {
-                    _ = SetGpoPortAsync(3, true);
-                    Task.Delay(2000).Wait();
-                    _ = SetGpoPortAsync(3, false);
+                    await SetGpoPortAsync(2, true);
+                    await Task.Delay(2000);
+                    await SetGpoPortAsync(2, false);
                 }
-                else if (!ValidationState && !string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoMode3)
-                                          && string.Equals("8", _standaloneConfigDTO.advancedGpoMode3,
-                                              StringComparison.OrdinalIgnoreCase))
+                else if (!validationState &&
+                         !string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoMode2) &&
+                         string.Equals("8", _standaloneConfigDTO.advancedGpoMode2, StringComparison.OrdinalIgnoreCase))
                 {
-                    _ = SetGpoPortAsync(3, true);
-                    Task.Delay(2000).Wait();
-                    _ = SetGpoPortAsync(3, false);
+                    await SetGpoPortAsync(2, true);
+                    await Task.Delay(2000);
+                    await SetGpoPortAsync(2, false);
+                }
+
+                // Process for advancedGpoMode3
+                if (validationState &&
+                    !string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoMode3) &&
+                    string.Equals("7", _standaloneConfigDTO.advancedGpoMode3, StringComparison.OrdinalIgnoreCase))
+                {
+                    await SetGpoPortAsync(3, true);
+                    await Task.Delay(2000);
+                    await SetGpoPortAsync(3, false);
+                }
+                else if (!validationState &&
+                         !string.IsNullOrEmpty(_standaloneConfigDTO.advancedGpoMode3) &&
+                         string.Equals("8", _standaloneConfigDTO.advancedGpoMode3, StringComparison.OrdinalIgnoreCase))
+                {
+                    await SetGpoPortAsync(3, true);
+                    await Task.Delay(2000);
+                    await SetGpoPortAsync(3, false);
                 }
             }
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error saving state to config file. " + ex.Message);
         }
     }
+
 
     public async Task SetGpiPortsAsync()
     {
@@ -2479,7 +2235,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         try
         {
-            await ProcessGpoErrorPortAsync();
+            _ = ProcessGpoErrorPortAsync();
         }
         catch (Exception ex)
         {
@@ -3537,7 +3293,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "error loading image status");
+            _logger.LogError(ex, "Error starting web socket server. " + ex.Message); 
             }
 
             try
@@ -3634,7 +3390,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             catch (Exception)
             {
-                await ProcessGpoErrorPortAsync();
+                _ = ProcessGpoErrorPortAsync();
             }
         }
 
@@ -3730,7 +3486,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             try
             {
-                _messageQueueTagSmartReaderTagEventHttpPost.Enqueue(dataToPublish);
+                _messageQueueTagSmartReaderTagEventHttpPost.TryEnqueue(dataToPublish);
             }
             catch (Exception)
             {
@@ -3745,7 +3501,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 if (_tcpSocketService.IsSocketServerConnectedToClients())
                 {
-                    _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(dataToPublish);
+                    _messageQueueTagSmartReaderTagEventSocketServer.TryEnqueue(dataToPublish);
                 }
             }
             catch (Exception)
@@ -3758,7 +3514,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             if (_webSocketService.IsSocketServerConnectedToClients())
             {
-                _messageQueueTagSmartReaderTagEventWebSocketServer.Enqueue(dataToPublish);
+                _messageQueueTagSmartReaderTagEventWebSocketServer.TryEnqueue(dataToPublish);
             }
         }
         catch (Exception)
@@ -3775,7 +3531,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             try
             {
-                _messageQueueTagSmartReaderTagEventUsbDrive.Enqueue(dataToPublish);
+                _messageQueueTagSmartReaderTagEventUsbDrive.TryEnqueue(dataToPublish);
             }
             catch (Exception)
             {
@@ -3827,7 +3583,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             catch (Exception)
             {
-                await ProcessGpoErrorPortAsync();
+                _ = ProcessGpoErrorPortAsync();
             }
         }
 
@@ -3899,21 +3655,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     {
                     }
                     _logger.LogInformation("Inventory Running.  (START)");
-                    //if(string.IsNullOrEmpty(_standaloneConfigDTO.stopTriggerDuration) 
-                    //    || string.Equals("0", _standaloneConfigDTO.stopTriggerDuration, StringComparison.OrdinalIgnoreCase))
-                    //{
-                    //    ////_stopwatchStopTriggerDuration
-                    //    //if (string.Equals("1", _standaloneConfigDTO.enableBarcodeTcp, StringComparison.OrdinalIgnoreCase))
-                    //    //{
-
-                    //    //}
-                    //    if (string.Equals("1", _standaloneConfigDTO.groupEventsOnInventoryStatus, StringComparison.OrdinalIgnoreCase))
-                    //    {
-                    //        //currentBarcode = "";
-                    //        _ = Task.Run(() => ProcessValidationTagQueue());
-
-                    //    }
-                    //}
 
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
                     if (!string.IsNullOrEmpty(_standaloneConfigDTO.stopTriggerDuration)
@@ -3962,7 +3703,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                                 StringComparison.OrdinalIgnoreCase))
                             if (cleanUpTags)
                                 //_ = Task.Run(() => ProcessValidationTagQueue());
-                                ProcessValidationTagQueue();
+                                await ProcessValidationTagQueueAsync();
                     }
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
 
@@ -4043,7 +3784,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         try
                         {
                             //_ = Task.Run(() => ProcessValidationTagQueue());
-                            ProcessValidationTagQueue();
+                            await ProcessValidationTagQueueAsync();
                         }
                         catch (Exception ex)
                         {
@@ -4225,334 +3966,289 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     }
 
 
-    private async void OnTagInventoryEvent(object sender,
-                                           TagInventoryEvent tagEvent)
+    private async void OnTagInventoryEventAsync(object sender, TagInventoryEvent tagEvent)
     {
         try
         {
-            // Validate input
+            // 1. Validate input
             if (tagEvent == null)
             {
                 _logger.LogError("Received null tag event");
                 return;
             }
-
             if (!_isStarted)
             {
                 _isStarted = true;
             }
+            _logger.LogDebug($"EPC Hex: {tagEvent.EpcHex} Antenna: {tagEvent.AntennaPort} LastSeenTime: {tagEvent.LastSeenTime}");
 
-            var shouldProcess = false;
-            _logger.LogDebug($"EPC Hex: {tagEvent.EpcHex} Antenna : {tagEvent.AntennaPort} LastSeenTime {tagEvent.LastSeenTime}");
+            // 2. Trigger any-tag GPO blink
+            _ = ProcessGpoBlinkAnyTagGpoPortAsync();
 
-            await Task.Run(() => ProcessGpoBlinkAnyTagGpoPortAsync());
-
-
-            //if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
-            //                StringComparison.OrdinalIgnoreCase))
-            //{
-            //    if (_smartReaderTagEventsListBatch.ContainsKey(tagEvent.EpcHex))
-            //    {
-            //        var epcObject = _smartReaderTagEventsListBatch[tagEvent.EpcHex];
-            //        var updatedCurrentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now) * 1000;
-            //        var threadSafeBatchProcessor = new ThreadSafeBatchProcessor(
-            //            _logger,
-            //            _smartReaderTagEventsListBatch,
-            //            _smartReaderTagEventsListBatchOnUpdate);
-
-            //        await threadSafeBatchProcessor.ProcessEventBatchAsync(
-            //            new TagRead
-            //            {
-            //                Epc = tagEvent.EpcHex,
-            //                AntennaPort = tagEvent.AntennaPort,
-            //                AntennaZone = tagEvent.AntennaName,
-            //                FirstSeenTimestamp = updatedCurrentEventTimestamp
-            //            },
-            //            epcObject, // Populate with relevant data
-            //            _standaloneConfigDTO);
-            //        //try
-            //        //{
-            //        //    var updatedCurrentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now) * 1000;
-
-            //        //    // Retrieve the JObject for the specific EPC
-            //        //    var epcObject = _smartReaderTagEventsListBatch[tagEvent.EpcHex];
-
-            //        //    // Safely update the property (overwrite if exists or add otherwise)
-            //        //    epcObject["firstSeenTimestamp"] = updatedCurrentEventTimestamp;
-            //        //}
-            //        //catch (KeyNotFoundException ex)
-            //        //{
-            //        //    _logger.LogDebug(ex, $"EPC {tagEvent.EpcHex} expired from batch list");
-            //        //}
-            //        //catch (Exception ex)
-            //        //{
-            //        //    _logger.LogError(ex, $"Error updating timestamp for EPC {tagEvent.EpcHex} in batch list");
-            //        //}
-            //    }
-
-            //}
-            if (!string.IsNullOrEmpty(_standaloneConfigDTO.stopTriggerDuration)
-                && string.Equals("1", _standaloneConfigDTO.stopTriggerType,
-                            StringComparison.OrdinalIgnoreCase))
+            // 3. Enqueue event for background filtering
+            if (!_filteringQueue.Writer.TryWrite(tagEvent))
             {
-                long stopTiggerDuration = 100;
-                _ = long.TryParse(_standaloneConfigDTO.stopTriggerDuration, out stopTiggerDuration);
-                //if (stopTiggerDuration > 0 && _stopwatchStopTriggerDuration.IsRunning && _stopwatchStopTriggerDuration.ElapsedMilliseconds < stopTiggerDuration)
-                //{
-                //    _logger.LogInformation("OnRunPeriodicStopTriggerDurationEvent - Inventory already Running. for duration " + stopTiggerDuration + " [" + _stopwatchStopTriggerDuration.ElapsedMilliseconds + "]", SeverityType.Debug);
-                //    Console.WriteLine("OnRunPeriodicStopTriggerDurationEvent - Inventory already Running. for duration " + stopTiggerDuration + " [" + _stopwatchStopTriggerDuration.ElapsedMilliseconds + "]");
-                //}
-
-                if (stopTiggerDuration > 0
-                    && _stopwatchStopTriggerDuration.IsRunning
-                    && _stopwatchStopTriggerDuration.ElapsedMilliseconds >= stopTiggerDuration)
-                {
-                    _logger.LogInformation("Ignoring tag event due to StopTriggerDuration on OnTagInventoryEvent ");
-                    return;
-                }
-            }
-
-            if (!string.Equals("0", _standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled,
-                    StringComparison.OrdinalIgnoreCase))
-                try
-                {
-                    const int MaxTimeoutDictionarySize = 1000;
-
-                    long timeoutInSec = 0;
-                    var seenCountThreshold = 1;
-                    var currentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
-                    // Parse configuration values with validation
-                    if (!long.TryParse(_standaloneConfigDTO.softwareFilterReadCountTimeoutIntervalInSec, out timeoutInSec))
-                    {
-                        _logger.LogWarning("Invalid timeout value in configuration");
-                    }
-                    if (!int.TryParse(_standaloneConfigDTO.softwareFilterReadCountTimeoutSeenCount, out seenCountThreshold))
-                    {
-                        _logger.LogWarning("Invalid seen count threshold in configuration");
-                    }
-                    if (!string.Equals("0", _standaloneConfigDTO.softwareFilterReadCountTimeoutIntervalInSec,
-                            StringComparison.OrdinalIgnoreCase))
-                        _ = long.TryParse(_standaloneConfigDTO.softwareFilterReadCountTimeoutIntervalInSec,
-                            out timeoutInSec);
-
-                    if (!string.Equals("0", _standaloneConfigDTO.softwareFilterReadCountTimeoutSeenCount,
-                            StringComparison.OrdinalIgnoreCase))
-                        _ = int.TryParse(_standaloneConfigDTO.softwareFilterReadCountTimeoutSeenCount,
-                            out seenCountThreshold);
-
-                    if (!_softwareFilterReadCountTimeoutDictionary.ContainsKey(tagEvent.EpcHex))
-                    {
-                        // Add size check
-                        if (_softwareFilterReadCountTimeoutDictionary.Count >= MaxTimeoutDictionarySize)
-                        {
-                            _logger.LogWarning($"_softwareFilterReadCountTimeoutDictionary reached max size {MaxTimeoutDictionarySize}");
-                            // Optionally remove oldest entries
-                            RemoveOldestEntries(_softwareFilterReadCountTimeoutDictionary, MaxTimeoutDictionarySize * 0.2);
-                        }
-                        var readCountTimeoutEvent = new ReadCountTimeoutEvent
-                        {
-                            Epc = tagEvent.EpcHex,
-                            EventTimestamp = currentEventTimestamp
-                        };
-                        if (tagEvent.AntennaPort.HasValue) readCountTimeoutEvent.Antenna = tagEvent.AntennaPort.Value;
-                        _ = _softwareFilterReadCountTimeoutDictionary.TryAdd(tagEvent.EpcHex, readCountTimeoutEvent);
-                        shouldProcess = true;
-                    }
-                    else
-                    {
-                        var dateTimeOffsetCurrentEventTimestamp =
-                            DateTimeOffset.FromUnixTimeMilliseconds(currentEventTimestamp);
-                        var dateTimeOffsetLastSeenTimestamp =
-                            DateTimeOffset.FromUnixTimeMilliseconds(
-                                _softwareFilterReadCountTimeoutDictionary[tagEvent.EpcHex].EventTimestamp);
-
-                        _softwareFilterReadCountTimeoutDictionary[tagEvent.EpcHex].Count =
-                            _softwareFilterReadCountTimeoutDictionary[tagEvent.EpcHex].Count + 1;
-
-                        if (_softwareFilterReadCountTimeoutDictionary[tagEvent.EpcHex].Count >= seenCountThreshold)
-                        {
-                            if (timeoutInSec > 0)
-                            {
-                                var timeDiff =
-                                    dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
-                                if (timeDiff.TotalSeconds < timeoutInSec)
-                                {
-                                    shouldProcess = true;
-                                    _softwareFilterReadCountTimeoutDictionary[tagEvent.EpcHex].EventTimestamp =
-                                        currentEventTimestamp;
-                                    _softwareFilterReadCountTimeoutDictionary[tagEvent.EpcHex].Count = 1;
-                                }
-                                else
-                                {
-                                    shouldProcess = false;
-                                    _logger.LogInformation(
-                                        "Ignoring tag event due to softwareFilterReadCountTimeout on OnTagInventoryEvent ");
-                                    return;
-                                }
-                            }
-                            else
-                            {
-                                shouldProcess = true;
-                                _softwareFilterReadCountTimeoutDictionary[tagEvent.EpcHex].EventTimestamp =
-                                    currentEventTimestamp;
-                                _softwareFilterReadCountTimeoutDictionary[tagEvent.EpcHex].Count = 1;
-                            }
-                        }
-                        else
-                        {
-                            shouldProcess = false;
-                            _logger.LogInformation(
-                                "Ignoring tag event due to softwareFilterReadCountTimeout [seenCountThreshold] on OnTagInventoryEvent ");
-                            return;
-                        }
-                    }
-                }
-                catch (ArgumentException ex)
-                {
-                    _logger.LogError(ex, "Invalid argument in software filter configuration");
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, $"Error processing software filter for EPC {tagEvent.EpcHex}");
-                    return;
-                }
-
-            var tagCollections = new ThreadSafeCollections(
-            _logger,
-            _readEpcs,
-            _currentSkus,
-            _currentSkuReadEpcs);
-
-
-            if (!string.Equals("0", _standaloneConfigDTO.softwareFilterEnabled, StringComparison.OrdinalIgnoreCase))
-            {
-                const int MaxReadEpcsSize = 1000; // Define a reasonable maximum size
-                var currentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
-                // Dictionary operations with validation
-                if (_readEpcs == null)
-                {
-                    _logger.LogWarning("Read EPCs dictionary not initialized");
-                }
-
-                if (!_readEpcs.ContainsKey(tagEvent.EpcHex))
-                {
-                    // Add size check before adding new entries
-                    if (_readEpcs.Count >= MaxReadEpcsSize)
-                    {
-                        _logger.LogWarning($"_readEpcs collection reached max size {MaxReadEpcsSize}, skipping new entries");
-                        return;
-                    }
-                    if (!tagCollections.TryAddEpc(tagEvent.EpcHex, currentEventTimestamp))
-                    {
-                        _logger.LogWarning($"Failed to add EPC {tagEvent.EpcHex}");
-                        return;
-                    }
-                    await ProcessGpoBlinkNewTagStatusGpoPortAsync(2);
-                    shouldProcess = true;
-                }
-                else
-                {
-                    var expiration = long.Parse(_standaloneConfigDTO.softwareFilterWindowSec);
-                    var dateTimeOffsetCurrentEventTimestamp =
-                        DateTimeOffset.FromUnixTimeMilliseconds(currentEventTimestamp);
-                    var dateTimeOffsetLastSeenTimestamp =
-                        DateTimeOffset.FromUnixTimeMilliseconds(_readEpcs[tagEvent.EpcHex]);
-
-                    var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
-                    if (timeDiff.TotalSeconds > expiration)
-                    {
-                        if (!tagCollections.TryUpdateEpc(tagEvent.EpcHex, currentEventTimestamp))
-                        {
-                            _logger.LogWarning($"Failed to update EPC timestamp");
-                            return;
-                        }
-                        await ProcessGpoBlinkNewTagStatusGpoPortAsync(2);
-                        shouldProcess = true;
-                    }
-                    else
-                    {
-                        shouldProcess = false;
-                        if (!tagCollections.TryUpdateEpc(tagEvent.EpcHex, currentEventTimestamp))
-                        {
-                            _logger.LogWarning($"Failed to update EPC {tagEvent.EpcHex} timestamp");
-                        }
-                        _logger.LogInformation(message: "Ignoring tag event due to softwareFilterWindowSec on OnTagInventoryEvent ");
-                        return;
-                    }
-                }
-            }
-
-            if (!string.Equals("1", _standaloneConfigDTO.groupEventsOnInventoryStatus,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                if (_lastTagRead == null)
-                {
-                    _lastTagRead = new TagRead();
-                    if (tagEvent == null)
-                    {
-                        throw new ArgumentNullException(nameof(tagEvent), "Tag event cannot be null");
-                    }
-                    _lastTagRead.Epc = tagEvent.EpcHex;
-                    _lastTagRead.AntennaPort = tagEvent.AntennaPort;
-
-                    AdjustTagReadEventTimestamp(tagEvent, _lastTagRead);
-
-                    shouldProcess = true;
-                }
-                else
-                {
-                    if (_lastTagRead.Epc == tagEvent.EpcHex && _lastTagRead.AntennaPort == tagEvent.AntennaPort)
-                    {
-                        AdjustTagReadEventTimestamp(tagEvent, _lastTagRead);
-                        shouldProcess = true;
-                    }
-                    else
-                    {
-                        shouldProcess = true;
-                    }
-
-                    _lastTagRead.Epc = tagEvent.EpcHex;
-                    _lastTagRead.AntennaPort = tagEvent.AntennaPort;
-                    AdjustTagReadEventTimestamp(tagEvent, _lastTagRead);
-                }
-            }
-
-            if (string.Equals("0", _standaloneConfigDTO.softwareFilterEnabled, StringComparison.OrdinalIgnoreCase)
-                && string.Equals("0", _standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled,
-                    StringComparison.OrdinalIgnoreCase)
-                && !shouldProcess)
-                shouldProcess = true;
-
-
-
-            //_messageQueueTagInventoryEvent.Enqueue(tagEvent);
-            try
-            {
-                await ProcessTagInventoryEventAsync(tagEvent);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Failed to process tag inventory event for EPC {tagEvent.EpcHex}");
-                await ProcessGpoErrorPortAsync();
+                _logger.LogWarning("Filtering queue is full, dropping event.");
             }
         }
         catch (ArgumentException ex)
         {
-            _logger.LogError(ex, "Invalid argument while processing last tag read");
-            return;
+            _logger.LogError(ex, "Invalid argument while processing tag event");
         }
         catch (OverflowException ex)
         {
             _logger.LogError(ex, "Timestamp conversion error");
-            return;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, $"Critical error processing tag event for EPC: {tagEvent?.EpcHex ?? "unknown"}");
-            await ProcessGpoErrorPortAsync();
         }
     }
+
+    private async Task ProcessFilteringQueueAsync()
+    {
+        while(true)
+        {
+            try
+            {
+                await foreach (var tagEvent in _filteringQueue.Reader.ReadAllAsync())
+                {
+                    try
+                    {
+                        // 1️⃣ Check Stop Trigger Duration
+                        if (!CheckStopTriggerDuration())
+                        {
+                            _logger.LogInformation("Ignoring tag event due to StopTriggerDuration");
+                            continue;
+                        }
+
+                        // 2️⃣ Apply Software Filter Read Count Timeout
+                        bool shouldProcess = await ProcessSoftwareFilterReadCountTimeoutAsync(tagEvent);
+                        if (!shouldProcess) continue;
+
+                        // 3️⃣ Apply Software Filter for EPC
+                        shouldProcess = await ProcessSoftwareFilterForEpcAsync(tagEvent);
+                        if (!shouldProcess) continue;
+
+                        // 4️⃣ Process the tag event (enqueue for further processing)
+                        await ProcessTagInventoryEventAsync(tagEvent);
+
+                        await Task.Delay(10);  // Prevent CPU overuse
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error processing tag inventory event.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Filtering queue processing encountered an error, restarting...");
+            }
+            
+
+            await Task.Delay(1000); // Avoid busy looping if an error occurs
+        }
+        
+    }
+
+
+    /// <summary>
+    /// Checks whether the stop trigger duration has been exceeded.
+    /// </summary>
+    private bool CheckStopTriggerDuration()
+    {
+        if (!string.IsNullOrEmpty(_standaloneConfigDTO.stopTriggerDuration) &&
+            string.Equals(_standaloneConfigDTO.stopTriggerType, "1", StringComparison.OrdinalIgnoreCase))
+        {
+            if (long.TryParse(_standaloneConfigDTO.stopTriggerDuration, out long stopDuration))
+            {
+                if (stopDuration > 0 &&
+                    _stopwatchStopTriggerDuration.IsRunning &&
+                    _stopwatchStopTriggerDuration.ElapsedMilliseconds >= stopDuration)
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Processes the software filter “read count timeout” logic.
+    /// Returns true if the event should be processed.
+    /// </summary>
+    private async Task<bool> ProcessSoftwareFilterReadCountTimeoutAsync(TagInventoryEvent tagEvent)
+    {
+        if (!string.Equals(_standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled, "0", StringComparison.OrdinalIgnoreCase))
+        {
+            const int MaxTimeoutDictionarySize = 1000;
+            long timeoutInSec = 0;
+            int seenCountThreshold = 1;
+            long currentTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
+
+            if (!long.TryParse(_standaloneConfigDTO.softwareFilterReadCountTimeoutIntervalInSec, out timeoutInSec))
+            {
+                _logger.LogWarning("Invalid timeout value in configuration");
+            }
+            if (!int.TryParse(_standaloneConfigDTO.softwareFilterReadCountTimeoutSeenCount, out seenCountThreshold))
+            {
+                _logger.LogWarning("Invalid seen count threshold in configuration");
+            }
+
+            // If entry does not exist, try to add it.
+            if (!_softwareFilterReadCountTimeoutDictionary.ContainsKey(tagEvent.EpcHex))
+            {
+                if (_softwareFilterReadCountTimeoutDictionary.Count >= MaxTimeoutDictionarySize)
+                {
+                    _logger.LogWarning($"_softwareFilterReadCountTimeoutDictionary reached max size {MaxTimeoutDictionarySize}");
+                    RemoveOldestEntries(_softwareFilterReadCountTimeoutDictionary, MaxTimeoutDictionarySize * 0.2);
+                }
+                var newEntry = new ReadCountTimeoutEvent
+                {
+                    Epc = tagEvent.EpcHex,
+                    EventTimestamp = currentTimestamp,
+                    Count = 1
+                };
+                if (tagEvent.AntennaPort.HasValue)
+                {
+                    newEntry.Antenna = tagEvent.AntennaPort.Value;
+                }
+                _softwareFilterReadCountTimeoutDictionary.TryAdd(tagEvent.EpcHex, newEntry);
+                return true;
+            }
+            else
+            {
+                var entry = _softwareFilterReadCountTimeoutDictionary[tagEvent.EpcHex];
+                entry.Count++;
+
+                var currentDt = DateTimeOffset.FromUnixTimeMilliseconds(currentTimestamp);
+                var lastSeenDt = DateTimeOffset.FromUnixTimeMilliseconds(entry.EventTimestamp);
+
+                if (entry.Count >= seenCountThreshold)
+                {
+                    if (timeoutInSec > 0)
+                    {
+                        var diff = currentDt.Subtract(lastSeenDt);
+                        if (diff.TotalSeconds < timeoutInSec)
+                        {
+                            entry.EventTimestamp = currentTimestamp;
+                            entry.Count = 1;
+                            return true;
+                        }
+                        else
+                        {
+                            _logger.LogInformation("Ignoring tag event due to softwareFilterReadCountTimeout on OnTagInventoryEvent");
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        entry.EventTimestamp = currentTimestamp;
+                        entry.Count = 1;
+                        return true;
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation("Ignoring tag event due to softwareFilterReadCountTimeout [seenCountThreshold] on OnTagInventoryEvent");
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Processes the software filter for EPC reads based on a window expiration.
+    /// Returns true if the event should be processed.
+    /// </summary>
+    public async Task<bool> ProcessSoftwareFilterForEpcAsync(TagInventoryEvent tagEvent)
+    {
+        if (!string.Equals(_standaloneConfigDTO.softwareFilterEnabled, "0", StringComparison.OrdinalIgnoreCase))
+        {
+            const int MaxReadEpcsSize = 1000;
+            long currentTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
+
+            // If the EPC is new, try to add it.
+            if (!_readEpcs.ContainsKey(tagEvent.EpcHex))
+            {
+                if (_readEpcs.Count >= MaxReadEpcsSize)
+                {
+                    _logger.LogWarning($"_readEpcs collection reached max size {MaxReadEpcsSize}, skipping new entries");
+                    return false;
+                }
+                if (!_readEpcs.TryAdd(tagEvent.EpcHex, currentTimestamp))
+                {
+                    _logger.LogWarning($"Failed to add EPC {tagEvent.EpcHex}");
+                    return false;
+                }
+                // Instead of blocking, await the asynchronous blink operation.
+                await ProcessGpoBlinkNewTagStatusGpoPortAsync(2);
+                return true;
+            }
+            else
+            {
+                long expiration = long.Parse(_standaloneConfigDTO.softwareFilterWindowSec);
+                var currentDt = DateTimeOffset.FromUnixTimeMilliseconds(currentTimestamp);
+                var lastSeenDt = DateTimeOffset.FromUnixTimeMilliseconds(_readEpcs[tagEvent.EpcHex]);
+                var diff = currentDt.Subtract(lastSeenDt);
+                if (diff.TotalSeconds > expiration)
+                {
+                    if (!_readEpcs.TryUpdate(tagEvent.EpcHex, currentTimestamp, _readEpcs[tagEvent.EpcHex]))
+                    {
+                        _logger.LogWarning("Failed to update EPC timestamp");
+                        return false;
+                    }
+                    await ProcessGpoBlinkNewTagStatusGpoPortAsync(2);
+                    return true;
+                }
+                else
+                {
+                    // Even if we update the timestamp, we skip processing if within the window.
+                    _readEpcs.TryUpdate(tagEvent.EpcHex, currentTimestamp, _readEpcs[tagEvent.EpcHex]);
+                    _logger.LogInformation("Ignoring tag event due to softwareFilterWindowSec on OnTagInventoryEvent");
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+
+    /// <summary>
+    /// Updates the _lastTagRead object when group events are disabled.
+    /// </summary>
+    private void ProcessGroupEventForLastTag(TagInventoryEvent tagEvent)
+    {
+        if (!string.Equals(_standaloneConfigDTO.groupEventsOnInventoryStatus, "1", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_lastTagRead == null)
+            {
+                _lastTagRead = new TagRead();
+                _lastTagRead.Epc = tagEvent.EpcHex;
+                _lastTagRead.AntennaPort = tagEvent.AntennaPort;
+                AdjustTagReadEventTimestamp(tagEvent, _lastTagRead);
+            }
+            else
+            {
+                if (_lastTagRead.Epc == tagEvent.EpcHex && _lastTagRead.AntennaPort == tagEvent.AntennaPort)
+                {
+                    AdjustTagReadEventTimestamp(tagEvent, _lastTagRead);
+                }
+                else
+                {
+                    // Even if different, update _lastTagRead so that subsequent events get merged
+                }
+                _lastTagRead.Epc = tagEvent.EpcHex;
+                _lastTagRead.AntennaPort = tagEvent.AntennaPort;
+                AdjustTagReadEventTimestamp(tagEvent, _lastTagRead);
+            }
+        }
+    }
+
+
+    
 
     private void AdjustTagReadEventTimestamp(TagInventoryEvent tagInventoryEvent, TagRead tagEvent)
     {
@@ -4568,960 +4264,290 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
-    private async void OnRunPeriodicTagPublisherRetryTasksEvent(object sender, ElapsedEventArgs e)
-    {
-        if (Monitor.TryEnter(_timerTagPublisherHttpLock))
-            try
-            {
-                JObject smartReaderTagReadEvent;
-                while (_messageQueueTagSmartReaderTagEventHttpPostRetry.TryDequeue(out smartReaderTagReadEvent))
-                    try
-                    {
-                        await ProcessHttpJsonPostTagEventDataAsync(smartReaderTagReadEvent);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex,
-                            "Unexpected error on OnRunPeriodicTagPublisherRetryTasksEvent " + ex.Message);
-                        //Console.WriteLine("Unexpected error on OnRunPeriodicTagPublisherRetryTasksEvent " + ex.Message);
-                    }
-            }
-            catch (Exception)
-            {
-            }
-            finally
-            {
-                Monitor.Exit(_timerTagPublisherHttpLock);
-            }
-    }
-
-#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-    private async void ProcessValidationTagQueue()
-#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
-    {
-        try
-        {
-            var dataListToPublish = _messageQueueTagSmartReaderTagEventGroupToValidate.ToArray().ToList();
-            _messageQueueTagSmartReaderTagEventGroupToValidate.Clear();
-
-
-
-            _logger.LogInformation("ProcessBarcodeQueue -  =============================================");
-            _logger.LogInformation("ProcessBarcodeQueue - Processing barcode...");
-            var eventTimestamp = Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now);
-            var barcode = "";
-            barcode = ProcessBarcodeQueue();
-
-            JProperty? newPropertyBarcodeData = null;
-
-            //if (!string.IsNullOrEmpty(barcode))
-            //{
-            //    LastValidBarcode = barcode;
-            //}
-
-            //if (!string.IsNullOrEmpty(LastValidBarcode) && string.IsNullOrEmpty(barcode))
-            //{
-            //    barcode = LastValidBarcode;
-            //}
-
-            if (!string.IsNullOrEmpty(barcode))
-                // LastValidBarcode = barcode;
-                newPropertyBarcodeData = new JProperty("barcode", barcode);
-            _logger.LogInformation("ProcessBarcodeQueue - using barcode [" + barcode + "]");
-            //dataToPublish.Add(newPropertyData);
-            _logger.LogInformation(
-                "ProcessValidationTagQueue - dataListToPublish events size [" +
-                dataListToPublish.Count + "]");
-            var skuSummaryList = new Dictionary<string, SkuSummary>();
-            if (dataListToPublish.Count == 0)
-            {
-                _logger.LogInformation(
-                    "ProcessBarcodeQueue - NO DATA FOUND TO PROCESS, processing empty event to barcode [" + barcode +
-                    "]");
-                var skuSummary = new SkuSummary
-                {
-                    Sku = "00000000000000",
-                    Qty = 0
-                };
-                if (!string.IsNullOrEmpty(barcode))
-                    skuSummary.Barcode = barcode;
-                else
-                    skuSummary.Barcode = "";
-                skuSummary.EventTimestamp = eventTimestamp;
-                skuSummaryList.Add(skuSummary.Sku, skuSummary);
-                _logger.LogInformation("skuSummaryList.count [" + skuSummaryList.Count + "] barcode [" + barcode +
-                                       "] on empty event.");
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableSummaryStream)
-                    && string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase))
-                {
-                    var skuArray = JArray.FromObject(skuSummaryList.Values);
-                    AddJsonSkuSummaryToQueue(skuArray);
-                }
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-
-                return;
-            }
-
-
-            //_readEpcs.Clear();
-            _logger.LogInformation("ProcessValidationTagQueue - Processing data [" + dataListToPublish.Count +
-                                   "] barcode [" + barcode + "]");
-            _logger.LogInformation("ProcessValidationTagQueue -  =============================================");
-            //JObject smartReaderTagReadEvent;
-            JObject smartReaderTagReadEventAggregated = null;
-            var smartReaderTagReadEventsArray = new JArray();
-
-
-            var defaultTagEventEpcs = new List<string>();
-            foreach (var smartReaderTagReadEvent in dataListToPublish)
-                try
-                {
-                    if (smartReaderTagReadEvent == null)
-                        continue;
-
-                    var defaultTagEvent = smartReaderTagReadEvent.Property("tag_reads").ToList().FirstOrDefault()
-                        .FirstOrDefault();
-                    if (smartReaderTagReadEventAggregated == null)
-                    {
-                        smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
-
-                        if (defaultTagEvent != null)
-                        {
-                            if (newPropertyBarcodeData != null)
-                            {
-                                if (((JObject)defaultTagEvent).ContainsKey("barcode"))
-                                {
-                                    ((JObject)defaultTagEvent)["barcode"] = barcode;
-                                }
-                                else
-                                {
-                                    if (newPropertyBarcodeData != null)
-                                        ((JObject)defaultTagEvent).Add(newPropertyBarcodeData);
-                                }
-                                //smartReaderTagReadEventAggregated.Add(defaultTagEvent);
-                            }
-
-                            smartReaderTagReadEventsArray.Add(defaultTagEvent);
-                        }
-                    }
-                    else
-                    {
-                        try
-                        {
-                            if (defaultTagEvent != null)
-                            {
-                                if (newPropertyBarcodeData != null)
-                                {
-                                    if (((JObject)defaultTagEvent).ContainsKey("barcode"))
-                                    {
-                                        ((JObject)defaultTagEvent)["barcode"] = barcode;
-                                    }
-                                    else
-                                    {
-                                        if (newPropertyBarcodeData != null)
-                                            ((JObject)defaultTagEvent).Add(newPropertyBarcodeData);
-                                    }
-                                    //smartReaderTagReadEventAggregated.Add(newPropertyBarcodeData);
-                                }
-
-                                smartReaderTagReadEventsArray.Add(defaultTagEvent);
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Unexpected error on ProcessValidationTagQueue " + ex.Message);
-                            //Console.WriteLine("Unexpected error on ProcessValidationTagQueue " + ex.Message);
-                        }
-                    }
-
-                    try
-                    {
-                        if (defaultTagEvent != null && ((JObject)defaultTagEvent).ContainsKey("tagDataKey"))
-                        {
-                            var epcValue = "";
-                            try
-                            {
-                                if (((JObject)defaultTagEvent).ContainsKey("epc"))
-                                {
-                                    epcValue = ((JObject)defaultTagEvent)["epc"].Value<string>();
-                                    if (!string.IsNullOrEmpty(epcValue))
-                                    {
-                                        if (!defaultTagEventEpcs.Contains(epcValue))
-                                            defaultTagEventEpcs.Add(epcValue);
-                                        else
-                                            continue;
-                                    }
-                                }
-                            }
-                            catch (Exception)
-                            {
-                            }
-
-
-                            var tagDataKeyValue = ((JObject)defaultTagEvent)["tagDataKey"].Value<string>();
-                            if (!string.IsNullOrEmpty(tagDataKeyValue))
-                            {
-                                if (skuSummaryList.ContainsKey(tagDataKeyValue))
-                                {
-                                    skuSummaryList[tagDataKeyValue].Qty = skuSummaryList[tagDataKeyValue].Qty + 1;
-                                    if (skuSummaryList[tagDataKeyValue].Epcs == null)
-                                        skuSummaryList[tagDataKeyValue].Epcs = [];
-                                    if (!string.IsNullOrEmpty(epcValue) &&
-                                        !skuSummaryList[tagDataKeyValue].Epcs.Contains(epcValue))
-                                        skuSummaryList[tagDataKeyValue].Epcs.Add(epcValue);
-                                }
-                                else
-                                {
-                                    var skuSummary = new SkuSummary
-                                    {
-                                        Sku = tagDataKeyValue,
-                                        Qty = 1
-                                    };
-                                    if (!string.IsNullOrEmpty(barcode))
-                                        skuSummary.Barcode = barcode;
-                                    else
-                                        skuSummary.Barcode = "";
-                                    if (skuSummary.Epcs == null) skuSummary.Epcs = [];
-                                    if (!string.IsNullOrEmpty(epcValue) && !skuSummary.Epcs.Contains(epcValue))
-                                        skuSummary.Epcs.Add(epcValue);
-                                    skuSummary.EventTimestamp = eventTimestamp;
-                                    if (smartReaderTagReadEventAggregated.ContainsKey("site"))
-                                    {
-                                        var site = smartReaderTagReadEventAggregated["site"].Value<string>();
-                                        if (skuSummary.AdditionalData == null)
-                                            skuSummary.AdditionalData = [];
-                                        if (!skuSummary.AdditionalData.ContainsKey("site"))
-                                            skuSummary.AdditionalData.Add("site", site);
-                                    }
-
-                                    if (smartReaderTagReadEventAggregated.ContainsKey("status"))
-                                    {
-                                        var customField = smartReaderTagReadEventAggregated["status"].Value<string>();
-                                        if (!string.IsNullOrEmpty(customField))
-                                        {
-                                            if (skuSummary.AdditionalData == null)
-                                                skuSummary.AdditionalData = [];
-                                            if (!skuSummary.AdditionalData.ContainsKey("status"))
-                                                skuSummary.AdditionalData.Add("status", customField);
-                                        }
-                                    }
-
-                                    if (smartReaderTagReadEventAggregated.ContainsKey("bizStep"))
-                                    {
-                                        var customField = smartReaderTagReadEventAggregated["bizStep"].Value<string>();
-                                        if (!string.IsNullOrEmpty(customField))
-                                        {
-                                            if (skuSummary.AdditionalData == null)
-                                                skuSummary.AdditionalData = [];
-                                            if (!skuSummary.AdditionalData.ContainsKey("bizStep"))
-                                                skuSummary.AdditionalData.Add("bizStep", customField);
-                                        }
-                                    }
-
-                                    if (smartReaderTagReadEventAggregated.ContainsKey("bizLocation"))
-                                    {
-                                        var customField = smartReaderTagReadEventAggregated["bizLocation"]
-                                            .Value<string>();
-                                        if (!string.IsNullOrEmpty(customField))
-                                        {
-                                            if (skuSummary.AdditionalData == null)
-                                                skuSummary.AdditionalData = [];
-                                            if (!skuSummary.AdditionalData.ContainsKey("bizLocation"))
-                                                skuSummary.AdditionalData.Add("bizLocation", customField);
-                                        }
-                                    }
-
-                                    if (smartReaderTagReadEventAggregated.ContainsKey("contentFormat"))
-                                    {
-                                        var customField = smartReaderTagReadEventAggregated["contentFormat"]
-                                            .Value<string>();
-                                        if (!string.IsNullOrEmpty(customField))
-                                        {
-                                            smartReaderTagReadEventAggregated["contentFormat"] = customField;
-                                            if (skuSummary.AdditionalData == null)
-                                                skuSummary.AdditionalData = [];
-                                            if (!skuSummary.AdditionalData.ContainsKey("contentFormat"))
-                                                skuSummary.AdditionalData.Add("contentFormat", customField);
-                                        }
-                                    }
-
-                                    skuSummaryList.Add(tagDataKeyValue, skuSummary);
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Unexpected error on ProcessValidationTagQueue " + ex.Message);
-                    //Console.WriteLine("Unexpected error on ProcessValidationTagQueue " + ex.Message);
-                }
-
-            try
-            {
-                if (smartReaderTagReadEventAggregated != null && smartReaderTagReadEventsArray != null &&
-                    smartReaderTagReadEventsArray.Count > 0)
-                {
-                    if (smartReaderTagReadEventAggregated.ContainsKey("barcode"))
-                    {
-                        _logger.LogInformation("Setting barcode on aggregated event: " + barcode);
-                        smartReaderTagReadEventAggregated["barcode"] = barcode;
-                    }
-                    else
-                    {
-                        if (newPropertyBarcodeData != null)
-                        {
-                            _logger.LogInformation("Adding barcode property on aggregated event: " + barcode);
-                            smartReaderTagReadEventAggregated.Add(newPropertyBarcodeData);
-                        }
-                        else
-                        {
-                            try
-                            {
-                                _logger.LogInformation("Creating barcode property on aggregated event: " + barcode);
-                                newPropertyBarcodeData = new JProperty("barcode", barcode);
-                                smartReaderTagReadEventAggregated.Add(newPropertyBarcodeData);
-                            }
-                            catch (Exception exBc)
-                            {
-                                _logger.LogError(exBc, "Creating barcode property on aggregated event " + exBc.Message);
-                            }
-                        }
-                    }
-
-                    smartReaderTagReadEventAggregated["tag_reads"] = smartReaderTagReadEventsArray;
-
-
-                    if (skuSummaryList.Count > 0)
-                    {
-                        try
-                        {
-                            var shouldPublish = false;
-                            if (_standaloneConfigDTO != null && !string.IsNullOrEmpty(_standaloneConfigDTO
-                                                                 .enableBarcodeTcp)
-                                                             && string.Equals("1",
-                                                                 _standaloneConfigDTO.enableBarcodeTcp,
-                                                                 StringComparison.OrdinalIgnoreCase)
-                                                             && !string.IsNullOrEmpty(barcode))
-                            {
-                                _logger.LogInformation("skuSummaryList.count [" + skuSummaryList.Count + "] barcode [" +
-                                                       barcode + "] total items [" + defaultTagEventEpcs.Count + "]");
-                                if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableSummaryStream)
-                                    && string.Equals("1", _standaloneConfigDTO.enableSummaryStream,
-                                        StringComparison.OrdinalIgnoreCase))
-                                {
-                                    var skuArray = JArray.FromObject(skuSummaryList.Values);
-                                    AddJsonSkuSummaryToQueue(skuArray);
-                                }
-
-                                shouldPublish = true;
-                            }
-
-                            if (_standaloneConfigDTO != null && (
-                                                                    (!string.IsNullOrEmpty(_standaloneConfigDTO.enableBarcodeSerial)
-                                                                    && string.Equals("1", _standaloneConfigDTO.enableBarcodeSerial, StringComparison.OrdinalIgnoreCase))
-                                                                || (!string.IsNullOrEmpty(_standaloneConfigDTO.enableBarcodeHid)
-                                                                        && string.Equals("1", _standaloneConfigDTO.enableBarcodeHid, StringComparison.OrdinalIgnoreCase))
-                                                                )
-                                                             && !string.IsNullOrEmpty(barcode))
-                            {
-                                _logger.LogInformation("skuSummaryList.count [" + skuSummaryList.Count +
-                                                       "] total items [" + defaultTagEventEpcs.Count + "]");
-                                if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableSummaryStream)
-                                    && string.Equals("1", _standaloneConfigDTO.enableSummaryStream,
-                                        StringComparison.OrdinalIgnoreCase))
-                                {
-                                    var skuArray = JArray.FromObject(skuSummaryList.Values);
-                                    AddJsonSkuSummaryToQueue(skuArray);
-                                }
-
-                                shouldPublish = true;
-                            }
-                            else if (_standaloneConfigDTO != null && !string.IsNullOrEmpty(_standaloneConfigDTO
-                                                                      .enableBarcodeTcp)
-                                                                  && string.Equals("0",
-                                                                      _standaloneConfigDTO.enableBarcodeTcp,
-                                                                      StringComparison.OrdinalIgnoreCase))
-                            {
-                                _logger.LogInformation("skuSummaryList.count [" + skuSummaryList.Count +
-                                                       "] total items [" + defaultTagEventEpcs.Count + "]");
-                                if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableSummaryStream)
-                                    && string.Equals("1", _standaloneConfigDTO.enableSummaryStream,
-                                        StringComparison.OrdinalIgnoreCase))
-                                {
-                                    var skuArray = JArray.FromObject(skuSummaryList.Values);
-                                    AddJsonSkuSummaryToQueue(skuArray);
-                                }
-
-                                shouldPublish = true;
-                            }
-                            else if (_standaloneConfigDTO != null &&
-                                                                    !string.IsNullOrEmpty(_standaloneConfigDTO.enableBarcodeSerial)
-                                                                    && string.Equals("0", _standaloneConfigDTO.enableBarcodeSerial, StringComparison.OrdinalIgnoreCase)
-                                                                && !string.IsNullOrEmpty(_standaloneConfigDTO.enableBarcodeHid)
-                                                                        && string.Equals("0", _standaloneConfigDTO.enableBarcodeHid, StringComparison.OrdinalIgnoreCase)
-
-                                                             && !string.IsNullOrEmpty(barcode))
-                            {
-                                _logger.LogInformation("skuSummaryList.count [" + skuSummaryList.Count +
-                                                       "] total items [" + defaultTagEventEpcs.Count + "]");
-                                if (!string.IsNullOrEmpty(_standaloneConfigDTO.enableSummaryStream)
-                                    && string.Equals("1", _standaloneConfigDTO.enableSummaryStream,
-                                        StringComparison.OrdinalIgnoreCase))
-                                {
-                                    var skuArray = JArray.FromObject(skuSummaryList.Values);
-                                    AddJsonSkuSummaryToQueue(skuArray);
-                                }
-
-                                shouldPublish = true;
-                            }
-
-                            try
-                            {
-                                bool isValidated = false;
-
-
-
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                                if (string.Equals("1", _standaloneConfigDTO.enableValidation, StringComparison.OrdinalIgnoreCase))
-                                {
-                                    if (string.Equals("1", _standaloneConfigDTO.requireUniqueProductCode,
-                                            StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        if (skuSummaryList.Keys.Count > 1)
-                                            isValidated = false;
-                                        else if (skuSummaryList.Keys.Count == 0 || skuSummaryList.Keys.Count == 1)
-                                            isValidated = true;
-                                    }
-
-
-                                }
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-
-                                if (string.Equals("1", _standaloneConfigDTO.enableExternalApiVerification,
-                                            StringComparison.OrdinalIgnoreCase)
-                                    && _expectedItems.Count > 0
-                                    && string.Equals("1", _standaloneConfigDTO.enableValidation, StringComparison.OrdinalIgnoreCase))
-                                {
-                                    var skusToValidate = new ConcurrentDictionary<string, int>();
-
-                                    foreach (KeyValuePair<string, SkuSummary> skuEntry in skuSummaryList)
-                                    {
-                                        try
-                                        {
-                                            if (skuEntry.Value != null && skuEntry.Value.Qty != null)
-                                                _ = skusToValidate.TryAdd(skuEntry.Key, unchecked((int)skuEntry.Value.Qty.Value));
-                                        }
-                                        catch (Exception ex)
-                                        {
-
-                                            _logger.LogError(ex, "ValidateCurrentProductContent error (skusToValidate). ");
-                                        }
-
-                                    }
-
-                                    if (_plugins != null
-                                                        && _plugins.Count > 0
-                                                        && !string.IsNullOrEmpty(_standaloneConfigDTO.activePlugin)
-                                                        && _plugins.ContainsKey(_standaloneConfigDTO.activePlugin)
-                                                        && _plugins[_standaloneConfigDTO.activePlugin].IsProcessingExternalValidation())
-                                    {
-                                        isValidated = _plugins[_standaloneConfigDTO.activePlugin].ValidateCurrentProductContent(_expectedItems, skusToValidate);
-                                    }
-                                    else
-                                    {
-                                        try
-                                        {
-                                            if (_expectedItems.Any())
-                                            {
-                                                _logger.LogInformation($"ValidateCurrentProductContent - Starting validation: {_expectedItems.Count} expected SKUs, {skusToValidate.Count} SKUs read. ");
-
-                                                foreach (KeyValuePair<string, int> entry in _expectedItems)
-                                                {
-
-                                                    try
-                                                    {
-                                                        _logger.LogInformation($"ValidateCurrentProductContent - SKU:{entry.Key}");
-                                                        if (skusToValidate.ContainsKey(entry.Key))
-                                                        {
-                                                            _logger.LogInformation($"ValidateCurrentProductContent - SKU:{entry.Key}, {entry.Value} , {skusToValidate[entry.Key]}");
-                                                            if (entry.Value != skusToValidate[entry.Key])
-                                                            {
-                                                                _logger.LogError($"ValidateCurrentProductContent - SKU: {entry.Key}, qty error {entry.Value} vs {skusToValidate[entry.Key]}.");
-                                                                isValidated = false;
-                                                                break;
-                                                            }
-                                                        }
-                                                        else
-                                                        {
-                                                            _logger.LogError($"ValidateCurrentProductContent - error: {entry.Key} not found on read items.");
-                                                            isValidated = false;
-                                                            break;
-                                                        }
-                                                    }
-                                                    catch (Exception ex)
-                                                    {
-                                                        _logger.LogError(ex, "ValidateCurrentProductContent error. ");
-                                                        isValidated = false;
-                                                    }
-
-
-                                                }
-                                                if (_expectedItems.Count != skusToValidate.Count)
-                                                {
-                                                    _logger.LogError($"ValidateCurrentProductContent - Expected: {_expectedItems.Count}  Found: {skusToValidate.Count}.");
-                                                    isValidated = false;
-                                                }
-
-                                                if (_expectedItems.Keys.Except(skusToValidate.Keys).Any())
-                                                {
-                                                    _logger.LogError($"ValidateCurrentProductContent - SKU divergency.");
-                                                    isValidated = false;
-                                                }
-
-                                                if (skusToValidate.Keys.Except(_expectedItems.Keys).Any())
-                                                {
-                                                    _logger.LogError($"ValidateCurrentProductContent - SKU divergency..");
-                                                    isValidated = false;
-                                                }
-
-                                            }
-                                            else
-                                            {
-                                                _logger.LogError($"ValidateCurrentProductContent - Expected content was not found.");
-                                                isValidated = false;
-                                            }
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            _logger.LogError(ex, "ValidateCurrentProductContent error. ");
-                                            isValidated = false;
-
-                                        }
-                                    }
-
-
-                                    //int detected = _currentSkus.Values.Sum();
-                                    //int exptected = _expectedItems.Values.Sum();
-
-                                    //if (detected != exptected)
-                                    //{
-                                    //    isValidated = false;
-                                    //}
-                                    //else
-                                    //{
-                                    //    isValidated = true;
-                                    //}
-                                }
-
-
-
-
-                                if (string.Equals("1", _standaloneConfigDTO.enableValidation, StringComparison.OrdinalIgnoreCase))
-                                {
-                                    if (isValidated)
-                                    {
-                                        _ = SetGpoPortValidationAsync(true);
-                                    }
-                                    else
-                                    {
-                                        _ = SetGpoPortValidationAsync(false);
-                                    }
-                                }
-
-                            }
-                            catch (Exception)
-                            {
-                            }
-
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-                            if (string.Equals("1", _standaloneConfigDTO.enableExternalApiVerification)
-                                && string.Equals("1", _standaloneConfigDTO.enableValidation))
-                            {
-
-                                try
-                                {
-                                    //_logger.LogInformation("Processing data: " + epc, SeverityType.Debug);
-                                    if (_plugins != null
-                                        && _plugins.Count > 0
-                                        && !string.IsNullOrEmpty(_standaloneConfigDTO.activePlugin)
-                                        && _plugins.ContainsKey(_standaloneConfigDTO.activePlugin)
-                                        && _plugins[_standaloneConfigDTO.activePlugin].IsProcessingExternalValidation())
-                                    {
-                                        _logger.LogInformation("Publishing data to external API...");
-                                        string[] epcArray = Array.Empty<string>();
-                                        _ = _plugins[_standaloneConfigDTO.activePlugin].ExternalApiPublish(barcode, skuSummaryList, epcArray);
-                                        //return;
-                                    }
-                                }
-                                catch (Exception)
-                                {
-
-                                }
-
-                            }
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
-
-                            if (shouldPublish) EnqueueToExternalPublishers(smartReaderTagReadEventAggregated, false);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Unexpected error on ProcessBarcodeQueue " + ex.Message);
-                            //Console.WriteLine("Unexpected error on ProcessBarcodeQueue " + ex.Message);
-                        }
-
-                        skuSummaryList.Clear();
-                    }
-                    //SaveJsonTagEventToDb(smartReaderTagReadEventAggregated);
-                    //await ProcessHttpJsonPostTagEventDataAsync(smartReaderTagReadEventAggregated);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected error on ProcessBarcodeQueue " + ex.Message);
-                //Console.WriteLine("Unexpected error on ProcessBarcodeQueue " + ex.Message);
-            }
-        }
-        catch (Exception)
-        {
-        }
-
-        try
-        {
-            _logger.LogInformation(
-                "ProcessValidationTagQueue - Final Check: _messageQueueTagSmartReaderTagEventGroupToValidate events size [" +
-                _messageQueueTagSmartReaderTagEventGroupToValidate.Count + "]");
-            _currentSkus.Clear();
-            _currentSkuReadEpcs.Clear();
-            _messageQueueTagSmartReaderTagEventGroupToValidate.Clear();
-        }
-        catch (Exception)
-        {
-
-
-        }
-
-    }
-
-    //    private async void OnRunPeriodicTagFilterListsEvent(object sender, ElapsedEventArgs e)
-    //    {
-    //        const int WarningThreshold = 800; // 80% of max size
-    //#pragma warning disable CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
-    //        _timerTagFilterLists.Enabled = false;
-    //        _timerTagFilterLists.Stop();
-
+    //private async void OnRunPeriodicTagPublisherRetryTasksEvent(object sender, ElapsedEventArgs e)
+    //{
+    //    if (Monitor.TryEnter(_timerTagPublisherHttpLock))
     //        try
     //        {
-    //            try
-    //            {
-    //                if (_readEpcs.Count > WarningThreshold)
-    //                {
-    //                    _logger.LogWarning($"_readEpcs size ({_readEpcs.Count}) approaching limit");
-    //                }
-
-    //                if (_softwareFilterReadCountTimeoutDictionary.Count > WarningThreshold)
-    //                {
-    //                    _logger.LogWarning($"_softwareFilterReadCountTimeoutDictionary size ({_softwareFilterReadCountTimeoutDictionary.Count}) approaching limit");
-    //                }
-
-    //                if (_smartReaderTagEventsListBatch.Count > WarningThreshold)
-    //                {
-    //                    _logger.LogWarning($"_smartReaderTagEventsListBatch size ({_smartReaderTagEventsListBatch.Count}) approaching limit");
-    //                }
-    //            }
-    //            catch (System.Exception)
-    //            {
-
-    //            }
-
-
-    //            if (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterEnabled)
-    //                && !"0".Equals(_standaloneConfigDTO.softwareFilterEnabled))
-    //            {
+    //            JObject smartReaderTagReadEvent;
+    //            while (_messageQueueTagSmartReaderTagEventHttpPostRetry.TryDequeue(out smartReaderTagReadEvent))
     //                try
     //                {
-    //                    if (_readEpcs.Count > 1000)
-    //                    {
-    //                        var count = _readEpcs.Count - 1000;
-    //                        if (count > 0)
-    //                        {
-    //                            // remove that number of items from the start of the list
-    //                            long eventTimestampToRemove = 0;
-    //                            foreach (var k in _readEpcs.Keys.Take(count))
-    //                                _readEpcs.TryRemove(k, out eventTimestampToRemove);
-    //                        }
-    //                    }
-
-    //                    var oldTimestamp = DateTime.Now.AddHours(-1);
-    //                    var oldTimestampToCheck = Utils.CSharpMillisToJavaLong(oldTimestamp);
-    //                    foreach (var kvp in _readEpcs.Where(x => x.Value < oldTimestampToCheck).ToList())
-    //                    {
-    //                        var val = kvp.Value;
-    //                        _readEpcs.TryRemove(kvp.Key, out val);
-    //                    }
-    //                }
-    //                catch (Exception ex)
-    //                {
-    //                    _logger.LogError(ex, "Unexpected error on remove _readEpcs" + ex.Message);
-    //                }
-
-    //                try
-    //                {
-
-    //                    var expiration = long.Parse(_standaloneConfigDTO.softwareFilterWindowSec);
-
-    //                    var oldTimestamp = DateTime.Now.AddHours(-1);
-    //                    var oldTimestampToCheck = Utils.CSharpMillisToJavaLong(oldTimestamp);
-    //                    foreach (var kvp in _readEpcs.ToList())
-    //                    {
-    //                        var val = kvp.Value;
-    //                        var currentEventTimestamp = DateTime.Now;
-    //                        var currentTimestampToCheck = Utils.CSharpMillisToJavaLong(currentEventTimestamp);
-    //                        var dateTimeOffsetCurrentEventTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(currentTimestampToCheck);
-    //                        var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(val);
-    //                        var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
-    //                        if (timeDiff.TotalSeconds > expiration)
-    //                        {
-    //                            _readEpcs.TryRemove(kvp.Key, out val);
-    //                        }
-    //                    }
-    //                }
-    //                catch (Exception ex)
-    //                {
-    //                    _logger.LogError(ex, "Unexpected error on remove _readEpcs" + ex.Message);
-    //                }
-    //            }
-
-    //            if (!string.IsNullOrEmpty(_standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled)
-    //                && !"0".Equals(_standaloneConfigDTO.softwareFilterReadCountTimeoutEnabled))
-    //                try
-    //                {
-    //                    if (_softwareFilterReadCountTimeoutDictionary.Count > 1000)
-    //                    {
-    //                        var count = _softwareFilterReadCountTimeoutDictionary.Count - 1000;
-    //                        if (count > 0)
-    //                        {
-    //                            // remove that number of items from the start of the list
-    //                            ReadCountTimeoutEvent? eventTimestampToRemove;
-    //                            foreach (var k in _softwareFilterReadCountTimeoutDictionary.Keys.Take(count))
-    //                                _softwareFilterReadCountTimeoutDictionary.TryRemove(k, out eventTimestampToRemove);
-    //                        }
-    //                    }
-
-    //                    var currentTimestamp = DateTime.Now;
-    //                    var currentTimestampToCheck = Utils.CSharpMillisToJavaLong(currentTimestamp);
-    //                    var dateTimeOffsetCurrentEventTimestamp =
-    //                        DateTimeOffset.FromUnixTimeMilliseconds(currentTimestampToCheck);
-    //                    foreach (var kvp in _softwareFilterReadCountTimeoutDictionary)
-    //                    {
-    //                        var dateTimeOffsetLastSeenTimestamp =
-    //                            DateTimeOffset.FromUnixTimeMilliseconds(kvp.Value.EventTimestamp);
-    //                        var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
-    //                        if (timeDiff.TotalHours > 1)
-    //                        {
-    //                            var val = kvp.Value;
-    //                            _softwareFilterReadCountTimeoutDictionary.TryRemove(kvp.Key, out val);
-    //                        }
-    //                    }
+    //                    await ProcessHttpJsonPostTagEventDataAsync(smartReaderTagReadEvent);
     //                }
     //                catch (Exception ex)
     //                {
     //                    _logger.LogError(ex,
-    //                        "Unexpected error on remove _softwareFilterReadCountTimeoutDictionary" + ex.Message);
+    //                        "Unexpected error on OnRunPeriodicTagPublisherRetryTasksEvent " + ex.Message);
+    //                    //Console.WriteLine("Unexpected error on OnRunPeriodicTagPublisherRetryTasksEvent " + ex.Message);
     //                }
-
-    //            if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled, StringComparison.OrdinalIgnoreCase))
-    //            {
-    //                if (_isStarted)
-    //                {
-    //                    try
-    //                    {
-    //                        var currentEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
-
-    //                        double expirationInSec = 2;
-    //                        double expirationInMillis = 2000;
-    //                        double.TryParse(_standaloneConfigDTO.tagPresenceTimeoutInSec, NumberStyles.Float, CultureInfo.InvariantCulture, out expirationInSec);
-    //                        expirationInMillis = expirationInSec * 1000;
-
-    //                        var dateTimeOffsetCurrentEventTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(currentEventTimestamp);
-    //                        //var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(_readEpcs[tagEvent.EpcHex]);
-
-    //                        var secondsToAdd = expirationInSec * -1;
-    //                        var expiredEventTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now.AddSeconds(secondsToAdd));
-
-    //                        //var expiredEvents = _smartReaderTagEventsListBatch.Values.Where(t => t["tag_reads"]["firstSeenTimestamp"].Where(q => (long)q["firstSeenTimestamp"] <= expiredEventTimestamp));
-    //                        var currentEvents = _smartReaderTagEventsListBatch.Values;
-    //                        //var expiredEvents = _smartReaderTagEventsListBatch.Values.Where(t => (long)t["tag_reads"]["firstSeenTimestamp"] <= expiredEventTimestamp);
-    //                        //var existingEventOnCurrentAntenna = (JObject)(retrievedValue["tag_reads"].FirstOrDefault(q => (long)q["antennaPort"] == tagRead.AntennaPort));
-
-    //                        foreach (JObject currentEvent in currentEvents)
-    //                        {
-
-    //                            foreach (JObject currentEventItem in currentEvent["tag_reads"])
-    //                            {
-    //                                long firstSeenTimestamp = currentEventItem["firstSeenTimestamp"].Value<long>() / 1000;
-    //                                string expiredEpc = currentEventItem["epc"].Value<string>();
-    //                                var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(firstSeenTimestamp);
-
-    //                                var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
-    //                                if (timeDiff.TotalSeconds > expirationInSec)
-    //                                {
-
-    //                                    JObject eventToRemove = null;
-    //                                    if (_smartReaderTagEventsListBatch.TryGetValue(expiredEpc, out eventToRemove))
-    //                                    {
-    //                                        if (eventToRemove != null)
-    //                                        {
-    //                                            if (_smartReaderTagEventsListBatch.ContainsKey(expiredEpc))
-    //                                            {
-
-    //                                                if (_smartReaderTagEventsListBatch.TryRemove(expiredEpc, out eventToRemove))
-    //                                                {
-    //                                                    _logger.LogInformation($"Expired EPC detected {timeDiff.TotalSeconds}: {expiredEpc} - firstSeenTimestamp: {dateTimeOffsetLastSeenTimestamp.ToString("o")}, current timestamp: {dateTimeOffsetCurrentEventTimestamp.ToString("o")} current timeout set {expirationInSec}");
-    //                                                }
-    //                                            }
-
-    //                                            if (!_smartReaderTagEventsAbsence.ContainsKey(expiredEpc))
-    //                                            {
-    //                                                _logger.LogInformation($"On-Change event requested for expired EPC: {expiredEpc}");
-    //                                                _smartReaderTagEventsAbsence.TryAdd(expiredEpc, eventToRemove);
-
-    //                                            }
-
-    //                                        }
-    //                                    }
-    //                                }
-    //                            }
-
-    //                        }
-
-    //                        if (string.Equals("1", _standaloneConfigDTO.tagPresenceTimeoutEnabled,
-    //                                StringComparison.OrdinalIgnoreCase) && _smartReaderTagEventsAbsence.Any())
-    //                        {
-    //                            JObject smartReaderTagReadEvent;
-    //                            JObject? smartReaderTagReadEventAggregated = null;
-    //                            var smartReaderTagReadEventsArray = new JArray();
-
-    //                            foreach (var tagEpcToRemove in _smartReaderTagEventsAbsence.Keys)
-    //                            {
-    //                                JObject? expiredTagEvent = null;
-
-    //                                if (_smartReaderTagEventsListBatch.ContainsKey(tagEpcToRemove))
-    //                                {
-    //                                    _smartReaderTagEventsListBatch.TryRemove(tagEpcToRemove, out expiredTagEvent);
-    //                                }
-
-    //                            }
-
-    //                            _smartReaderTagEventsAbsence.Clear();
-
-    //                            if (_smartReaderTagEventsListBatch.Count > 0)
-    //                            {
-    //                                foreach (var smartReaderTagReadEventBatch in _smartReaderTagEventsListBatch.Values)
-    //                                {
-    //                                    smartReaderTagReadEvent = smartReaderTagReadEventBatch;
-    //                                    try
-    //                                    {
-    //                                        if (smartReaderTagReadEvent == null)
-    //                                            continue;
-    //                                        if (smartReaderTagReadEventAggregated == null)
-    //                                        {
-    //                                            smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
-    //                                            smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-    //                                                .FirstOrDefault().FirstOrDefault());
-    //                                        }
-    //                                        else
-    //                                        {
-    //                                            try
-    //                                            {
-    //                                                smartReaderTagReadEventsArray.Add(smartReaderTagReadEvent.Property("tag_reads").ToList()
-    //                                                    .FirstOrDefault().FirstOrDefault());
-    //                                            }
-    //                                            catch (Exception ex)
-    //                                            {
-    //                                                _logger.LogInformation(ex,
-    //                                                    "Unexpected error while filtering tags " + ex.Message);
-    //                                            }
-    //                                        }
-    //                                    }
-    //                                    catch (Exception ex)
-    //                                    {
-    //                                        _logger.LogError(ex, "Unexpected error on while filtering tags " + ex.Message);
-    //                                    }
-    //                                }
-    //                                try
-    //                                {
-    //                                    if (smartReaderTagReadEventAggregated != null && smartReaderTagReadEventsArray != null &&
-    //                                        smartReaderTagReadEventsArray.Count > 0)
-    //                                    {
-    //                                        smartReaderTagReadEventAggregated["tag_reads"] = smartReaderTagReadEventsArray;
-
-    //                                        await ProcessMqttJsonTagEventDataAsync(smartReaderTagReadEventAggregated);
-    //                                    }
-    //                                }
-    //                                catch (Exception ex)
-    //                                {
-    //                                    _logger.LogError(ex, "Unexpected error on while filtering tags " + ex.Message);
-    //                                }
-    //                            }
-    //                            else
-    //                            {
-    //                                // generate empty event...
-
-
-    //                                var emptyTagData = new SmartReaderTagReadEvent();
-    //                                emptyTagData.ReaderName = _standaloneConfigDTO.readerName;
-    //#pragma warning disable CS8602 // Dereference of a possibly null reference.
-    //                                emptyTagData.Mac = _iotDeviceInterfaceClient.MacAddress;
-    //#pragma warning restore CS8602 // Dereference of a possibly null reference.
-    //                                emptyTagData.TagReads = new List<TagRead>();
-    //                                JObject emptyTagDataObject = JObject.FromObject(emptyTagData);
-    //                                smartReaderTagReadEventsArray.Add(emptyTagDataObject);
-
-    //                                try
-    //                                {
-
-    //                                    await ProcessMqttJsonTagEventDataAsync(emptyTagDataObject);
-    //                                }
-    //                                catch (Exception ex)
-    //                                {
-    //                                    _logger.LogError(ex, "Unexpected error on while filtering tags " + ex.Message);
-    //                                }
-    //                            }
-
-
-    //                        }
-
-
-    //                    }
-    //                    catch (Exception)
-    //                    {
-
-
-    //                    }
-    //                }
-    //                else
-    //                {
-    //                    _smartReaderTagEventsAbsence.Clear();
-    //                    _smartReaderTagEventsListBatch.Clear();
-    //                    _smartReaderTagEventsAbsence.Clear();
-    //                }
-
-    //            }
     //        }
     //        catch (Exception)
     //        {
     //        }
+    //        finally
+    //        {
+    //            Monitor.Exit(_timerTagPublisherHttpLock);
+    //        }
+    //}
+
+    private async Task ProcessValidationTagQueueAsync()
+    {
+        var releaser = await _batchLock.WaitAsyncWithTimeout(TimeSpan.FromSeconds(5));
+        if (releaser == null)
+        {
+            _logger.LogWarning("Timed out waiting for _batchLock in ProcessValidationTagQueue");
+            return;
+        }
+
+        using (releaser)
+        {
+            try
+            {
+                var dataListToPublish = DequeueValidationEvents();
+                var barcode = ProcessBarcodeQueue();
+
+                _logger.LogInformation($"Processing {dataListToPublish.Count} events with barcode [{barcode}]");
+
+                var skuSummaryList = await ProcessSkuSummariesAsync(dataListToPublish, barcode);
+                var aggregatedEvent = AggregateTagEvents(dataListToPublish, barcode);
+
+                if (aggregatedEvent != null)
+                {
+                    await HandlePublishingAsync(aggregatedEvent, skuSummaryList, barcode);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Unexpected error in {nameof(ProcessValidationTagQueueAsync)}: {ex.Message}");
+            }
+            finally
+            {
+
+                CleanupProcessedData();
+            }
+
+        }
+        
+    }
+
+    /// <summary>
+    /// Dequeues events from the validation queue.
+    /// </summary>
+    private List<JObject> DequeueValidationEvents()
+    {
+        var dataList = _messageQueueTagSmartReaderTagEventGroupToValidate.ToArray().ToList();
+        _messageQueueTagSmartReaderTagEventGroupToValidate.Clear();
+        return dataList;
+    }
+
+    // Helper method that extracts the SKU summary from a tag read event and a barcode.
+    public SkuSummary ExtractSkuSummary(JObject smartReaderTagReadEvent, string barcode)
+    {
+        if (smartReaderTagReadEvent == null)
+        {
+            throw new ArgumentNullException(nameof(smartReaderTagReadEvent), "Tag event cannot be null.");
+        }
+        if (string.IsNullOrWhiteSpace(barcode))
+        {
+            throw new ArgumentException("Barcode cannot be null or empty.", nameof(barcode));
+        }
+
+        // Extract the EPC value from the event (required)
+        string? epc = smartReaderTagReadEvent.Value<string>("EpcHex");
+        if (string.IsNullOrWhiteSpace(epc))
+        {
+            throw new ArgumentException("EpcHex property is missing or empty in the tag event.", nameof(smartReaderTagReadEvent));
+        }
+
+        // Optionally extract the SKU value from the event, if available
+        string? skuValue = smartReaderTagReadEvent.Value<string>("sku");
+
+        // Extract quantity if available; default to 1 if not
+        long? qty = smartReaderTagReadEvent.Value<long?>("qty") ?? 1;
+
+        // Extract and convert the LastSeenTime to Unix epoch milliseconds
+        long? eventTimestamp = null;
+        var lastSeenToken = smartReaderTagReadEvent["LastSeenTime"];
+        if (lastSeenToken == null)
+        {
+            throw new ArgumentException("LastSeenTime property not found in the tag event.", nameof(smartReaderTagReadEvent));
+        }
+        else if (lastSeenToken.Type == JTokenType.String)
+        {
+            if (DateTime.TryParse(lastSeenToken.ToString(), out DateTime parsedDate))
+            {
+                eventTimestamp = new DateTimeOffset(parsedDate).ToUnixTimeMilliseconds();
+            }
+            else
+            {
+                throw new ArgumentException("Invalid LastSeenTime format. Expected a valid DateTime string.", nameof(smartReaderTagReadEvent));
+            }
+        }
+        else if (lastSeenToken.Type == JTokenType.Integer)
+        {
+            // Assume the integer represents Unix epoch milliseconds.
+            eventTimestamp = lastSeenToken.Value<long>();
+        }
+        else if (lastSeenToken.Type == JTokenType.Date)
+        {
+            eventTimestamp = new DateTimeOffset(lastSeenToken.Value<DateTime>()).ToUnixTimeMilliseconds();
+        }
+        else
+        {
+            throw new ArgumentException("Unsupported LastSeenTime format in the tag event.", nameof(smartReaderTagReadEvent));
+        }
+
+        // Prepare additional data: here we add AntennaPort if available.
+        Dictionary<string, string>? additionalData = null;
+        var antennaPort = smartReaderTagReadEvent.Value<string>("AntennaPort");
+        if (!string.IsNullOrWhiteSpace(antennaPort))
+        {
+            additionalData = new Dictionary<string, string>
+            {
+                { "AntennaPort", antennaPort }
+            };
+        }
+
+        // Populate the Epcs list with the extracted EPC value.
+        var epcs = new List<string> { epc };
+
+        return new SkuSummary
+        {
+            Barcode = barcode,
+            Sku = skuValue,
+            Qty = qty,
+            EventTimestamp = eventTimestamp,
+            AdditionalData = additionalData,
+            Epcs = epcs
+        };
+    }
 
 
-    //        _timerTagFilterLists.Enabled = true;
-    //        _timerTagFilterLists.Start();
-    //#pragma warning restore CS8600, CS8602, CS8604 // Dereference of a possibly null reference.
-    //    }
+/// <summary>
+/// Processes SKU summaries asynchronously to avoid locks.
+/// </summary>
+private async Task<Dictionary<string, SkuSummary>> ProcessSkuSummariesAsync(List<JObject> dataList, string barcode)
+    {
+        var skuSummaryList = new Dictionary<string, SkuSummary>();
+
+        if (dataList.Count == 0)
+        {
+            var defaultSku = new SkuSummary { Sku = "00000000000000", Qty = 0, Barcode = barcode };
+            skuSummaryList[defaultSku.Sku] = defaultSku;
+            return skuSummaryList;
+        }
+
+        await Task.Run(() =>
+        {
+            Parallel.ForEach(dataList, smartReaderTagReadEvent =>
+            {
+                if (smartReaderTagReadEvent == null) return;
+
+                try
+                {
+                    var sku = ExtractSkuSummary(smartReaderTagReadEvent, barcode);
+                    if (sku != null)
+                    {
+                        lock (skuSummaryList)
+                        {
+                            if (skuSummaryList.ContainsKey(sku.Sku))
+                            {
+                                skuSummaryList[sku.Sku].Qty += sku.Qty;
+                            }
+                            else
+                            {
+                                skuSummaryList[sku.Sku] = sku;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error processing SKU summary");
+                }
+            });
+        });
+
+        return skuSummaryList;
+    }
+
+    /// <summary>
+    /// Aggregates multiple tag events into a single object.
+    /// </summary>
+    private JObject AggregateTagEvents(List<JObject> dataList, string barcode)
+    {
+        JObject smartReaderTagReadEventAggregated = null;
+        var smartReaderTagReadEventsArray = new JArray();
+
+        foreach (var smartReaderTagReadEvent in dataList)
+        {
+            if (smartReaderTagReadEvent == null) continue;
+
+            var tagReads = smartReaderTagReadEvent["tag_reads"] as JArray;
+            if (tagReads == null) continue;
+
+            if (smartReaderTagReadEventAggregated == null)
+            {
+                smartReaderTagReadEventAggregated = smartReaderTagReadEvent;
+            }
+
+            foreach (var tagRead in tagReads)
+            {
+                smartReaderTagReadEventsArray.Add(tagRead);
+            }
+        }
+
+        if (smartReaderTagReadEventAggregated != null)
+        {
+            smartReaderTagReadEventAggregated["tag_reads"] = smartReaderTagReadEventsArray;
+            smartReaderTagReadEventAggregated["barcode"] = barcode;
+        }
+
+        return smartReaderTagReadEventAggregated;
+    }
+
+    /// <summary>
+    /// Handles publishing to external APIs or processing queues.
+    /// </summary>
+    private async Task HandlePublishingAsync(JObject aggregatedEvent, Dictionary<string, SkuSummary> skuSummaryList, string barcode)
+    {
+        bool shouldPublish = false;
+
+        if (_standaloneConfigDTO?.enableBarcodeTcp == "1" && !string.IsNullOrEmpty(barcode))
+        {
+            if (_standaloneConfigDTO.enableSummaryStream == "1")
+            {
+                var skuArray = JArray.FromObject(skuSummaryList.Values);
+                AddJsonSkuSummaryToQueue(skuArray);
+            }
+
+            shouldPublish = true;
+        }
+
+        if (shouldPublish)
+        {
+            await Task.Run(() => EnqueueToExternalPublishers(aggregatedEvent, false));
+        }
+    }
+
+    /// <summary>
+    /// Cleans up processed data.
+    /// </summary>
+    private void CleanupProcessedData()
+    {
+        try
+        {
+            _logger.LogInformation($"Final check: {_messageQueueTagSmartReaderTagEventGroupToValidate.Count} events remaining.");
+            _currentSkus.Clear();
+            _currentSkuReadEpcs.Clear();
+            _messageQueueTagSmartReaderTagEventGroupToValidate.Clear();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during cleanup");
+        }
+    }
 
     private async void OnRunPeriodicTagFilterListsEvent(object sender, ElapsedEventArgs e)
     {
@@ -5530,21 +4556,25 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         try
         {
-            // Use the same batch lock as the processor
-            using (await _batchLock.WaitAsyncWithTimeout(TimeSpan.FromSeconds(5)))
+            var releaser = await _batchLock.WaitAsyncWithTimeout(TimeSpan.FromSeconds(5));
+            if (releaser == null)
             {
-                // Monitor collection sizes
+                _logger.LogWarning("Timed out waiting for _batchLock in ProcessValidationTagQueue");
+                return;
+            }
+
+            using (releaser)
+            {
+                CleanupExpiredReadEpcs();
+                // Monitor collection sizes - this does not need a lock
                 MonitorCollectionSizes();
 
-                // Process software filters
-                await ProcessSoftwareFiltersAsync();
-
-                //// Process tag presence timeout
-                //if (_isStarted && _batchProcessor.IsTagPresenceTimeoutEnabled(_standaloneConfigDTO))
-                //{
-                //    await ProcessTagPresenceTimeoutAsync();
-                //}
+                // Process software filters asynchronously, but without nested locks
+                // The lock is already being held for this entire method.
+                await ProcessSoftwareFiltersAsync(); // Modified to not use nested locks
             }
+
+            
         }
         catch (TimeoutException)
         {
@@ -5564,20 +4594,47 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     private void MonitorCollectionSizes()
     {
         const int WarningThreshold = 800;
-
+        
         if (_readEpcs.Count > WarningThreshold)
         {
             _logger.LogWarning($"_readEpcs size ({_readEpcs.Count}) approaching limit");
+            _readEpcs.Clear();
         }
 
-        if (_softwareFilterReadCountTimeoutDictionary.Count > WarningThreshold)
+        if (_currentSkuReadEpcs.Count > WarningThreshold)
         {
-            _logger.LogWarning($"_softwareFilterReadCountTimeoutDictionary size ({_softwareFilterReadCountTimeoutDictionary.Count}) approaching limit");
+            _logger.LogWarning($"_currentSkuReadEpcs size ({_currentSkuReadEpcs.Count}) approaching limit");
+            _currentSkuReadEpcs.Clear();
         }
 
         if (_smartReaderTagEventsListBatch.Count > WarningThreshold)
         {
             _logger.LogWarning($"_smartReaderTagEventsListBatch size ({_smartReaderTagEventsListBatch.Count}) approaching limit");
+            _smartReaderTagEventsListBatch.Clear();
+        }
+
+        if (_messageQueueTagSmartReaderTagEventHttpPost.Count > WarningThreshold)
+        {
+            _logger.LogWarning($"_messageQueueTagSmartReaderTagEventHttpPost size ({_messageQueueTagSmartReaderTagEventHttpPost.Count}) approaching limit");
+            _messageQueueTagSmartReaderTagEventHttpPost.Clear();
+        }
+
+        if (_messageQueueTagSmartReaderTagEventSocketServer.Count > WarningThreshold)
+        {
+            _logger.LogWarning($"_messageQueueTagSmartReaderTagEventSocketServer size ({_messageQueueTagSmartReaderTagEventSocketServer.Count}) approaching limit");
+            _messageQueueTagSmartReaderTagEventSocketServer.Clear();
+        }
+
+        if (_softwareFilterReadCountTimeoutDictionary.Count > WarningThreshold)
+        {
+            _logger.LogWarning($"_softwareFilterReadCountTimeoutDictionary size ({_softwareFilterReadCountTimeoutDictionary.Count}) approaching limit");
+            _softwareFilterReadCountTimeoutDictionary.Clear();
+        }
+
+        if (_smartReaderTagEventsListBatch.Count > WarningThreshold)
+        {
+            _logger.LogWarning($"_smartReaderTagEventsListBatch size ({_smartReaderTagEventsListBatch.Count}) approaching limit");
+            _smartReaderTagEventsListBatch.Clear();
         }
     }
 
@@ -5596,82 +4653,9 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         if (IsSoftwareFilterEnabled())
         {
             CleanupExpiredReadEpcs();
-            await CleanupTimeoutDictionaryAsync();
+            await CleanupTimeoutDictionaryAsync(); // Cleanup also does not need locks
         }
-    }
-
-    private void CleanupExpiredReadEpcs()
-    {
-        try
-        {
-            // Check if _readEpcs exceeds size limit
-            if (_readEpcs.Count > 1000)
-            {
-                var count = _readEpcs.Count - 1000;
-                if (count > 0)
-                {
-                    // Remove oldest items first
-                    var oldestKeys = _readEpcs.OrderBy(kvp => kvp.Value)
-                                            .Take(count)
-                                            .Select(kvp => kvp.Key)
-                                            .ToList();
-
-                    foreach (var key in oldestKeys)
-                    {
-                        _ = _readEpcs.TryRemove(key, out _);
-                    }
-                    _logger.LogInformation($"Removed {count} oldest entries from _readEpcs to maintain size limit");
-                }
-            }
-
-            // Remove expired entries based on timeout window
-            if (!string.IsNullOrEmpty(_standaloneConfigDTO?.softwareFilterWindowSec))
-            {
-                var expiration = long.Parse(_standaloneConfigDTO.softwareFilterWindowSec);
-                var currentTimestamp = Utils.CSharpMillisToJavaLong(DateTime.Now);
-                var dateTimeOffsetCurrentEventTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(currentTimestamp);
-
-                var expiredKeys = _readEpcs.Where(kvp =>
-                {
-                    var dateTimeOffsetLastSeenTimestamp = DateTimeOffset.FromUnixTimeMilliseconds(kvp.Value);
-                    var timeDiff = dateTimeOffsetCurrentEventTimestamp.Subtract(dateTimeOffsetLastSeenTimestamp);
-                    return timeDiff.TotalSeconds > expiration;
-                })
-                .Select(kvp => kvp.Key)
-                .ToList();
-
-                foreach (var key in expiredKeys)
-                {
-                    _ = _readEpcs.TryRemove(key, out _);
-                }
-
-                if (expiredKeys.Any())
-                {
-                    _logger.LogInformation($"Removed {expiredKeys.Count} expired entries from _readEpcs");
-                }
-            }
-
-            // Additional cleanup for entries older than 1 hour
-            var oneHourAgo = Utils.CSharpMillisToJavaLong(DateTime.Now.AddHours(-1));
-            var oldKeys = _readEpcs.Where(kvp => kvp.Value < oneHourAgo)
-                                  .Select(kvp => kvp.Key)
-                                  .ToList();
-
-            foreach (var key in oldKeys)
-            {
-                _ = _readEpcs.TryRemove(key, out _);
-            }
-
-            if (oldKeys.Any())
-            {
-                _logger.LogInformation($"Removed {oldKeys.Count} entries older than 1 hour from _readEpcs");
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error cleaning up expired read EPCs");
-        }
-    }
+    }    
 
     private async Task CleanupTimeoutDictionaryAsync()
     {
@@ -6015,15 +4999,22 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             // Verify if socket server is enabled
             if (!string.Equals("1", _standaloneConfigDTO?.socketServer, StringComparison.OrdinalIgnoreCase))
             {
+                _timerTagPublisherSocket.Enabled = true;
                 return;
             }
 
             // Delegate batch processing to TcpSocketService
-            _ = await _tcpSocketService.ProcessMessageBatchAsync(
+            //_ = await _tcpSocketService.ProcessMessageBatchAsync(
+            //    _messageQueueTagSmartReaderTagEventSocketServer,
+            //    BatchSize,
+            //    MaxQueueSize
+            //);
+
+            await Task.Run(() => _tcpSocketService.ProcessMessageBatchAsync(
                 _messageQueueTagSmartReaderTagEventSocketServer,
                 BatchSize,
                 MaxQueueSize
-            );
+            ));
         }
         catch (Exception ex)
         {
@@ -6084,12 +5075,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             if (string.Equals("0", _standaloneConfigDTO.stopTriggerType, StringComparison.OrdinalIgnoreCase)
                 && _messageQueueTagSmartReaderTagEventGroupToValidate.Count > 0)
             {
-                ProcessValidationTagQueue();
+                await ProcessValidationTagQueueAsync();
             }
             if (_isStarted && string.Equals("2", _standaloneConfigDTO.stopTriggerType, StringComparison.OrdinalIgnoreCase)
                 && _messageQueueTagSmartReaderTagEventGroupToValidate.Count > 0)
             {
-                ProcessValidationTagQueue();
+                await ProcessValidationTagQueueAsync();
             }
             else
             {
@@ -6442,40 +5433,42 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         try
         {
-            // If we can't acquire the semaphore immediately, return
-            if (!_publishSemaphore.Wait(0))
+            var releaser = await _publishSemaphore.WaitAsyncWithTimeout(TimeSpan.FromSeconds(5));
+            if (releaser == null)
             {
-                _logger.LogWarning("OnRunPeriodicTagPublisherMqttTasksEvent: can't acquire the semaphore immediately.");
+                _logger.LogWarning("Timed out waiting for _publishSemaphore in OnRunPeriodicTagPublisherMqttTasksEvent");
                 return;
             }
 
-            try
+            using (releaser)
             {
-                if (IsMqttEnabled())
+                try
                 {
-                    if (IsMqttBatchListsEnabled())
+                    if (IsMqttEnabled())
                     {
-                        await ProcessTagPublishingMqtt();
+                        if (IsMqttBatchListsEnabled())
+                        {
+                            await ProcessTagPublishingMqtt();
+                        }
+                        else
+                        {
+                            await ProcessMqttMessagesAsync();
+                        }
                     }
                     else
                     {
-                        await ProcessMqttMessagesAsync();
+                        _ = Task.Delay(100);
                     }
-                }
-                else
-                {
-                    _ = Task.Delay(100);
-                }
 
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error in ProcessTagPublishingMqtt");
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in ProcessTagPublishingMqtt");
-            }
-            finally
-            {
-                _ = _publishSemaphore.Release();
-            }
+
+
+            
         }
         catch (Exception ex)
         {
@@ -7414,7 +6407,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
 
             _logger.LogInformation(ex, "Unexpected error on ProcessTagEventData " + ex.Message);
-            await ProcessGpoErrorPortAsync();
+            _ = ProcessGpoErrorPortAsync();
         }
     }
 
@@ -7434,7 +6427,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
 
             _logger.LogInformation(ex, "Unexpected error on ProcessMqttJsonJarrayAsync " + ex.Message);
-            await ProcessGpoErrorPortAsync();
+            // await ProcessGpoErrorPortAsync();
         }
     }
 
@@ -7806,7 +6799,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         _logger.LogError(ex,
                             "Unexpected error on ProcessUdpDataTagEventDataAsync for UDP " + udpClient.Key + " " +
                             ex.Message);
-                        await ProcessGpoErrorPortAsync();
+                        // await ProcessGpoErrorPortAsync();
                         //_messageQueueTagSmartReaderTagEventSocketServerRetry.Enqueue(smartReaderTagEventData);
                     }
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
@@ -7815,7 +6808,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error on ProcessUdpDataTagEventDataAsync for UDP " + ex.Message);
-                await ProcessGpoErrorPortAsync();
+                // await ProcessGpoErrorPortAsync();
             }
             //foreach (KeyValuePair<string, int> udpClient in _udpClients)
             //{
@@ -7854,7 +6847,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             //    _logger.LogError(exception, "Unexpected error on ProcessSocketJsonTagEventDataAsync");
             //}
             _logger.LogError(ex, "Unexpected error on ProcessUdpDataTagEventDataAsync");
-            await ProcessGpoErrorPortAsync();
+            // await ProcessGpoErrorPortAsync();
             //_logger.LogInformation("Unexpected error on ProcessUdpDataTagEventDataAsync " + ex.Message, SeverityType.Error);
         }
 #pragma warning restore CS8600, CS8602, CS8604 // Dereference of a possibly null reference.    
@@ -7944,7 +6937,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     }
                     catch (Exception)
                     {
-                        _messageQueueTagSmartReaderTagEventHttpPostRetry.Enqueue(smartReaderTagEventData);
+                        //_messageQueueTagSmartReaderTagEventHttpPostRetry.TryEnqueue(smartReaderTagEventData);
                     }
             }
             //else
@@ -7955,16 +6948,16 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
         catch (Exception ex)
         {
-            try
-            {
-                _messageQueueTagSmartReaderTagEventHttpPostRetry.Enqueue(smartReaderTagEventData);
-            }
-            catch (Exception)
-            {
-            }
+            //try
+            //{
+            //    _messageQueueTagSmartReaderTagEventHttpPostRetry.TryEnqueue(smartReaderTagEventData);
+            //}
+            //catch (Exception)
+            //{
+            //}
 
             _logger.LogError(ex, "Unexpected error on ProcessTagEventData " + ex.Message);
-            await ProcessGpoErrorPortAsync();
+            //await ProcessGpoErrorPortAsync();
         }
 
         try
@@ -7975,7 +6968,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             Console.WriteLine("Unexpected error on ProcessTagEventData restarting _timerStopwatch" + ex.Message);
             _logger.LogError(ex, "Unexpected error on ProcessTagEventData restarting _timerStopwatch" + ex.Message);
-            await ProcessGpoErrorPortAsync();
+            // await ProcessGpoErrorPortAsync();
         }
 #pragma warning restore CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.
     }
@@ -8139,13 +7132,13 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 else
                 {
                     _logger.LogWarning("### Publisher USB Drive >>> path " + R700UsbDrivePath + " not found.");
-                    await ProcessGpoErrorPortAsync();
+                    _ = ProcessGpoErrorPortAsync();
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error on ProcessUsbDriveJsonTagEventDataAsync " + ex.Message);
-                await ProcessGpoErrorPortAsync();
+                //_ = ProcessGpoErrorPortAsync();
 
                 //_messageQueueTagSmartReaderTagEventSocketServerRetry.Enqueue(smartReaderTagEventData);
             }
@@ -8162,7 +7155,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             //}
             _logger.LogError(ex, "Unexpected error on ProcessUsbDriveJsonTagEventDataAsync " + ex.Message,
                 SeverityType.Error);
-            await ProcessGpoErrorPortAsync();
+            _ = ProcessGpoErrorPortAsync();
         }
     }
 
@@ -8634,7 +7627,25 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
     }
 
-
+    //private async Task MonitorAndProcessSocketQueueAsync(CancellationToken stoppingToken)
+    //{
+    //    while (!stoppingToken.IsCancellationRequested)
+    //    {
+    //        if (_messageQueueTagSmartReaderTagEventSocketServer.Count >= 100) // Adjust threshold as needed
+    //        {
+    //            try
+    //            {
+    //                await _tcpSocketService.ProcessMessageBatchAsync(_messageQueueTagSmartReaderTagEventSocketServer, 100, 1000); // Adjust batch size and max queue size
+    //            }
+    //            catch (Exception ex)
+    //            {
+    //                _logger.LogError(ex, "Error processing socket message batch");
+    //                // Handle the error appropriately (e.g., retry, alert)
+    //            }
+    //        }
+    //        await Task.Delay(100, stoppingToken); // Check every 100ms
+    //    }
+    //}
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         try
@@ -8645,6 +7656,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             await ConfigureCommunicationChannelsAsync();
             await ConfigureAndStartTimersAsync();
             await StartMainProcessingLoopAsync(stoppingToken);
+            // await MonitorAndProcessSocketQueueAsync(stoppingToken);
         }
         catch (Exception ex)
         {
@@ -8875,7 +7887,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             if (systemInfo == null)
             {
                 _logger.LogError("Failed to retrieve system information from reader");
-                await ProcessGpoErrorPortAsync();
+                _ = ProcessGpoErrorPortAsync();
                 return;
             }
 
@@ -8891,7 +7903,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 (string.IsNullOrEmpty(_standaloneConfigDTO.smartreaderEnabledForManagementOnly) ||
                  !string.Equals("1", _standaloneConfigDTO.smartreaderEnabledForManagementOnly)))
             {
-                _iotDeviceInterfaceClient.TagInventoryEvent += OnTagInventoryEvent!;
+                _iotDeviceInterfaceClient.TagInventoryEvent += OnTagInventoryEventAsync!;
                 _iotDeviceInterfaceClient.InventoryStatusEvent += OnInventoryStatusEvent!;
                 _iotDeviceInterfaceClient.GpiTransitionEvent += OnGpiTransitionEvent!;
             }
@@ -8938,8 +7950,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             if (!_iotDeviceInterfaceClient.IsNetworkConnected)
             {
                 _logger.LogWarning("Reader network connection not established");
-                await ProcessGpoErrorPortAsync();
-                await ProcessGpoErrorNetworkPortAsync(true);
+                _ = ProcessGpoErrorPortAsync();
+                _ = ProcessGpoErrorNetworkPortAsync(true);
             }
             else
             {
@@ -8965,7 +7977,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to configure reader interface");
-            await ProcessGpoErrorPortAsync();
+            _ = ProcessGpoErrorPortAsync();
             throw;
         }
     }
@@ -9106,7 +8118,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to update reader configuration");
-            await ProcessGpoErrorPortAsync();
+            _ = ProcessGpoErrorPortAsync();
             throw;
         }
     }
@@ -9145,7 +8157,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error during external API authentication");
-                        await ProcessGpoErrorPortAsync();
+                        _ = ProcessGpoErrorPortAsync();
                     }
                 }
             }
@@ -9159,7 +8171,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to initialize authentication");
-            await ProcessGpoErrorPortAsync();
+            _ = ProcessGpoErrorPortAsync();
             throw;
         }
     }
@@ -9209,14 +8221,14 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error starting inventory");
-                await ProcessGpoErrorPortAsync();
+                _ = ProcessGpoErrorPortAsync();
             }
 
             try
             {
                 if (IsGpiEnabled())
                 {
-                    await SetGpiPortsAsync();
+                    _ = SetGpiPortsAsync();
                 }
 
             }
@@ -9422,7 +8434,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 else
                 {
                     _logger.LogDebug("_mqttService is not connected.");
-                    _messageQueueTagSmartReaderTagEventMqtt.Enqueue(message);
+                    _messageQueueTagSmartReaderTagEventMqtt.TryEnqueue(message);
                     await Task.Delay(1000); // Back off if disconnected
                 }
             }
@@ -9566,7 +8578,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             return;
         }
 
-        _iotDeviceInterfaceClient.TagInventoryEvent += OnTagInventoryEvent!;
+        _iotDeviceInterfaceClient.TagInventoryEvent += OnTagInventoryEventAsync!;
         _iotDeviceInterfaceClient.InventoryStatusEvent += OnInventoryStatusEvent!;
         _iotDeviceInterfaceClient.GpiTransitionEvent += OnGpiTransitionEvent!;
 
@@ -9600,7 +8612,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         if (IsHttpPostEnabled())
         {
             ConfigureTimer(_timerTagPublisherHttp, OnRunPeriodicTagPublisherHttpTasksEvent, 100);
-            ConfigureTimer(_timerTagPublisherRetry, OnRunPeriodicTagPublisherRetryTasksEvent, 500);
+            //ConfigureTimer(_timerTagPublisherRetry, OnRunPeriodicTagPublisherRetryTasksEvent, 500);
         }
 
         if (IsSocketServerEnabled())
@@ -9631,6 +8643,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         {
             ConfigureTimer(_timerTagPublisherMqtt, OnRunPeriodicTagPublisherMqttTasksEvent, 10);
         }
+
         if (IsOpcUaClientEnabled())
         {
             ConfigureTimer(_timerTagPublisherOpcUa, OnRunPeriodicTagPublisherOpcUaTasksEvent, 500);
@@ -9710,7 +8723,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
 
         // Assuming _timerTagPublisherRetry should always start
-        _timerTagPublisherRetry.Start();
+        // _timerTagPublisherRetry.Start();
     }
 
     //private async Task ProcessQueuedMessagesAsync()
@@ -9733,7 +8746,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing HTTP message");
-                _messageQueueTagSmartReaderTagEventHttpPostRetry.Enqueue(message);
+                //_messageQueueTagSmartReaderTagEventHttpPostRetry.TryEnqueue(message);
             }
         }
     }
@@ -13378,7 +12391,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         }
         catch (Exception ex)
         {
-            await ProcessGpoErrorPortAsync();
+            // await ProcessGpoErrorPortAsync();
             _logger.LogError(ex, "Unexpected error on ProcessTagEventData " + ex.Message);
         }
     }
@@ -13932,7 +12945,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                     || string.Equals("1", _standaloneConfigDTO.groupEventsOnInventoryStatus,
                         StringComparison.OrdinalIgnoreCase))
                 {
-                    _messageQueueTagSmartReaderTagEventGroupToValidate.Enqueue(dataToPublish);
+                    _messageQueueTagSmartReaderTagEventGroupToValidate.TryEnqueue(dataToPublish);
                 }
                 else
                 {
@@ -14088,101 +13101,43 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 #pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.
         try
         {
-
-
-
-
             if (string.Equals("1", _standaloneConfigDTO.enableSummaryStream, StringComparison.OrdinalIgnoreCase)
                 && shouldValidate)
                 try
                 {
                     if (_messageQueueTagSmartReaderTagEventGroupToValidate.Count < 1000)
-                        _messageQueueTagSmartReaderTagEventGroupToValidate.Enqueue(dataToPublish);
+                        _messageQueueTagSmartReaderTagEventGroupToValidate.TryEnqueue(dataToPublish);
                 }
                 catch (Exception)
                 {
                 }
 
-
-            if (IsSocketServerEnabled())
-                try
-                {
-                    if (_tcpSocketService.IsHealthy())
-                    {
-                        try
-                        {
-                            if (_tcpSocketService.IsSocketServerConnectedToClients())
-                            {
-                                const int MaxQueueSize = 1000;
-                                if (_messageQueueTagSmartReaderTagEventSocketServer.Count < MaxQueueSize)
-                                {
-                                    _messageQueueTagSmartReaderTagEventSocketServer.Enqueue(dataToPublish);
-                                    if (_messageQueueTagSmartReaderTagEventSocketServer.Count > (MaxQueueSize * 0.8))
-                                    {
-                                        _logger.LogWarning($"Socket queue filling up: {_messageQueueTagSmartReaderTagEventSocketServer.Count}/{MaxQueueSize}");
-                                    }
-                                }
-                                else
-                                {
-                                    _logger.LogError($"Socket queue full ({MaxQueueSize}), dropping message");
-                                    _logger.LogDebug($"Cleaning up Socket queue due to full Socket queue.");
-                                    _messageQueueTagSmartReaderTagEventSocketServer.Clear();
-                                }
-                            }
-                            else
-                            {
-                                _logger.LogDebug($"Cleaning up Socket queue due to lack of socket clients.");
-                                _messageQueueTagSmartReaderTagEventSocketServer.Clear();
-
-                            }
-                        }
-                        catch (Exception)
-                        {
-                            _logger.LogDebug($"Error enqueuing keepalive event. Cleaning up Socket queue.");
-                            _messageQueueTagSmartReaderTagEventSocketServer.Clear();
-                        }
-                    }
-
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to enqueue socket message");
-                }
-
-            if (IsUsbFlashDriveEnabled())
-                try
-                {
-                    if (_messageQueueTagSmartReaderTagEventUsbDrive.Count < 1000)
-                        _messageQueueTagSmartReaderTagEventUsbDrive.Enqueue(dataToPublish);
-                }
-                catch (Exception)
-                {
-                }
-
-
-            if (IsUdpServerEnabled())
-                try
-                {
-                    if (_messageQueueTagSmartReaderTagEventUdpServer.Count < 1000)
-                        _messageQueueTagSmartReaderTagEventUdpServer.Enqueue(dataToPublish);
-                }
-                catch (Exception)
-                {
-                }
 
             if (IsHttpPostEnabled())
-                try
-                {
-                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.httpPostURL))
-                    {
-                        if (_messageQueueTagSmartReaderTagEventHttpPost.Count < 1000)
-                            _messageQueueTagSmartReaderTagEventHttpPost.Enqueue(dataToPublish);
-                    }
+            {
+                //if (retry) _messageQueueTagSmartReaderTagEventHttpPostRetry.TryEnqueue(dataToPublish);
+                //else _messageQueueTagSmartReaderTagEventHttpPost.TryEnqueue(dataToPublish);
+                _messageQueueTagSmartReaderTagEventHttpPost.TryEnqueue(dataToPublish);
+            }
 
-                }
-                catch (Exception)
-                {
-                }
+            if (IsSocketServerEnabled())
+            {
+                _messageQueueTagSmartReaderTagEventSocketServer.TryEnqueue(dataToPublish);
+            }
+
+            if (IsUsbFlashDriveEnabled())
+            {
+                _messageQueueTagSmartReaderTagEventUsbDrive.TryEnqueue(dataToPublish);
+            }
+
+            if (IsUdpServerEnabled())
+            {
+                _messageQueueTagSmartReaderTagEventUdpServer.TryEnqueue(dataToPublish);
+            }
+            if (IsOpcUaClientEnabled())
+            {
+                _messageQueueTagSmartReaderTagEventOpcUa.TryEnqueue(dataToPublish);
+            }
 
             if (IsMqttEnabled()
                 && !string.Equals("127.0.0.1", _standaloneConfigDTO.mqttBrokerAddress, StringComparison.OrdinalIgnoreCase))
@@ -14193,7 +13148,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                         if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttTagEventsTopic))
                         {
                             if (_messageQueueTagSmartReaderTagEventMqtt.Count < 1000)
-                                _messageQueueTagSmartReaderTagEventMqtt.Enqueue(dataToPublish);
+                                _messageQueueTagSmartReaderTagEventMqtt.TryEnqueue(dataToPublish);
                         }
                     }
                     else
@@ -14246,16 +13201,6 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
                 catch (Exception ex1)
                 {
                     _logger.LogError(ex1, "ProcessTagInventoryEventAsync: error processing serial port " + ex1.Message);
-                }
-
-            if (IsOpcUaClientEnabled())
-                try
-                {
-                    if (_messageQueueTagSmartReaderTagEventOpcUa.Count < 1000)
-                        _messageQueueTagSmartReaderTagEventOpcUa.Enqueue(dataToPublish);
-                }
-                catch (Exception)
-                {
                 }
         }
         catch (Exception)
@@ -14574,7 +13519,12 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         try
         {
             _logger.LogInformation("SaveJsonSkuSummaryToDb... ");
-            await readLock.WaitAsync();
+            if (!await readLock.WaitAsync(TimeSpan.FromSeconds(5))) // 5-second timeout
+            {
+                _logger.LogWarning("Timed out waiting for readLock");
+                // Handle the timeout (e.g., retry, log, return)
+                return;
+            }
             if (_standaloneConfigDTO != null
                 && !"127.0.0.1".Equals(_standaloneConfigDTO.mqttBrokerAddress))
             {

@@ -36,7 +36,7 @@ namespace SmartReaderStandalone.Services
         }
     }
 
-    public interface IMqttService
+    public interface IMqttService : IMetricProvider
     {
         event EventHandler<MqttErrorEventArgs>? GpoErrorRequested;
         event EventHandler<MqttMessageEventArgs>? MessageReceived;
@@ -47,6 +47,7 @@ namespace SmartReaderStandalone.Services
         Task DisconnectAsync();
         Task PublishAsync(string topic, string payload, string deviceMacAddress = "", MqttQualityOfServiceLevel qos = MqttQualityOfServiceLevel.AtMostOnce, bool retain = false);
         Task PublishMqttManagementEventAsync(Dictionary<string, object> mqttManagementEvents, string deviceMacAddress = "");
+
     }
 
     public class MqttService : IMqttService
@@ -75,6 +76,16 @@ namespace SmartReaderStandalone.Services
             _mqttClient.ConnectedAsync += OnConnectedAsync;
             _mqttClient.DisconnectedAsync += OnDisconnected;
             _standaloneConfigDTO = standaloneConfigDTO;
+        }
+
+        public Task<Dictionary<string, object>> GetMetricsAsync()
+        {
+            var metrics = new Dictionary<string, object>
+        {
+            { "MQTT Connected", _mqttClient.IsConnected },
+            { "Messages Pending", _mqttClient.PendingApplicationMessagesCount }
+        };
+            return Task.FromResult(metrics);
         }
 
         public List<MqttTopicFilter> BuildMqttTopicList(StandaloneConfigDTO smartReaderSetupData)

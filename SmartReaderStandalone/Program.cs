@@ -71,7 +71,7 @@ builder.Services.AddSingleton(builder.Configuration);
 LogEventLevel logEventLevel = LogEventLevel.Warning;
 
 #if DEBUG
-    logEventLevel = LogEventLevel.Debug;
+logEventLevel = LogEventLevel.Debug;
 #endif
 builder.Host.UseSerilog((ctx, lc) => lc
     .WriteTo.Console()
@@ -221,7 +221,7 @@ var readerAddress = app.Configuration["ReaderInfo:Address"] ?? "127.0.0.1";
 // Get the current build configuration
 string buildConfiguration = "Release"; // Default to Debug if unable to determine
 #if DEBUG
-    buildConfiguration = "Debug";
+buildConfiguration = "Debug";
 #endif
 // Get the value based on the build configuration
 if ("Debug".Equals(buildConfiguration))
@@ -741,229 +741,229 @@ app.MapPost("/api/rshell", [AuthorizeBasicAuth] async ([FromBody] JsonDocument j
 
 app.MapGet("/api/query/external/product/{gtin}", [AuthorizeBasicAuth]
 async (HttpRequest readerRequest, string gtin, RuntimeDb db) =>
-    {
-        var requestResult = "";
+{
+    var requestResult = "";
 
-        try
+    try
+    {
+        var configDto = ConfigFileHelper.ReadFile();
+        if (configDto != null && !string.IsNullOrEmpty(configDto.enableExternalApiVerification)
+                              && "1".Equals(configDto.enableExternalApiVerification))
         {
-            var configDto = ConfigFileHelper.ReadFile();
-            if (configDto != null && !string.IsNullOrEmpty(configDto.enableExternalApiVerification)
-                                  && "1".Equals(configDto.enableExternalApiVerification))
+            var url = configDto.externalApiVerificationSearchProductUrl + gtin;
+            var fullUriData = new Uri(url);
+            var host = fullUriData.Host;
+            var baseUri = fullUriData.GetLeftPart(UriPartial.Authority);
+            var rightActionPath = url.Replace(baseUri, "");
+            var httpClientHandler = new HttpClientHandler
             {
-                var url = configDto.externalApiVerificationSearchProductUrl + gtin;
-                var fullUriData = new Uri(url);
-                var host = fullUriData.Host;
-                var baseUri = fullUriData.GetLeftPart(UriPartial.Authority);
-                var rightActionPath = url.Replace(baseUri, "");
-                var httpClientHandler = new HttpClientHandler
+
+
+                ServerCertificateCustomValidationCallback =
+               (message, cert,
+                   chain, errors) => true
+            };
+
+            HttpClient httpClient = new()
+            {
+                BaseAddress = new Uri(url)
+            };
+
+            if (!string.IsNullOrEmpty(configDto.networkProxy))
+            {
+                WebProxy webProxy = new(configDto.networkProxy, int.Parse(configDto.networkProxyPort))
+                {
+                    Credentials = CredentialCache.DefaultNetworkCredentials,
+                    BypassProxyOnLocal = true
+                };
+                webProxy.BypassList.Append("169.254.1.1");
+                webProxy.BypassList.Append(readerAddress);
+                webProxy.BypassList.Append("localhost");
+
+                httpClientHandler = new HttpClientHandler
                 {
 
-
+                    Proxy = webProxy,
+                    UseProxy = true,
                     ServerCertificateCustomValidationCallback =
-                   (message, cert,
-                       chain, errors) => true
+                    (message, cert,
+                        chain, errors) => true
                 };
-
-                HttpClient httpClient = new()
+                httpClient = new HttpClient(httpClientHandler)
                 {
                     BaseAddress = new Uri(url)
                 };
 
-                if (!string.IsNullOrEmpty(configDto.networkProxy))
-                {
-                    WebProxy webProxy = new(configDto.networkProxy, int.Parse(configDto.networkProxyPort))
-                    {
-                        Credentials = CredentialCache.DefaultNetworkCredentials,
-                        BypassProxyOnLocal = true
-                    };
-                    webProxy.BypassList.Append("169.254.1.1");
-                    webProxy.BypassList.Append(readerAddress);
-                    webProxy.BypassList.Append("localhost");
-
-                    httpClientHandler = new HttpClientHandler
-                    {
-
-                        Proxy = webProxy,
-                        UseProxy = true,
-                        ServerCertificateCustomValidationCallback =
-                        (message, cert,
-                            chain, errors) => true
-                    };
-                    httpClient = new HttpClient(httpClientHandler)
-                    {
-                        BaseAddress = new Uri(url)
-                    };
-
-                }
-
-                var request = new HttpRequestMessage
-                {
-                    Method = HttpMethod.Get,
-                    RequestUri = new Uri(url)
-                };
-                request.Headers.Add("Accept", "application/json");
-                request.Headers.Add(configDto.externalApiVerificationHttpHeaderName,
-                    configDto.externalApiVerificationHttpHeaderValue);
-                ;
-
-
-                httpClient.DefaultRequestHeaders
-                    .Accept
-                    .Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-                eventProcessorLogger.LogInformation(url);
-
-                var response = await httpClient.SendAsync(request).ConfigureAwait(false);
-                var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-                eventProcessorLogger.LogInformation(content);
-                eventProcessorLogger.LogInformation(content);
-
-                if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
-                {
-                    requestResult = response.Content.ReadAsStringAsync().Result;
-                    Log.Debug(requestResult);
-                    return Results.Ok(JsonDocument.Parse(requestResult));
-                }
             }
 
-            return Results.Ok(requestResult);
+            var request = new HttpRequestMessage
+            {
+                Method = HttpMethod.Get,
+                RequestUri = new Uri(url)
+            };
+            request.Headers.Add("Accept", "application/json");
+            request.Headers.Add(configDto.externalApiVerificationHttpHeaderName,
+                configDto.externalApiVerificationHttpHeaderValue);
+            ;
+
+
+            httpClient.DefaultRequestHeaders
+                .Accept
+                .Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            eventProcessorLogger.LogInformation(url);
+
+            var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+            var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+            eventProcessorLogger.LogInformation(content);
+            eventProcessorLogger.LogInformation(content);
+
+            if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
+            {
+                requestResult = response.Content.ReadAsStringAsync().Result;
+                Log.Debug(requestResult);
+                return Results.Ok(JsonDocument.Parse(requestResult));
+            }
         }
-        catch (Exception exDb)
-        {
-            File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
-            return Results.BadRequest(requestResult);
-        }
-    });
+
+        return Results.Ok(requestResult);
+    }
+    catch (Exception exDb)
+    {
+        File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
+        return Results.BadRequest(requestResult);
+    }
+});
 
 app.MapPost("/api/query/external/order", [AuthorizeBasicAuth]
 async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
+{
+    var requestResult = "";
+
+    try
     {
-        var requestResult = "";
-
-        try
+        var jsonDocumentStr = "";
+        using (var stream = new MemoryStream())
         {
-            var jsonDocumentStr = "";
-            using (var stream = new MemoryStream())
-            {
-                var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
-                jsonDocument.WriteTo(writer);
-                writer.Flush();
-                jsonDocumentStr = Encoding.UTF8.GetString(stream.ToArray());
-            }
+            var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            jsonDocument.WriteTo(writer);
+            writer.Flush();
+            jsonDocumentStr = Encoding.UTF8.GetString(stream.ToArray());
+        }
 
-            if (eventProcessorLogger != null)
-            {
-                eventProcessorLogger.LogInformation("jsonDocumentStr -> ");
-                eventProcessorLogger.LogInformation(jsonDocumentStr);
-            }
+        if (eventProcessorLogger != null)
+        {
+            eventProcessorLogger.LogInformation("jsonDocumentStr -> ");
+            eventProcessorLogger.LogInformation(jsonDocumentStr);
+        }
 
-            var configDto = ConfigFileHelper.ReadFile();
-            if (configDto != null && !string.IsNullOrEmpty(configDto.enableExternalApiVerification)
-                                  && "1".Equals(configDto.enableExternalApiVerification))
+        var configDto = ConfigFileHelper.ReadFile();
+        if (configDto != null && !string.IsNullOrEmpty(configDto.enableExternalApiVerification)
+                              && "1".Equals(configDto.enableExternalApiVerification))
+        {
+            eventProcessorLogger?.LogInformation("enableExternalApiVerification -> " +
+                                      configDto.enableExternalApiVerification);
+            var url = configDto.externalApiVerificationSearchOrderUrl;
+            var fullUriData = new Uri(url);
+            var host = fullUriData.Host;
+            var baseUri = fullUriData.GetLeftPart(UriPartial.Authority);
+            var rightActionPath = url.Replace(baseUri, "");
+            var httpClientHandler = new HttpClientHandler
             {
-                eventProcessorLogger?.LogInformation("enableExternalApiVerification -> " +
-                                          configDto.enableExternalApiVerification);
-                var url = configDto.externalApiVerificationSearchOrderUrl;
-                var fullUriData = new Uri(url);
-                var host = fullUriData.Host;
-                var baseUri = fullUriData.GetLeftPart(UriPartial.Authority);
-                var rightActionPath = url.Replace(baseUri, "");
-                var httpClientHandler = new HttpClientHandler
+
+
+                ServerCertificateCustomValidationCallback =
+               (message, cert,
+                   chain, errors) => true
+            };
+            HttpClient httpClient = new()
+            {
+                BaseAddress = new Uri(url)
+            };
+
+            if (!string.IsNullOrEmpty(configDto.networkProxy))
+            {
+                WebProxy webProxy = new(configDto.networkProxy, int.Parse(configDto.networkProxyPort))
+                {
+                    Credentials = CredentialCache.DefaultNetworkCredentials,
+                    BypassProxyOnLocal = true
+                };
+                webProxy.BypassList.Append("169.254.1.1");
+                webProxy.BypassList.Append(readerAddress);
+                webProxy.BypassList.Append("localhost");
+
+                httpClientHandler = new HttpClientHandler
                 {
 
-
+                    Proxy = webProxy,
+                    UseProxy = true,
                     ServerCertificateCustomValidationCallback =
-                   (message, cert,
-                       chain, errors) => true
+                    (message, cert,
+                        chain, errors) => true
                 };
-                HttpClient httpClient = new()
+                httpClient = new HttpClient(httpClientHandler)
                 {
                     BaseAddress = new Uri(url)
                 };
 
-                if (!string.IsNullOrEmpty(configDto.networkProxy))
-                {
-                    WebProxy webProxy = new(configDto.networkProxy, int.Parse(configDto.networkProxyPort))
-                    {
-                        Credentials = CredentialCache.DefaultNetworkCredentials,
-                        BypassProxyOnLocal = true
-                    };
-                    webProxy.BypassList.Append("169.254.1.1");
-                    webProxy.BypassList.Append(readerAddress);
-                    webProxy.BypassList.Append("localhost");
-
-                    httpClientHandler = new HttpClientHandler
-                    {
-
-                        Proxy = webProxy,
-                        UseProxy = true,
-                        ServerCertificateCustomValidationCallback =
-                        (message, cert,
-                            chain, errors) => true
-                    };
-                    httpClient = new HttpClient(httpClientHandler)
-                    {
-                        BaseAddress = new Uri(url)
-                    };
-
-                }
-
-
-                var request = new HttpRequestMessage
-                {
-                    Method = HttpMethod.Post,
-                    RequestUri = new Uri(url),
-                    Content = new StringContent(jsonDocumentStr, Encoding.UTF8,
-                        "application/json" /* or "application/json" in older versions */)
-                };
-                request.Headers.Add("Accept", "application/json");
-                request.Headers.Add(configDto.externalApiVerificationHttpHeaderName,
-                    configDto.externalApiVerificationHttpHeaderValue);
-                ;
-
-
-                httpClient.DefaultRequestHeaders
-                    .Accept
-                    .Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-                if (eventProcessorLogger != null)
-                {
-                    eventProcessorLogger.LogInformation(url);
-                    eventProcessorLogger.LogInformation(jsonDocumentStr);
-                }
-                //Console.WriteLine(jsonDocument);
-
-                var response = await httpClient.SendAsync(request).ConfigureAwait(false);
-                var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-                //Log.Debug(content);
-                eventProcessorLogger?.LogInformation(content);
-                eventProcessorLogger.LogInformation(content);
-
-                if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
-                {
-                    requestResult = response.Content.ReadAsStringAsync().Result;
-                    //Log.Debug(requestResult);
-                    eventProcessorLogger?.LogInformation(requestResult);
-
-                    return Results.Ok(JsonDocument.Parse(requestResult));
-                }
             }
-            else
+
+
+            var request = new HttpRequestMessage
             {
-                eventProcessorLogger?.LogError("enableExternalApiVerification disabled or null ");
-            }
+                Method = HttpMethod.Post,
+                RequestUri = new Uri(url),
+                Content = new StringContent(jsonDocumentStr, Encoding.UTF8,
+                    "application/json" /* or "application/json" in older versions */)
+            };
+            request.Headers.Add("Accept", "application/json");
+            request.Headers.Add(configDto.externalApiVerificationHttpHeaderName,
+                configDto.externalApiVerificationHttpHeaderValue);
+            ;
 
-            return Results.Ok(requestResult);
+
+            httpClient.DefaultRequestHeaders
+                .Accept
+                .Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            if (eventProcessorLogger != null)
+            {
+                eventProcessorLogger.LogInformation(url);
+                eventProcessorLogger.LogInformation(jsonDocumentStr);
+            }
+            //Console.WriteLine(jsonDocument);
+
+            var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+            var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+            //Log.Debug(content);
+            eventProcessorLogger?.LogInformation(content);
+            eventProcessorLogger.LogInformation(content);
+
+            if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
+            {
+                requestResult = response.Content.ReadAsStringAsync().Result;
+                //Log.Debug(requestResult);
+                eventProcessorLogger?.LogInformation(requestResult);
+
+                return Results.Ok(JsonDocument.Parse(requestResult));
+            }
         }
-        catch (Exception exDb)
+        else
         {
-            eventProcessorLogger?.LogError(exDb, "Error processing order request.");
-            File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
-            return Results.BadRequest(requestResult);
+            eventProcessorLogger?.LogError("enableExternalApiVerification disabled or null ");
         }
-    });
+
+        return Results.Ok(requestResult);
+    }
+    catch (Exception exDb)
+    {
+        eventProcessorLogger?.LogError(exDb, "Error processing order request.");
+        File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
+        return Results.BadRequest(requestResult);
+    }
+});
 
 app.MapGet("/api/query/external/order/{order}", [AuthorizeBasicAuth]
 async (HttpRequest readerRequest, string order, RuntimeDb db) =>
@@ -1078,111 +1078,111 @@ async (HttpRequest readerRequest, string order, RuntimeDb db) =>
 
 app.MapPost("/api/publish/external", [AuthorizeBasicAuth]
 async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
+{
+    var requestResult = "";
+
+    try
     {
-        var requestResult = "";
-
-        try
+        var jsonDocumentStr = "";
+        using (var stream = new MemoryStream())
         {
-            var jsonDocumentStr = "";
-            using (var stream = new MemoryStream())
-            {
-                var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
-                jsonDocument.WriteTo(writer);
-                writer.Flush();
-                jsonDocumentStr = Encoding.UTF8.GetString(stream.ToArray());
-            }
+            var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            jsonDocument.WriteTo(writer);
+            writer.Flush();
+            jsonDocumentStr = Encoding.UTF8.GetString(stream.ToArray());
+        }
 
-            var configDto = ConfigFileHelper.ReadFile();
-            if (configDto != null && !string.IsNullOrEmpty(configDto.enableExternalApiVerification)
-                                  && "1".Equals(configDto.enableExternalApiVerification))
+        var configDto = ConfigFileHelper.ReadFile();
+        if (configDto != null && !string.IsNullOrEmpty(configDto.enableExternalApiVerification)
+                              && "1".Equals(configDto.enableExternalApiVerification))
+        {
+            var url = configDto.externalApiVerificationPublishDataUrl;
+            var fullUriData = new Uri(url);
+            var host = fullUriData.Host;
+            var baseUri = fullUriData.GetLeftPart(UriPartial.Authority);
+            var rightActionPath = url.Replace(baseUri, "");
+            var httpClientHandler = new HttpClientHandler
             {
-                var url = configDto.externalApiVerificationPublishDataUrl;
-                var fullUriData = new Uri(url);
-                var host = fullUriData.Host;
-                var baseUri = fullUriData.GetLeftPart(UriPartial.Authority);
-                var rightActionPath = url.Replace(baseUri, "");
-                var httpClientHandler = new HttpClientHandler
+
+
+                ServerCertificateCustomValidationCallback =
+               (message, cert,
+                   chain, errors) => true
+            };
+            HttpClient httpClient = new()
+            {
+                BaseAddress = new Uri(url)
+            };
+
+            if (!string.IsNullOrEmpty(configDto.networkProxy))
+            {
+                WebProxy webProxy = new(configDto.networkProxy, int.Parse(configDto.networkProxyPort))
+                {
+                    Credentials = CredentialCache.DefaultNetworkCredentials,
+                    BypassProxyOnLocal = true
+                };
+                webProxy.BypassList.Append("169.254.1.1");
+                webProxy.BypassList.Append(readerAddress);
+                webProxy.BypassList.Append("localhost");
+
+                httpClientHandler = new HttpClientHandler
                 {
 
-
+                    Proxy = webProxy,
+                    UseProxy = true,
                     ServerCertificateCustomValidationCallback =
-                   (message, cert,
-                       chain, errors) => true
+                    (message, cert,
+                        chain, errors) => true
                 };
-                HttpClient httpClient = new()
+                httpClient = new HttpClient(httpClientHandler)
                 {
                     BaseAddress = new Uri(url)
                 };
 
-                if (!string.IsNullOrEmpty(configDto.networkProxy))
-                {
-                    WebProxy webProxy = new(configDto.networkProxy, int.Parse(configDto.networkProxyPort))
-                    {
-                        Credentials = CredentialCache.DefaultNetworkCredentials,
-                        BypassProxyOnLocal = true
-                    };
-                    webProxy.BypassList.Append("169.254.1.1");
-                    webProxy.BypassList.Append(readerAddress);
-                    webProxy.BypassList.Append("localhost");
-
-                    httpClientHandler = new HttpClientHandler
-                    {
-
-                        Proxy = webProxy,
-                        UseProxy = true,
-                        ServerCertificateCustomValidationCallback =
-                        (message, cert,
-                            chain, errors) => true
-                    };
-                    httpClient = new HttpClient(httpClientHandler)
-                    {
-                        BaseAddress = new Uri(url)
-                    };
-
-                }
-
-                var request = new HttpRequestMessage
-                {
-                    Method = HttpMethod.Post,
-                    RequestUri = new Uri(url),
-                    Content = new StringContent(jsonDocumentStr, Encoding.UTF8,
-                        "application/json" /* or "application/json" in older versions */)
-                };
-                request.Headers.Add("Accept", "application/json");
-                request.Headers.Add(configDto.externalApiVerificationHttpHeaderName,
-                    configDto.externalApiVerificationHttpHeaderValue);
-                ;
-
-
-                httpClient.DefaultRequestHeaders
-                    .Accept
-                    .Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-                Log.Debug(url);
-                Log.Debug(jsonDocumentStr);
-
-                var response = await httpClient.SendAsync(request).ConfigureAwait(false);
-                var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-                Log.Debug(content);
-                Console.WriteLine(content);
-
-                if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
-                {
-                    requestResult = response.Content.ReadAsStringAsync().Result;
-                    Log.Debug(requestResult);
-                    return Results.Ok(JsonDocument.Parse(requestResult));
-                }
             }
 
-            return Results.Ok(requestResult);
+            var request = new HttpRequestMessage
+            {
+                Method = HttpMethod.Post,
+                RequestUri = new Uri(url),
+                Content = new StringContent(jsonDocumentStr, Encoding.UTF8,
+                    "application/json" /* or "application/json" in older versions */)
+            };
+            request.Headers.Add("Accept", "application/json");
+            request.Headers.Add(configDto.externalApiVerificationHttpHeaderName,
+                configDto.externalApiVerificationHttpHeaderValue);
+            ;
+
+
+            httpClient.DefaultRequestHeaders
+                .Accept
+                .Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            Log.Debug(url);
+            Log.Debug(jsonDocumentStr);
+
+            var response = await httpClient.SendAsync(request).ConfigureAwait(false);
+            var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+            Log.Debug(content);
+            Console.WriteLine(content);
+
+            if (response.IsSuccessStatusCode && !string.IsNullOrEmpty(response.Content.ReadAsStringAsync().Result))
+            {
+                requestResult = response.Content.ReadAsStringAsync().Result;
+                Log.Debug(requestResult);
+                return Results.Ok(JsonDocument.Parse(requestResult));
+            }
         }
-        catch (Exception exDb)
-        {
-            File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
-            return Results.BadRequest(requestResult);
-        }
-    });
+
+        return Results.Ok(requestResult);
+    }
+    catch (Exception exDb)
+    {
+        File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
+        return Results.BadRequest(requestResult);
+    }
+});
 
 app.MapPut("/api/publish/external", [AuthorizeBasicAuth]
 async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
@@ -2009,35 +2009,35 @@ async (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeD
 
 app.MapPost("/mqtt", [AuthorizeBasicAuth]
 (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
-    {
-        var requestResult = "";
+{
+    var requestResult = "";
 
-        try
-        {
-            return ProcessMqttEndpointRequest(jsonDocument, db);
-        }
-        catch (Exception exDb)
-        {
-            File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
-            return Results.BadRequest(requestResult);
-        }
-    });
+    try
+    {
+        return ProcessMqttEndpointRequest(jsonDocument, db);
+    }
+    catch (Exception exDb)
+    {
+        File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
+        return Results.BadRequest(requestResult);
+    }
+});
 
 app.MapPut("/mqtt", [AuthorizeBasicAuth]
 (HttpRequest readerRequest, [FromBody] JsonDocument jsonDocument, RuntimeDb db) =>
-    {
-        var requestResult = "";
+{
+    var requestResult = "";
 
-        try
-        {
-            return ProcessMqttEndpointRequest(jsonDocument, db);
-        }
-        catch (Exception exDb)
-        {
-            File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
-            return Results.BadRequest(requestResult);
-        }
-    });
+    try
+    {
+        return ProcessMqttEndpointRequest(jsonDocument, db);
+    }
+    catch (Exception exDb)
+    {
+        File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
+        return Results.BadRequest(requestResult);
+    }
+});
 
 app.MapGet("/mqtt", [AuthorizeBasicAuth] (HttpRequest readerRequest, RuntimeDb db) =>
 {

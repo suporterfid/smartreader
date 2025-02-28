@@ -302,12 +302,16 @@ app.MapGet("/metrics", async (IServiceProvider serviceProvider) =>
 
         foreach (var metric in metrics)
         {
-            // Format metric name: lowercase, no spaces, no special chars
+            // Format metric name: lowercase, no spaces, and valid Prometheus format
             string metricName = $"{provider.GetType().Name}_{metric.Key}"
                                 .ToLower()
                                 .Replace(" ", "_")
                                 .Replace(".", "_")
-                                .Replace("-", "_");
+                                .Replace("-", "_")
+                                .Replace("%", "_percent")  // Fix percentage symbol
+                                .Replace("°c", "_celsius") // Fix temperature unit
+                                .Replace("(", "")          // Remove parentheses
+                                .Replace(")", "");         // Remove parentheses
 
             // Generate Prometheus formatted output
             metricsOutput.Add($"# HELP {metricName} Auto-generated metric");
@@ -319,6 +323,7 @@ app.MapGet("/metrics", async (IServiceProvider serviceProvider) =>
     // Return as plain text
     return Results.Text(string.Join("\n", metricsOutput));
 });
+
 
 
 

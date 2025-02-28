@@ -32,6 +32,7 @@ using SmartReaderStandalone.Utils;
 using SmartReaderStandalone.ViewModel;
 using SmartReaderStandalone.ViewModel.Status;
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Runtime.Loader;
@@ -303,22 +304,32 @@ app.MapGet("/metrics", async (IServiceProvider serviceProvider) =>
         foreach (var metric in metrics)
         {
             // Format metric name: lowercase, no spaces, no special chars
-            string metricName = $"{provider.GetType().Name}_{metric.Key}"
-                                .ToLower()
-                                .Replace(" ", "_")
-                                .Replace(".", "_")
-                                .Replace("-", "_");
+            string metricName = $"{provider.GetType().Name}_{metric.Key}".ToLower();
+            metricName = Regex.Replace(metricName, @"[^a-z0-9_]", "_");
+
+            string metricValue;
+            // Check if the metric value is a boolean; if so, convert to a numeric value.
+            if (metric.Value is bool boolValue)
+            {
+                metricValue = boolValue ? "1" : "0";
+            }
+            else
+            {
+                // Use invariant culture to ensure decimal points are periods, not commas
+                metricValue = Convert.ToString(metric.Value, CultureInfo.InvariantCulture);
+            }
 
             // Generate Prometheus formatted output
             metricsOutput.Add($"# HELP {metricName} Auto-generated metric");
             metricsOutput.Add($"# TYPE {metricName} gauge");
-            metricsOutput.Add($"{metricName} {metric.Value}");
+            metricsOutput.Add($"{metricName} {metricValue}");
         }
     }
 
     // Return as plain text
     return Results.Text(string.Join("\n", metricsOutput));
 });
+
 
 
 

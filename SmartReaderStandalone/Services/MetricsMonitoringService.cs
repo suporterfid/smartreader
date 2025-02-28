@@ -160,8 +160,18 @@ namespace SmartReaderStandalone.Services
 
                 foreach (var metric in metrics)
                 {
-                    string filePath = path + metric;
-                    networkStats[metric] = ReadLongFromFile(filePath);
+
+                    try
+                    {
+                        string filePath = path + metric;
+                        var metricValue = ReadLongFromFile(filePath);
+                        if (metricValue > 0)
+                            networkStats[metric] = metricValue;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, $"Error retrieving metric statistics for {metric}");
+                    }
                 }
             }
             catch (Exception ex)
@@ -175,14 +185,15 @@ namespace SmartReaderStandalone.Services
         // Helper function to read a long value from a file
         private long ReadLongFromFile(string path)
         {
+            long readValue = 0;
             try
             {
                 if (File.Exists(path))
                 {
                     string content = File.ReadAllText(path).Trim();
-                    if (long.TryParse(content, out long value))
+                    if (long.TryParse(content, out readValue))
                     {
-                        return value;
+                        return readValue;
                     }
                 }
             }
@@ -273,7 +284,11 @@ namespace SmartReaderStandalone.Services
                 { "System.Min CPU Used (%)", _minCpuUsage },
                 { "System.Max CPU Used (%)", _maxCpuUsage }
             };
-
+            if(_networkStats == null)
+            {
+                _networkStats = GetNetworkUsage("eth0"); // Replace eth0 with actual interface
+            }
+            
             // Add network statistics to the response
             foreach (var entry in _networkStats)
             {

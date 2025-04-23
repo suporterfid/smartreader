@@ -15,7 +15,7 @@ using System.Data;
 
 namespace SmartReaderStandalone.Services
 {
-    public interface IConfigurationService
+    public interface ISmartReaderConfigurationService
     {
         HttpUtil CreateHttpUtil(IHttpClientFactory httpClientFactory);
         Task<StandaloneConfigDTO> GetConfigDtoFromDb();
@@ -44,16 +44,16 @@ namespace SmartReaderStandalone.Services
         Task<bool> WriteMqttCommandIdToFile(string commandId);
     }
 
-    public class ConfigurationService : IConfigurationService
+    public class SmartReaderConfigurationService : ISmartReaderConfigurationService
     {
         private readonly IConfiguration _configuration;
         public IServiceProvider Services { get; }
-        private readonly ILogger<ConfigurationService> _logger;
+        private readonly ILogger<SmartReaderConfigurationService> _logger;
         private StandaloneConfigDTO _standaloneConfigDTO;
         private readonly SemaphoreSlim readLock = new(1, 1);
 
-        public ConfigurationService(IServiceProvider services, IConfiguration configuration,
-            ILogger<ConfigurationService> logger)
+        public SmartReaderConfigurationService(IServiceProvider services, IConfiguration configuration,
+            ILogger<SmartReaderConfigurationService> logger)
         {
             Services = services;
             _logger = logger;
@@ -191,7 +191,7 @@ namespace SmartReaderStandalone.Services
         {
             try
             {
-                var configModel = GetConfigDtoFromDb();
+                var configModel = LoadDtoFromDb();
                 if (configModel == null)
                 {
                     _logger.LogWarning("No configuration found in the database.");
@@ -263,7 +263,7 @@ namespace SmartReaderStandalone.Services
             }
         }
 
-        public StandaloneConfigDTO GetConfigDtoFromDb()
+        private StandaloneConfigDTO LoadDtoFromDb()
         {
 #pragma warning disable CS8600, CS8601, CS8602, CS8603, CS8604, CS8625, CS8629 // Dereference of a possibly null reference.
             StandaloneConfigDTO? model = null;
@@ -280,6 +280,10 @@ namespace SmartReaderStandalone.Services
                     {
                         model = StandaloneConfigDTO.CleanupUrlEncoding(savedConfigDTO); ;
                     }
+                }
+                else
+                {
+                    model = LoadConfig();
                 }
             }
             catch (Exception ex)
@@ -794,9 +798,9 @@ namespace SmartReaderStandalone.Services
             return plugins;
         }
 
-        Task<StandaloneConfigDTO> IConfigurationService.GetConfigDtoFromDb()
+        Task<StandaloneConfigDTO> ISmartReaderConfigurationService.GetConfigDtoFromDb()
         {
-            throw new NotImplementedException();
+            return Task.FromResult(LoadDtoFromDb());
         }
     }
 }

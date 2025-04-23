@@ -30,7 +30,7 @@ namespace SmartReaderStandalone.Services
         private IConfiguration _configuration;
 
         private readonly ILogger<TcpSocketService> _logger;
-        private readonly IConfigurationService _configurationService;
+        private readonly ISmartReaderConfigurationService _configurationService;
 
         private SimpleTcpServer? _tcpServer;
 
@@ -47,7 +47,7 @@ namespace SmartReaderStandalone.Services
         public TcpSocketService(IServiceProvider services,
             IConfiguration configuration,
             ILogger<TcpSocketService> logger,
-            IConfigurationService configurationService)
+            ISmartReaderConfigurationService configurationService)
         {
             _configuration = configuration;
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));

@@ -27,7 +27,7 @@ namespace SmartReaderStandalone.Services
         private readonly IServiceProvider _services;
         private readonly IConfiguration _configuration;
         private readonly ILogger<WebSocketService> _logger;
-        private readonly IConfigurationService _configurationService;
+        private readonly ISmartReaderConfigurationService _configurationService;
 
         private HttpListener? _httpListener;
         private ConcurrentDictionary<string, WebSocket> _connectedClients;
@@ -40,7 +40,7 @@ namespace SmartReaderStandalone.Services
             IServiceProvider services,
             IConfiguration configuration,
             ILogger<WebSocketService> logger,
-            IConfigurationService configurationService)
+            ISmartReaderConfigurationService configurationService)
         {
             _services = services;
             _configuration = configuration;

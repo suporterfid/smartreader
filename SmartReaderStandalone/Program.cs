@@ -126,12 +126,12 @@ builder.Services.AddHostedService(provider => provider.GetRequiredService<Metric
 builder.Services.AddSingleton(levelSwitch);
 builder.Services.AddSingleton<LoggingService>();
 
-builder.Services.AddSingleton<IConfigurationService, ConfigurationService>();
+builder.Services.AddSingleton<ISmartReaderConfigurationService, SmartReaderConfigurationService>();
 builder.Services.AddSingleton<ITcpSocketService, TcpSocketService>(serviceProvider =>
 {
     var configuration = serviceProvider.GetRequiredService<IConfiguration>();
     var logger = serviceProvider.GetRequiredService<ILogger<TcpSocketService>>();
-    var configurationService = serviceProvider.GetRequiredService<IConfigurationService>();
+    var configurationService = serviceProvider.GetRequiredService<ISmartReaderConfigurationService>();
 
     return new TcpSocketService(serviceProvider, configuration, logger, configurationService);
 });
@@ -140,7 +140,7 @@ builder.Services.AddSingleton<IWebSocketService, WebSocketService>(serviceProvid
 {
     var configuration = serviceProvider.GetRequiredService<IConfiguration>();
     var logger = serviceProvider.GetRequiredService<ILogger<WebSocketService>>();
-    var configurationService = serviceProvider.GetRequiredService<IConfigurationService>();
+    var configurationService = serviceProvider.GetRequiredService<ISmartReaderConfigurationService>();
 
     return new WebSocketService(serviceProvider, configuration, logger, configurationService);
 });
@@ -149,7 +149,7 @@ builder.Services.AddSingleton<IMqttService, MqttService>(serviceProvider =>
 {
     var configuration = serviceProvider.GetRequiredService<IConfiguration>();
     var logger = serviceProvider.GetRequiredService<ILogger<MqttService>>();
-    var configurationService = serviceProvider.GetRequiredService<IConfigurationService>();
+    var configurationService = serviceProvider.GetRequiredService<ISmartReaderConfigurationService>();
     var standoaloneConfigDTO = configurationService.LoadConfig();
 
     return new MqttService(logger, standoaloneConfigDTO);
@@ -165,7 +165,7 @@ builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvid
     var logger = serviceProvider.GetRequiredService<ILogger<IotInterfaceService>>();
     var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
     var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
-    var configurationService = serviceProvider.GetRequiredService<IConfigurationService>();
+    var configurationService = serviceProvider.GetRequiredService<ISmartReaderConfigurationService>();
     var tcpSocketService = serviceProvider.GetRequiredService<ITcpSocketService>();
     var mqttService = serviceProvider.GetRequiredService<IMqttService>();
     var webSocketService = serviceProvider.GetRequiredService<IWebSocketService>();
@@ -435,7 +435,7 @@ app.MapGet("/api/stream/tags", (RuntimeDb db, HttpContext context) =>
 app.MapGet("/api/restore-default-settings", [AuthorizeBasicAuth] async (
     [FromServices] RuntimeDb db,
     [FromServices] IotInterfaceService backgroundService,
-    [FromServices] ConfigurationService configurationService,
+    [FromServices] ISmartReaderConfigurationService configurationService,
     [FromServices] IConfiguration configuration) =>
 {
     try
@@ -2374,7 +2374,8 @@ app.MapPost("/mqtt/command/mode", [AuthorizeBasicAuth]
 });
 
 app.MapPost("/upload/mqtt/ca", [AuthorizeBasicAuth]
-(HttpRequest request, RuntimeDb db) =>
+(HttpRequest request, RuntimeDb db, [FromServices] ISmartReaderConfigurationService configurationService,
+    [FromServices] IConfiguration configuration) =>
 {
     var requestResult = "Error saving file.";
 
@@ -2404,8 +2405,23 @@ app.MapPost("/upload/mqtt/ca", [AuthorizeBasicAuth]
             {
                 file.CopyTo(stream);
             }
+            try
+            {
+                var configDto = configurationService.GetConfigDtoFromDb().Result;
+
+                if (configDto != null)
+                {
+                    configDto.mqttSslCaCertificate = "/customer/config/ca/" + file.FileName;
+                    configurationService.SaveConfigDtoToDb(configDto);
+                }
+            }
+            catch (Exception)
+            {
+            }
             break;
         }
+
+
 
         return Results.Ok("File Uploaded Sucessuful");
     }
@@ -2417,17 +2433,19 @@ app.MapPost("/upload/mqtt/ca", [AuthorizeBasicAuth]
 });
 
 app.MapPost("/upload/mqtt/certificate", [AuthorizeBasicAuth]
-(HttpRequest request, RuntimeDb db) =>
+(HttpRequest request, RuntimeDb db, [FromServices] ISmartReaderConfigurationService configurationService,
+    [FromServices] IConfiguration configuration, [FromServices] ILogger<Program> eventProcessorLogger) =>
 {
     var requestResult = "Error saving file.";
-
     try
     {
+        // Check if any files were uploaded
         if (!request.Form.Files.Any())
         {
             return Results.BadRequest("At least one file is needed");
         }
 
+        // Check and create certificate directory if needed
         if (!Directory.Exists(@"/customer/config/certificate/"))
         {
             try
@@ -2436,29 +2454,55 @@ app.MapPost("/upload/mqtt/certificate", [AuthorizeBasicAuth]
             }
             catch (Exception ex)
             {
-
-                eventProcessorLogger.LogError(ex, "Error creating CA directory.");
+                eventProcessorLogger.LogError(ex, "Error creating certificate directory.");
             }
         }
 
+        // Get certificate password from form data
+        var certificatePassword = request.Form["password"].FirstOrDefault() ?? string.Empty;
+
+        // Process uploaded file
         foreach (var file in request.Form.Files)
         {
-            using (var stream = new FileStream(@"/customer/config/certificate/" + file.FileName, FileMode.Create))
+            var filePath = Path.Combine("/customer/config/certificate/", file.FileName);
+            using (var stream = new FileStream(filePath, FileMode.Create))
             {
                 file.CopyTo(stream);
             }
+
+            try
+            {
+                // Get current configuration
+                var configDto = configurationService.GetConfigDtoFromDb().Result;
+                if (configDto != null)
+                {
+                    // Update certificate path and password
+                    configDto.mqttSslClientCertificate = filePath;
+                    configDto.mqttSslClientCertificatePassword = certificatePassword;
+
+                    // Save updated configuration
+                    configurationService.SaveConfigDtoToDb(configDto);
+                    eventProcessorLogger.LogInformation("Certificate and password saved successfully");
+                }
+            }
+            catch (Exception ex)
+            {
+                eventProcessorLogger.LogError(ex, "Error updating configuration with certificate information");
+            }
+
+            // Only process the first file
             break;
         }
 
-        return Results.Ok("File Uploaded Sucessuful");
+        return Results.Ok("File and certificate password uploaded successfully");
     }
     catch (Exception exDb)
     {
+        eventProcessorLogger.LogError(exDb, "Error processing certificate upload");
         File.WriteAllText(Path.Combine("/tmp", "error-db.txt"), exDb.Message);
         return Results.BadRequest(requestResult);
     }
 });
-
 app.MapPost("/api/logging/level", [AuthorizeBasicAuth] (
     [FromBody] LogLevelRequest request,
     LoggingService loggingService) =>

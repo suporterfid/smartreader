@@ -15,6 +15,8 @@ namespace SmartReader.Infrastructure.ViewModel;
 
 public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 {
+    public string mqttAllowUntrustedCertificates;
+
     public string id { get; set; } = "";
 
     public string readerName { get; set; } = "";
@@ -255,7 +257,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
 
     public string mqttBrokerType { get; set; } = "MQTT";
 
-    public string mqttBrokerProtocol { get; set; } = "tcp";
+    public string mqttBrokerProtocol { get; set; } = "mqtt";
 
     public string mqttBrokerWebSocketPath { get; set; } = "/mqtt";
 
@@ -1710,7 +1712,7 @@ public class StandaloneConfigDTO : IEquatable<StandaloneConfigDTO>
             config.mqttUseSsl = HttpUtility.UrlDecode(config.mqttUseSsl);
 
             config.mqttSslCaCertificate = HttpUtility.UrlDecode(config.mqttSslCaCertificate);
-
+            
             config.mqttSslClientCertificate = HttpUtility.UrlDecode(config.mqttSslClientCertificate);
 
             config.mqttBrokerAddress = HttpUtility.UrlDecode(config.mqttBrokerAddress);

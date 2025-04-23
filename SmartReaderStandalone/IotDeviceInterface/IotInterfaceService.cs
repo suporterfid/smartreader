@@ -441,7 +441,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private readonly ValidationService _validationService;
 
-    private readonly IConfigurationService _configurationService;
+    private readonly ISmartReaderConfigurationService _configurationService;
 
     private readonly ITcpSocketService _tcpSocketService;
 
@@ -470,7 +470,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         ILogger<IotInterfaceService> logger,
         ILoggerFactory loggerFactory,
         IHttpClientFactory httpClientFactory,
-        IConfigurationService configurationService,
+        ISmartReaderConfigurationService configurationService,
         ITcpSocketService tcpSocketService,
         IMqttService mqttService,
         IWebSocketService webSocketService)

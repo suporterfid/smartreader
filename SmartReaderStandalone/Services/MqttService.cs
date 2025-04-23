@@ -8,6 +8,7 @@ using Newtonsoft.Json;
 using SmartReader.Infrastructure.ViewModel;
 using System.Globalization;
 using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
 namespace SmartReaderStandalone.Services
@@ -252,13 +253,17 @@ namespace SmartReaderStandalone.Services
         {
             try
             {
+                // Armazenar o ID do dispositivo e as configurações
                 DeviceIdMqtt = mqttClientId;
                 _standaloneConfigDTO = standaloneConfigDTO;
+
+                // Usar o nome do leitor como ID cliente se não foi fornecido
                 if (string.IsNullOrEmpty(mqttClientId))
                 {
                     mqttClientId = _standaloneConfigDTO.readerName;
                 }
 
+                // Extrair parâmetros de configuração
                 var mqttBrokerAddress = _standaloneConfigDTO.mqttBrokerAddress;
                 var mqttBrokerPort = int.Parse(_standaloneConfigDTO.mqttBrokerPort);
                 var mqttUsername = _standaloneConfigDTO.mqttUsername;
@@ -266,393 +271,258 @@ namespace SmartReaderStandalone.Services
                 var mqttTagEventsTopic = _standaloneConfigDTO.mqttTagEventsTopic;
                 var mqttTagEventsQoS = int.Parse(_standaloneConfigDTO.mqttTagEventsQoS);
                 var lastWillMessage = BuildMqttLastWillMessage();
+
+                // Período Keep-Alive (padrão: 30 segundos)
                 int mqttKeepAlivePeriod = 30;
                 _ = int.TryParse(_standaloneConfigDTO.mqttBrokerKeepAlive, out mqttKeepAlivePeriod);
 
-                //var mqttBrokerAddress = _configuration.GetValue<string>("MQTTInfo:Address");
-                //var mqttBrokerPort = _configuration.GetValue<int>("MQTTInfo:Port");
-                //var mqttBrokerUsername = _configuration.GetValue<string>("MQTTInfo:username");
-                //var mqttBrokerPassword = _configuration.GetValue<string>("MQTTInfo:password");
-                // Setup and start a managed MQTT client.
-                // 1 - The managed client is started once and will maintain the connection automatically including reconnecting etc.
-                // 2 - All MQTT application messages are added to an internal queue and processed once the server is available.
-                // 3 - All MQTT application messages can be stored to support sending them after a restart of the application
-                // 4 - All subscriptions are managed across server connections. There is no need to subscribe manually after the connection with the server is lost.
+                // Determinar o protocolo
+                var protocol = (_standaloneConfigDTO.mqttBrokerProtocol ?? "mqtt").ToLower();
+                bool isWebSocket = protocol.Contains("ws");
+                bool isSecure = protocol.Contains("mqtts") || protocol.Contains("wss");
 
+                // Iniciar construtor de opções
+                var clientOptionsBuilder = new MqttClientOptionsBuilder()
+                    .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
+                    .WithClientId(mqttClientId)
+                    .WithWillPayload(lastWillMessage.PayloadSegment)
+                    .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
+                    .WithWillTopic(lastWillMessage.Topic)
+                    .WithWillRetain(lastWillMessage.Retain)
+                    .WithWillContentType(lastWillMessage.ContentType);
 
-                // Setup and start a managed MQTT client.
-                //ManagedMqttClientOptions localMqttClientOptions;
-
-
-                if (string.IsNullOrEmpty(mqttUsername))
+                // Configurar servidor (WebSocket ou TCP)
+                if (isWebSocket)
                 {
-                    //string localClientId = mqttClientId + "-" + DateTime.Now.ToFileTimeUtc();
-                    var localClientId = mqttClientId; // + "-" + DateTime.Now.ToFileTimeUtc();
-
-
-                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerProtocol)
-                    && _standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("ws"))
+                    // Determinar caminho do WebSocket
+                    var mqttBrokerWebSocketPath = "/mqtt";
+                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerWebSocketPath))
                     {
-
-                        var mqttBrokerWebSocketPath = "/mqtt";
-                        if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerWebSocketPath))
-                        {
-                            mqttBrokerWebSocketPath = _standaloneConfigDTO.mqttBrokerWebSocketPath;
-                        }
-
-
-
-                        _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
-                        .WithClientOptions(new MqttClientOptionsBuilder()
-                            //.WithCleanSession()
-                            .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                            //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                            .WithClientId(localClientId)
-                            .WithWebSocketServer(o => o.WithUri($"{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}"))
-                            .WithWillPayload(lastWillMessage.PayloadSegment)
-                            .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
-                            .WithWillTopic(lastWillMessage.Topic)
-                            .WithWillRetain(lastWillMessage.Retain)
-                            .WithWillContentType(lastWillMessage.ContentType)
-                            //.WithWillMessage(lastWillMessage)
-                            .Build())
-                        .Build();
-                    }
-                    else
-                    {
-                        _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
-                        .WithClientOptions(new MqttClientOptionsBuilder()
-                            //.WithCleanSession()
-                            .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                            //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                            .WithClientId(localClientId)
-                            .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
-                                                    //.WithWebSocketServer("wss://mymqttserver:443")
-                                                    .WithWillPayload(lastWillMessage.PayloadSegment)
-                            .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
-                            .WithWillTopic(lastWillMessage.Topic)
-                            .WithWillRetain(lastWillMessage.Retain)
-                            .WithWillContentType(lastWillMessage.ContentType)
-                            //.WithWillMessage(lastWillMessage)
-                            .Build())
-                        .Build();
+                        mqttBrokerWebSocketPath = _standaloneConfigDTO.mqttBrokerWebSocketPath;
                     }
 
+                    // Configurar servidor WebSocket
+                    _ = clientOptionsBuilder.WithWebSocketServer(o => o.WithUri($"{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}"));
                 }
                 else
                 {
-                    var localClientId = mqttClientId; // + "-" + DateTime.Now.ToFileTimeUtc();
-
-                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerProtocol)
-                        && _standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("ws"))
-                    {
-                        var mqttBrokerWebSocketPath = "/mqtt";
-                        if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerWebSocketPath))
-                        {
-                            mqttBrokerWebSocketPath = _standaloneConfigDTO.mqttBrokerWebSocketPath;
-                        }
-                        if (_standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("wss"))
-                        {
-                            _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
-                        .WithClientOptions(new MqttClientOptionsBuilder()
-                            //.WithCleanSession()
-                            .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                            //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                            .WithClientId(localClientId)
-                             .WithWebSocketServer(o => o.WithUri($"{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}"))
-                            .WithCredentials(mqttUsername, mqttPassword)
-                                                    .WithWillPayload(lastWillMessage.PayloadSegment)
-                            .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
-                            .WithWillTopic(lastWillMessage.Topic)
-                            .WithWillRetain(lastWillMessage.Retain)
-                            .WithWillContentType(lastWillMessage.ContentType)
-                            .WithTlsOptions(o =>
-                            {
-                                // The used public broker sometimes has invalid certificates. This sample accepts all
-                                // certificates. This should not be used in live environments.
-                                _ = o.WithCertificateValidationHandler(_ => true);
-
-                                // The default value is determined by the OS. Set manually to force version.
-                                _ = o.WithSslProtocols(SslProtocols.Tls12);
-                            })
-                            //.WithWillMessage(lastWillMessage)
-                            .Build())
-                        .Build();
-                        }
-                        else
-                        {
-                            _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
-                                                .WithClientOptions(new MqttClientOptionsBuilder()
-                                                    //.WithCleanSession()
-                                                    .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                                                    //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                                                    .WithClientId(localClientId)
-                                                     .WithWebSocketServer(o => o.WithUri($"{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}"))
-                                                    .WithCredentials(mqttUsername, mqttPassword)
-                                                                            .WithWillPayload(lastWillMessage.PayloadSegment)
-                                                    .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
-                                                    .WithWillTopic(lastWillMessage.Topic)
-                                                    .WithWillRetain(lastWillMessage.Retain)
-                                                    .WithWillContentType(lastWillMessage.ContentType)
-                                                    //.WithWillMessage(lastWillMessage)
-                                                    .Build())
-                                                .Build();
-                        }
-                        _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
-                        .WithClientOptions(new MqttClientOptionsBuilder()
-                            //.WithCleanSession()
-                            .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                            //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                            .WithClientId(localClientId)
-                             .WithWebSocketServer(o => o.WithUri($"{mqttBrokerAddress}:{mqttBrokerPort}{mqttBrokerWebSocketPath}"))
-                            .WithCredentials(mqttUsername, mqttPassword)
-                                                    .WithWillPayload(lastWillMessage.PayloadSegment)
-                            .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
-                            .WithWillTopic(lastWillMessage.Topic)
-                            .WithWillRetain(lastWillMessage.Retain)
-                            .WithWillContentType(lastWillMessage.ContentType)
-                        //.WithWillMessage(lastWillMessage)
-                            .Build())
-                        .Build();
-                    }
-                    else
-                    {
-                        if (_standaloneConfigDTO.mqttBrokerProtocol.ToLower().Contains("mqtts"))
-                        {
-                            _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
-                                .WithClientOptions(new MqttClientOptionsBuilder()
-                                    //.WithCleanSession()
-                                    .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                                    //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                                    .WithClientId(localClientId)
-                                    .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
-                                    .WithCredentials(mqttUsername, mqttPassword)
-                                                            .WithWillPayload(lastWillMessage.PayloadSegment)
-                                    .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
-                                    .WithWillTopic(lastWillMessage.Topic)
-                                    .WithWillRetain(lastWillMessage.Retain)
-                                    .WithWillContentType(lastWillMessage.ContentType)
-                                    .WithTlsOptions(o =>
-                                    {
-                                        // The used public broker sometimes has invalid certificates. This sample accepts all
-                                        // certificates. This should not be used in live environments.
-                                        _ = o.WithCertificateValidationHandler(_ => true);
-
-                                        // The default value is determined by the OS. Set manually to force version.
-                                        _ = o.WithSslProtocols(SslProtocols.Tls12);
-                                    })
-                                    //.WithWillMessage(lastWillMessage)
-                                    .Build())
-                                .Build();
-                        }
-                        else
-                        {
-                            _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
-                                .WithClientOptions(new MqttClientOptionsBuilder()
-                                    //.WithCleanSession()
-                                    .WithKeepAlivePeriod(new TimeSpan(0, 0, 0, mqttKeepAlivePeriod))
-                                    //.WithCommunicationTimeout(TimeSpan.FromMilliseconds(60 * 1000))
-                                    .WithClientId(localClientId)
-                                    .WithTcpServer(mqttBrokerAddress, mqttBrokerPort)
-                                    .WithCredentials(mqttUsername, mqttPassword)
-                                                            .WithWillPayload(lastWillMessage.PayloadSegment)
-                                    .WithWillQualityOfServiceLevel(lastWillMessage.QualityOfServiceLevel)
-                                    .WithWillTopic(lastWillMessage.Topic)
-                                    .WithWillRetain(lastWillMessage.Retain)
-                                    .WithWillContentType(lastWillMessage.ContentType)
-                                    //.WithWillMessage(lastWillMessage)
-                                    .Build())
-                                .Build();
-                        }
-
-                    }
+                    // Configurar servidor TCP
+                    _ = clientOptionsBuilder.WithTcpServer(mqttBrokerAddress, mqttBrokerPort);
                 }
 
+                // Configurar credenciais (se fornecidas)
+                if (!string.IsNullOrEmpty(mqttUsername))
+                {
+                    _ = clientOptionsBuilder.WithCredentials(mqttUsername, mqttPassword);
+                }
 
+                // Configurar opções TLS (se usando SSL)
+                if (isSecure)
+                {
+                    _ = clientOptionsBuilder.WithTlsOptions(o =>
+                    {
+                        //// Validação de certificados
+                        //if (_standaloneConfigDTO.mqttAllowUntrustedCertificates == "1")
+                        //{
+                        //    _ = o.WithCertificateValidationHandler(_ => true);
+                        //}
+
+                        _ = o.WithAllowUntrustedCertificates(true);
+                        _ = o.WithCertificateValidationHandler(_ => true);
+                        // Forçar versão do protocolo TLS
+                        _ = o.WithSslProtocols(SslProtocols.Tls12);
+
+                        // Adicionar certificado cliente se configurado
+                        
+                        if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttSslClientCertificate))
+                        {
+
+                            try
+                            {
+                                //var clientCert = new X509Certificate2(
+                                //    _standaloneConfigDTO.mqttSslClientCertificate,
+                                //    _standaloneConfigDTO.mqttSslClientCertificatePassword ?? string.Empty
+                                //);
+
+
+                                //// Criar uma coleção contendo o certificado
+                                //var clientCertificates = new List<X509Certificate2> { clientCert };
+
+                                //var caChain = new X509Certificate2Collection();
+                                //caChain.ImportFromPem(_standaloneConfigDTO.mqttSslCaCertificate);
+                                //_ = o.WithTrustChain(caChain);
+
+                                List<X509Certificate2> certs = new List<X509Certificate2>
+                                {
+                                    new X509Certificate2(_standaloneConfigDTO.mqttSslClientCertificate, _standaloneConfigDTO.mqttSslClientCertificatePassword ?? string.Empty, X509KeyStorageFlags.Exportable)
+                                };
+
+
+
+                                // Passar a coleção diretamente para o método
+                                _ = o.WithClientCertificates(certs);
+
+
+                            }
+                            catch (Exception certEx)
+                            {
+                                _logger.LogError(certEx, "Erro ao carregar certificado cliente MQTT");
+                            }
+                        }
+
+                    });
+                }
+
+                // Criar opções para cliente gerenciado
+                _mqttClientOptions = new ManagedMqttClientOptionsBuilder()
+                    .WithClientOptions(clientOptionsBuilder.Build())
+                    .Build();
+
+                // Criar e iniciar cliente MQTT
                 _mqttClient = new MqttFactory().CreateManagedMqttClient();
-                //_mqttClient = new MqttFactory().CreateMqttClient();
 
+                // Configurar manipuladores de eventos
+                ConfigureEventHandlers();
 
+                // Iniciar o cliente
                 await _mqttClient.StartAsync(_mqttClientOptions);
-
-
-
-
-                //_mqttClient.UseApplicationMessageReceivedHandler(e => { });
-
-
-
-                _mqttClient.ApplicationMessageReceivedAsync += async e =>
-                {
-                    //e.AutoAcknowledge = false;
-
-                    _logger.LogInformation("### RECEIVED APPLICATION MESSAGE ###");
-                    _logger.LogInformation($"+ Topic = {e.ApplicationMessage.Topic}");
-                    if (e.ApplicationMessage.PayloadSegment != null)
-                        _logger.LogInformation($"+ Payload = {Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment)}");
-
-                    _logger.LogInformation($"+ QoS = {e.ApplicationMessage.QualityOfServiceLevel}");
-                    _logger.LogInformation($"+ Retain = {e.ApplicationMessage.Retain}");
-                    _logger.LogInformation($"+ ClientId = {e.ClientId}");
-
-                    var payload = "";
-                    if (e.ApplicationMessage.PayloadSegment != null)
-                        payload = Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment);
-                    try
-                    {
-                        //ProcessMqttCommandMessage(e.ClientId, e.ApplicationMessage.Topic, payload);
-                        // Raise the standardized event
-                        MessageReceived?.Invoke(this, new MqttMessageEventArgs(e.ClientId, e.ApplicationMessage.Topic, payload));
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError("MessageReceived: Unexpected error. " + ex.Message);
-                    }
-
-                    _logger.LogInformation(" ");
-                    // Ensure the lambda returns a Task
-                    await Task.CompletedTask;
-                };
-
-
-
-
-                _mqttClient.ConnectedAsync += async e =>
-                {
-                    Console.WriteLine("### CONNECTED WITH SERVER ###");
-                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
-                        _logger.LogInformation("### CONNECTED WITH SERVER ### " + _standaloneConfigDTO.mqttBrokerAddress,
-                            SeverityType.Debug);
-                    var mqttManagementEvents = new Dictionary<string, object>
-                    {
-                        { "smartreader-mqtt-status", "connected" },
-                        { "readerName", _standaloneConfigDTO.readerName },
-                        { "mac", _deviceMacAddress },
-                        { "timestamp", SmartReaderJobs.Utils.Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now) }
-                    };
-                    await PublishMqttManagementEventAsync(mqttManagementEvents);
-
-                    try
-                    {
-                        var mqttTopicFilters = BuildMqttTopicList(_standaloneConfigDTO);
-
-
-                        await _mqttClient.SubscribeAsync(mqttTopicFilters.ToArray());
-                        _logger.LogInformation("### Subscribed to topics. ### ");
-                        //_ = ProcessGpoErrorPortRecoveryAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Subscribe: Unexpected error. " + ex.Message);
-                    }
-                };
-
-
-                _mqttClient.DisconnectedAsync += async e =>
-                {
-                    Console.WriteLine("### DISCONNECTED FROM SERVER ###");
-
-
-
-                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
-                        _logger.LogInformation($"### DISCONNECTED FROM SERVER ### {_standaloneConfigDTO.mqttBrokerAddress}");
-
-                    try
-                    {
-                        var disconnectDetails = $"Disconnection: ConnectResult {e.ConnectResult} \n";
-                        disconnectDetails += $"Disconnection: Reason {e.Reason} \n";
-                        if (e.ConnectResult != null)
-                        {
-                            disconnectDetails += $" ResultCode {e.ConnectResult.ResultCode} \n";
-                        }
-                        disconnectDetails += $" ClientWasConnected {e.ClientWasConnected} \n";
-                        if (e.Exception != null && !string.IsNullOrEmpty(e.Exception.Message))
-                        {
-                            disconnectDetails += $" Message {e.Exception.Message} \n";
-                        }
-
-                        _logger.LogInformation($"### Details {disconnectDetails}");
-
-                        // Raise the event instead of directly calling the method
-                        GpoErrorRequested?.Invoke(this, new MqttErrorEventArgs(disconnectDetails));
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "MQTT Disconnected.");
-                    }
-
-                    // Ensure the lambda returns a Task
-                    await Task.CompletedTask;
-                };
-
-                _mqttClient.ConnectingFailedAsync += async e =>
-                {
-                    Console.WriteLine("### CONNECTION FAILED ###");
-
-
-
-                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
-                        _logger.LogInformation($"### CONNECTION FAILED ### {_standaloneConfigDTO.mqttBrokerAddress}");
-
-                    try
-                    {
-                        var disconnectDetails = $"CONNECTION FAILED: ConnectResult {e.ConnectResult} \n";
-
-                        _logger.LogInformation($"### Details {disconnectDetails}");
-
-                        // Raise the event instead of directly calling the method
-                        GpoErrorRequested?.Invoke(this, new MqttErrorEventArgs(disconnectDetails));
-                    }
-                    catch (Exception)
-                    {
-
-                    }
-                    // Ensure the lambda returns a Task
-                    await Task.CompletedTask;
-                };
-
-                _mqttClient.ConnectionStateChangedAsync += async e =>
-                {
-                    Console.WriteLine("### CONNECTION STATE CHANGED ###");
-
-
-
-                    if (!string.IsNullOrEmpty(_standaloneConfigDTO.mqttBrokerAddress))
-                        _logger.LogInformation($"### CONNECTION STATE CHANGED ### {_standaloneConfigDTO.mqttBrokerAddress}");
-
-                    var disconnectDetails = "";
-
-                    try
-                    {
-                        if (_mqttClient.InternalClient.IsConnected)
-                        {
-                            _logger.LogInformation("The MQTT client is currently connected.");
-                        }
-                        else
-                        {
-                            _logger.LogInformation("The MQTT client is disconnected.");
-                        }
-
-                        //disconnectDetails = $"CONNECTION STATE CHANGED: ConnectResult {e.ToString()} \n";
-
-                        //_logger.LogInformation($"### Details {disconnectDetails}");
-
-                    }
-                    catch (Exception)
-                    {
-                        // Raise the event instead of directly calling the method
-                        GpoErrorRequested?.Invoke(this, new MqttErrorEventArgs(disconnectDetails));
-                    }
-
-                };
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected error" + ex.Message);
+                _logger.LogError(ex, "Erro inesperado ao conectar ao broker MQTT: " + ex.Message);
             }
+        }
 
-            // Ensure the lambda returns a Task
-            await Task.CompletedTask;
+        // Método auxiliar para configurar manipuladores de eventos
+        private void ConfigureEventHandlers()
+        {
+            // Manipulador para mensagens recebidas
+            _mqttClient.ApplicationMessageReceivedAsync += async e =>
+            {
+                _logger.LogInformation("### MENSAGEM RECEBIDA ###");
+                _logger.LogInformation($"+ Tópico = {e.ApplicationMessage.Topic}");
+                if (e.ApplicationMessage.PayloadSegment != null)
+                    _logger.LogInformation($"+ Conteúdo = {Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment)}");
+
+                _logger.LogInformation($"+ QoS = {e.ApplicationMessage.QualityOfServiceLevel}");
+                _logger.LogInformation($"+ Retain = {e.ApplicationMessage.Retain}");
+                _logger.LogInformation($"+ ClientId = {e.ClientId}");
+
+                var payload = "";
+                if (e.ApplicationMessage.PayloadSegment != null)
+                    payload = Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment);
+                try
+                {
+                    MessageReceived?.Invoke(this, new MqttMessageEventArgs(e.ClientId, e.ApplicationMessage.Topic, payload));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("Erro ao processar mensagem recebida: " + ex.Message);
+                }
+
+                await Task.CompletedTask;
+            };
+
+            // Manipulador para conexão bem-sucedida
+            _mqttClient.ConnectedAsync += async e =>
+            {
+                _logger.LogInformation($"### CONECTADO AO SERVIDOR ### {_standaloneConfigDTO.mqttBrokerAddress}");
+
+                var mqttManagementEvents = new Dictionary<string, object>
+        {
+            { "smartreader-mqtt-status", "connected" },
+            { "readerName", _standaloneConfigDTO.readerName },
+            { "mac", _deviceMacAddress },
+            { "timestamp", SmartReaderJobs.Utils.Utils.CSharpMillisToJavaLongMicroseconds(DateTime.Now) }
+        };
+                await PublishMqttManagementEventAsync(mqttManagementEvents);
+
+                try
+                {
+                    var mqttTopicFilters = BuildMqttTopicList(_standaloneConfigDTO);
+                    await _mqttClient.SubscribeAsync(mqttTopicFilters.ToArray());
+                    _logger.LogInformation("### Inscrito nos tópicos. ###");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Erro ao se inscrever nos tópicos: " + ex.Message);
+                }
+
+                await Task.CompletedTask;
+            };
+
+            // Manipulador para desconexão
+            _mqttClient.DisconnectedAsync += async e =>
+            {
+                _logger.LogInformation($"### DESCONECTADO DO SERVIDOR ### {_standaloneConfigDTO.mqttBrokerAddress}");
+
+                try
+                {
+                    var disconnectDetails = $"Desconexão: ConnectResult {e.ConnectResult} \n";
+                    disconnectDetails += $"Desconexão: Reason {e.Reason} \n";
+                    if (e.ConnectResult != null)
+                    {
+                        disconnectDetails += $" ResultCode {e.ConnectResult.ResultCode} \n";
+                    }
+                    disconnectDetails += $" ClientWasConnected {e.ClientWasConnected} \n";
+                    if (e.Exception != null && !string.IsNullOrEmpty(e.Exception.Message))
+                    {
+                        disconnectDetails += $" Message {e.Exception.Message} \n";
+                    }
+
+                    _logger.LogInformation($"### Detalhes {disconnectDetails}");
+                    GpoErrorRequested?.Invoke(this, new MqttErrorEventArgs(disconnectDetails));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Erro ao processar evento de desconexão MQTT.");
+                }
+
+                await Task.CompletedTask;
+            };
+
+            // Manipulador para falha na conexão
+            _mqttClient.ConnectingFailedAsync += async e =>
+            {
+                _logger.LogInformation($"### FALHA NA CONEXÃO ### {_standaloneConfigDTO.mqttBrokerAddress}");
+
+                try
+                {
+                    var disconnectDetails = $"FALHA NA CONEXÃO: ConnectResult {e.ConnectResult} \n";
+                    _logger.LogInformation($"### Detalhes {disconnectDetails}");
+                    GpoErrorRequested?.Invoke(this, new MqttErrorEventArgs(disconnectDetails));
+                }
+                catch (Exception)
+                {
+                    // Ignora exceções no manipulador
+                }
+
+                await Task.CompletedTask;
+            };
+
+            // Manipulador para mudança de estado da conexão
+            _mqttClient.ConnectionStateChangedAsync += async e =>
+            {
+                _logger.LogInformation($"### ESTADO DA CONEXÃO ALTERADO ### {_standaloneConfigDTO.mqttBrokerAddress}");
+
+                try
+                {
+                    if (_mqttClient.InternalClient.IsConnected)
+                    {
+                        _logger.LogInformation("O cliente MQTT está conectado.");
+                    }
+                    else
+                    {
+                        _logger.LogInformation("O cliente MQTT está desconectado.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    GpoErrorRequested?.Invoke(this, new MqttErrorEventArgs(ex.Message));
+                }
+
+                await Task.CompletedTask;
+            };
         }
 
         private MqttApplicationMessage BuildMqttLastWillMessage()

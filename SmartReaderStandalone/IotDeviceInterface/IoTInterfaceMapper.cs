@@ -13,6 +13,8 @@ using SmartReader.Infrastructure.ViewModel;
 using SmartReaderJobs.ViewModel.Antenna;
 using SmartReaderJobs.ViewModel.Mqtt;
 using SmartReaderJobs.ViewModel.Reader;
+using SmartReaderStandalone.IotDeviceInterface;
+using System.Collections.ObjectModel;
 
 namespace SmartReader.IotDeviceInterface;
 
@@ -375,5 +377,82 @@ public class IoTInterfaceMapper
 
 
         return inventoryRequest;
+    }
+
+    /// <summary>
+    /// Maps ExtendedGpoConfiguration to Atlas GpoConfiguration
+    /// </summary>
+    public static GpoConfiguration MapToAtlasGpoConfiguration(ExtendedGpoConfiguration extendedConfig)
+    {
+        var atlasConfig = new GpoConfiguration
+        {
+            Gpo = extendedConfig.Gpo,
+            State = extendedConfig.State.HasValue
+                ? (extendedConfig.State.Value == GpoState.High
+                    ? GpoConfigurationState.High
+                    : GpoConfigurationState.Low)
+                : GpoConfigurationState.Low // Default to Low if not specified
+        };
+
+        // Note: The Atlas GpoConfiguration class only supports Gpo and State properties.
+        // Control mode and pulse duration are not supported in this version.
+        // These would need to be handled through different API calls or configurations.
+
+        return atlasConfig;
+    }
+
+    /// <summary>
+    /// Maps ExtendedGpoConfigurationRequest to Atlas GpoConfigurations
+    /// </summary>
+    public static GpoConfigurations MapToAtlasGpoConfigurations(ExtendedGpoConfigurationRequest request)
+    {
+        var atlasConfigs = new GpoConfigurations();
+
+        // Initialize the ObservableCollection if it's null
+        if (atlasConfigs.GpoConfigurations1 == null)
+        {
+            atlasConfigs.GpoConfigurations1 = new ObservableCollection<GpoConfiguration>();
+        }
+
+        foreach (var config in request.GpoConfigurations)
+        {
+            // Only map configurations that have a state value, since State is required
+            if (config.State.HasValue)
+            {
+                atlasConfigs.GpoConfigurations1.Add(MapToAtlasGpoConfiguration(config));
+            }
+            else
+            {
+                // Log a warning or handle configurations without state
+                // For now, we'll skip them or set a default
+                var atlasConfig = new GpoConfiguration
+                {
+                    Gpo = config.Gpo,
+                    State = GpoConfigurationState.Low // Default state
+                };
+                atlasConfigs.GpoConfigurations1.Add(atlasConfig);
+            }
+        }
+
+        return atlasConfigs;
+    }
+
+    /// <summary>
+    /// Maps Atlas GpoConfiguration to ExtendedGpoConfiguration
+    /// </summary>
+    public static ExtendedGpoConfiguration MapFromAtlasGpoConfiguration(GpoConfiguration atlasConfig)
+    {
+        var extendedConfig = new ExtendedGpoConfiguration
+        {
+            Gpo = atlasConfig.Gpo,
+            State = atlasConfig.State == GpoConfigurationState.High
+                ? GpoState.High
+                : GpoState.Low,
+            // Since the Atlas config doesn't have Control or PulseDuration,
+            // we set defaults
+            Control = GpoControlMode.Static // Assume static since we only have state
+        };
+
+        return extendedConfig;
     }
 }

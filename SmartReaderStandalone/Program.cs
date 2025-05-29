@@ -28,6 +28,7 @@ using SmartReaderStandalone.Authentication;
 using SmartReaderStandalone.Entities;
 using SmartReaderStandalone.IotDeviceInterface;
 using SmartReaderStandalone.Services;
+using SmartReaderStandalone.Services.SmartReaderStandalone.Services;
 using SmartReaderStandalone.Utils;
 using SmartReaderStandalone.ViewModel;
 using SmartReaderStandalone.ViewModel.Status;
@@ -157,6 +158,24 @@ builder.Services.AddSingleton<IMqttService, MqttService>(serviceProvider =>
 
 
 
+// Register GPO service
+builder.Services.AddScoped<IGpoService, GpoService>();
+
+// Ensure ReaderConfiguration is registered as singleton
+builder.Services.AddSingleton<ReaderConfiguration>(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<ReaderConfiguration>>();
+    var config = ReaderConfiguration.CreateDefault();
+
+    // Load from configuration file if exists
+    var configPath = "appsettings.reader.json";
+    if (File.Exists(configPath))
+    {
+        config = SmartReaderStandalone.IotDeviceInterface.ConfigurationExtensions.LoadFromJson(configPath);
+    }
+
+    return config;
+});
 
 builder.Services.AddSingleton<IotInterfaceService>();
 builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvider =>
@@ -169,6 +188,8 @@ builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvid
     var tcpSocketService = serviceProvider.GetRequiredService<ITcpSocketService>();
     var mqttService = serviceProvider.GetRequiredService<IMqttService>();
     var webSocketService = serviceProvider.GetRequiredService<IWebSocketService>();
+    var gpoService = serviceProvider.GetRequiredService<IGpoService>();
+
 
 
 
@@ -180,11 +201,11 @@ builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvid
         configurationService,
         tcpSocketService,
         mqttService,
-        webSocketService);
+        webSocketService,
+        gpoService);
 });
 // builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvider => serviceProvider.GetService<IotInterfaceService>());
 builder.Services.AddScoped<ISummaryQueueBackgroundService, SummaryQueueBackgroundService>();
-
 
 
 // Create and start the MQTT servers

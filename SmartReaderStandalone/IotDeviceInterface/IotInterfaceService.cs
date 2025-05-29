@@ -53,6 +53,7 @@ using ReaderStatus = SmartReaderStandalone.Entities.ReaderStatus;
 using Timer = System.Timers.Timer;
 using System.Threading.RateLimiting;
 using System.Threading.Channels;
+using SmartReaderStandalone.Services.SmartReaderStandalone.Services;
 
 namespace SmartReader.IotDeviceInterface;
 
@@ -446,7 +447,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     private readonly ITcpSocketService _tcpSocketService;
 
     private readonly IMqttService _mqttService;
+
     private readonly IWebSocketService _webSocketService;
+
+    private readonly IGpoService _gpoService;
 
     //private double _mqttPublishIntervalInSec = 1;
     //private double _mqttPublishIntervalInMs = 10;
@@ -473,7 +477,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         ISmartReaderConfigurationService configurationService,
         ITcpSocketService tcpSocketService,
         IMqttService mqttService,
-        IWebSocketService webSocketService)
+        IWebSocketService webSocketService,
+        IGpoService gpoService)
     {
         _configuration = configuration;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -495,6 +500,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _mqttService = mqttService;
 
         _webSocketService = webSocketService;
+
+        _gpoService = gpoService ?? throw new ArgumentNullException(nameof(gpoService));
 
 #if DEBUG
         _buildConfiguration = "Debug";

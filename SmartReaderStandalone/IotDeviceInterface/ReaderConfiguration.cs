@@ -43,6 +43,11 @@ namespace SmartReaderStandalone.IotDeviceInterface
         private readonly ILogger<ReaderConfiguration> _logger;
 
         /// <summary>
+        /// Gets or sets the GPO configuration settings.
+        /// </summary>
+        public GpoSettings Gpo { get; set; }
+
+        /// <summary>
         /// Initializes a new instance of the ReaderConfiguration class.
         /// </summary>
         /// <param name="logger">Logger for configuration-related events.</param>
@@ -55,6 +60,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
             Security = SecuritySettings.CreateDefault();
             Streaming = StreamingSettings.CreateDefault();
             RetryPolicy = StreamRetryPolicy.CreateDefault();
+            Gpo = GpoSettings.CreateDefault();
         }
 
         /// <summary>
@@ -87,7 +93,8 @@ namespace SmartReaderStandalone.IotDeviceInterface
                 Network = NetworkSettings.CreateDefault(),
                 Security = SecuritySettings.CreateDefault(),
                 Streaming = StreamingSettings.CreateDefault(),
-                RetryPolicy = StreamRetryPolicy.CreateDefault()
+                RetryPolicy = StreamRetryPolicy.CreateDefault(),
+                Gpo = GpoSettings.CreateDefault() 
             };
         }
 
@@ -103,6 +110,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
             validationErrors.AddRange(Security.Validate());
             validationErrors.AddRange(Streaming.Validate());
             validationErrors.AddRange(RetryPolicy.Validate());
+            validationErrors.AddRange(Gpo.Validate());
 
             if (validationErrors.Any())
             {
@@ -483,6 +491,80 @@ namespace SmartReaderStandalone.IotDeviceInterface
             };
         }
     }
+
+    /// <summary>
+    /// GPO-specific configuration settings
+    /// </summary>
+    public class GpoSettings
+    {
+        /// <summary>
+        /// Default pulse duration in milliseconds when not specified
+        /// </summary>
+        public int DefaultPulseDurationMs { get; set; } = 1000;
+
+        /// <summary>
+        /// Maximum allowed pulse duration in milliseconds
+        /// </summary>
+        public int MaxPulseDurationMs { get; set; } = 60000;
+
+        /// <summary>
+        /// Whether to allow network control mode
+        /// </summary>
+        public bool AllowNetworkControl { get; set; } = true;
+
+        /// <summary>
+        /// Default GPO configurations to apply on startup
+        /// </summary>
+        public List<ExtendedGpoConfiguration> DefaultConfigurations { get; set; } = new();
+
+        /// <summary>
+        /// Creates default GPO settings
+        /// </summary>
+        public static GpoSettings CreateDefault()
+        {
+            return new GpoSettings
+            {
+                DefaultPulseDurationMs = 1000,
+                MaxPulseDurationMs = 60000,
+                AllowNetworkControl = true,
+                DefaultConfigurations = new List<ExtendedGpoConfiguration>
+            {
+                // Default all GPOs to reader control
+                new ExtendedGpoConfiguration { Gpo = 1, Control = GpoControlMode.Reader },
+                new ExtendedGpoConfiguration { Gpo = 2, Control = GpoControlMode.Reader },
+                new ExtendedGpoConfiguration { Gpo = 3, Control = GpoControlMode.Reader },
+                new ExtendedGpoConfiguration { Gpo = 4, Control = GpoControlMode.Reader }
+            }
+            };
+        }
+
+        /// <summary>
+        /// Validates the GPO settings
+        /// </summary>
+        internal IEnumerable<string> Validate()
+        {
+            if (DefaultPulseDurationMs <= 0)
+                yield return "Default pulse duration must be greater than 0";
+
+            if (MaxPulseDurationMs < DefaultPulseDurationMs)
+                yield return "Maximum pulse duration must be greater than or equal to default duration";
+
+            if (DefaultConfigurations?.Any() == true)
+            {
+                var request = new ExtendedGpoConfigurationRequest
+                {
+                    GpoConfigurations = DefaultConfigurations
+                };
+
+                var validationResult = request.Validate();
+                foreach (var error in validationResult.Errors)
+                {
+                    yield return $"Default configuration error: {error}";
+                }
+            }
+        }
+    }
+
     /// <summary>
     /// Represents the validation result of configuration settings.
     /// </summary>

@@ -281,6 +281,103 @@ public class R700IotReader : IR700IotReader
         return systemInfoAsync;
     }
 
+    /// <summary>
+    /// Updates the reader GPO configuration with advanced options
+    /// </summary>
+    /// <param name="gpoConfiguration">Standard GPO configuration for backward compatibility</param>
+    /// <returns>Task representing the asynchronous operation</returns>
+    public Task UpdateReaderGpoAsync(GpoConfigurations gpoConfiguration)
+    {
+        return _r700IotEventProcessor.UpdateInternalProcessorReaderGpoAsync(gpoConfiguration);
+    }
+
+    /// <summary>
+    /// Updates the reader GPO configuration with extended options
+    /// </summary>
+    /// <param name="extendedConfiguration">Extended GPO configuration with advanced modes</param>
+    /// <returns>Task representing the asynchronous operation</returns>
+    public async Task UpdateReaderGpoExtendedAsync(ExtendedGpoConfigurationRequest extendedConfiguration)
+    {
+        try
+        {
+            // Validate the configuration
+            var validationResult = extendedConfiguration.Validate();
+            if (!validationResult.IsValid)
+            {
+                throw new ArgumentException(
+                    $"Invalid GPO configuration: {string.Join(", ", validationResult.Errors)}");
+            }
+
+            // Log the configuration for debugging
+            _logger.LogInformation("Updating GPO configuration with extended options: {@Config}",
+                extendedConfiguration);
+
+            // Map to Atlas format
+            var atlasConfig = IoTInterfaceMapper.MapToAtlasGpoConfigurations(extendedConfiguration);
+
+            // Send to reader
+            await _r700IotEventProcessor.UpdateInternalProcessorReaderGpoAsync(atlasConfig);
+
+            // Record health metric for successful GPO update
+            var metric = new HealthMetric.Builder(MetricType.Hardware, "GpoConfigurationUpdate")
+                .WithSeverity(MetricSeverity.Information)
+                .WithDescription("Successfully updated GPO configuration")
+                .WithSource("R700IotReader")
+                .AddMetadata("ConfiguredPorts", extendedConfiguration.GpoConfigurations.Count.ToString())
+                .Build();
+
+            await _healthMonitor.RecordMetricAsync(metric);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update extended GPO configuration");
+
+            // Record health metric for failed GPO update
+            var metric = new HealthMetric.Builder(MetricType.Hardware, "GpoConfigurationUpdate")
+                .WithSeverity(MetricSeverity.Error)
+                .WithDescription($"Failed to update GPO configuration: {ex.Message}")
+                .WithSource("R700IotReader")
+                .Build();
+
+            await _healthMonitor.RecordMetricAsync(metric);
+
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Gets the current GPO configuration with extended information
+    /// </summary>
+    /// <returns>Extended GPO configuration</returns>
+    public async Task<ExtendedGpoConfigurationRequest> GetGpoExtendedAsync()
+    {
+        try
+        {
+            var atlasConfig = await _r700IotEventProcessor.DeviceGposGetAsync();
+
+            var extendedConfig = new ExtendedGpoConfigurationRequest
+            {
+                GpoConfigurations = new List<ExtendedGpoConfiguration>()
+            };
+
+            if (atlasConfig?.GpoConfigurations1 != null)
+            {
+                foreach (var gpo in atlasConfig.GpoConfigurations1)
+                {
+                    extendedConfig.GpoConfigurations.Add(
+                        IoTInterfaceMapper.MapFromAtlasGpoConfiguration(gpo));
+                }
+            }
+
+            return extendedConfig;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get extended GPO configuration");
+            throw;
+        }
+    }
+
     public async Task StartAsync(string presetId, CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -539,11 +636,6 @@ public class R700IotReader : IR700IotReader
     public Task UpdateReaderGpiAsync(GpiConfigRoot gpiConfiguration)
     {
         return _r700IotEventProcessor.UpdateReaderGpiAsync(gpiConfiguration);
-    }
-
-    public Task UpdateReaderGpoAsync(GpoConfigurations gpoConfiguration)
-    {
-        return _r700IotEventProcessor.UpdateReaderGpoAsync(gpoConfiguration);
     }
 
     public Task UpdateHttpStreamConfigAsync(HttpStreamConfig streamConfiguration)
@@ -1951,24 +2043,26 @@ public class R700IotReader : IR700IotReader
             }
         }
 
-        public Task UpdateReaderGpoAsync(GpoConfigurations gpoConfiguration)
+        public Task UpdateInternalProcessorReaderGpoAsync(GpoConfigurations gpoConfiguration)
         {
-
             try
             {
                 return _iotDeviceInterfaceClient.DeviceGposPutAsync(gpoConfiguration);
             }
             catch (AtlasException ex) when (ex.StatusCode == 403)
             {
-                Console.WriteLine("Unexpected error: " + ex.Message);
+                _logger.LogError(ex, "Access denied when updating GPO configuration");
                 throw;
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Unexpected error: " + ex.Message);
+                _logger.LogError(ex, "Unexpected error updating GPO configuration");
                 return Task.CompletedTask;
             }
         }
+
+
+
 
         public Task UpdateHttpStreamConfigAsync(HttpStreamConfig streamConfiguration)
         {

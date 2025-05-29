@@ -11,6 +11,7 @@
 using Impinj.Atlas;
 using plugin_contract.ViewModel.Gpi;
 using plugin_contract.ViewModel.Stream;
+using SmartReaderStandalone.IotDeviceInterface;
 using System.Collections.ObjectModel;
 
 namespace SmartReader.IotDeviceInterface;
@@ -116,4 +117,17 @@ public interface IR700IotReader : IDisposable
     Task UpdateReaderGpiAsync(GpiConfigRoot gpiConfiguration);
 
     Task UpdateHttpStreamConfigAsync(HttpStreamConfig streamConfiguration);
+
+    /// <summary>
+    /// Updates the reader GPO configuration with extended options
+    /// </summary>
+    /// <param name="extendedConfiguration">Extended GPO configuration with advanced modes</param>
+    /// <returns>Task representing the asynchronous operation</returns>
+    Task UpdateReaderGpoExtendedAsync(ExtendedGpoConfigurationRequest extendedConfiguration);
+
+    /// <summary>
+    /// Gets the current GPO configuration with extended information
+    /// </summary>
+    /// <returns>Extended GPO configuration</returns>
+    Task<ExtendedGpoConfigurationRequest> GetGpoExtendedAsync();
 }

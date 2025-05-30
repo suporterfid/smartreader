@@ -153,14 +153,13 @@ builder.Services.AddSingleton<ReaderConfiguration>(sp =>
     return new ReaderConfiguration(logger);
 });
 
-builder.Services.AddScoped<IR700IotReader>(provider =>
+builder.Services.AddSingleton<IR700IotReader>(provider =>
 {
     var configuration = provider.GetRequiredService<IReaderConfiguration>();
     var loggerFactory = provider.GetRequiredService<ILoggerFactory>();
     var logger = provider.GetRequiredService<ILogger<R700IotReader>>();
     var configService = provider.GetRequiredService<ISmartReaderConfigurationService>();
 
-    // Obter o hostname do reader da configuração
     var hostname = configService.GetReaderAddress();
 
     return new R700IotReader(
@@ -202,14 +201,14 @@ builder.Services.AddSingleton<IMqttService, MqttService>(serviceProvider =>
 
 
 // Register GPO service
-builder.Services.AddScoped<IGpoService>(serviceProvider =>
+builder.Services.AddSingleton<IGpoService>(serviceProvider =>
 {
     var reader = serviceProvider.GetRequiredService<IR700IotReader>();
     var configuration = serviceProvider.GetRequiredService<IConfiguration>();
     var logger = serviceProvider.GetRequiredService<ILogger<GpoService>>();
     var readerConfiguration = serviceProvider.GetRequiredService<ReaderConfiguration>();
 
-return new GpoService(reader, logger, readerConfiguration);
+    return new GpoService(reader, logger, readerConfiguration);
 });
 
 builder.Services.AddSingleton<IHealthMonitor>(provider =>

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
@@ -73,8 +74,16 @@ namespace SmartReaderStandalone.Services
                 using var process = Process.GetCurrentProcess();
                 _cpuUsage = GetCpuUsage();
                 _memoryUsage = process.WorkingSet64 / (1024 * 1024);
-                _diskUsage = GetDiskUsage("/");
-                _networkStats = GetNetworkUsage("eth0"); // Replace eth0 with actual interface
+
+                // Usar caminho apropriado para cada sistema
+                string diskPath = OperatingSystem.IsWindows() ?
+                    Path.GetPathRoot(Environment.CurrentDirectory) ?? "C:\\" :
+                    "/";
+
+                _diskUsage = GetDiskUsage(diskPath);
+
+                // Continuar com o resto...
+                _networkStats = GetNetworkUsage("eth0");
                 (_cpuTemperature, _cpuMaxAllowed, _cpuMaxRecorded) = GetCpuTemperature();
                 _loadAverage = GetLoadAverage();
                 _processCount = GetProcessCount();
@@ -107,12 +116,21 @@ namespace SmartReaderStandalone.Services
         {
             try
             {
-                string uptimeContent = File.ReadAllText("/proc/uptime").Trim();
-                string[] parts = uptimeContent.Split(" ");
-
-                if (parts.Length > 0 && double.TryParse(parts[0], out double uptimeSeconds))
+                if (OperatingSystem.IsLinux() || OperatingSystem.IsFreeBSD())
                 {
-                    return TimeSpan.FromSeconds(uptimeSeconds);
+                    // Caminho Linux/Unix
+                    string uptimeContent = File.ReadAllText("/proc/uptime").Trim();
+                    string[] parts = uptimeContent.Split(" ");
+
+                    if (parts.Length > 0 && double.TryParse(parts[0], out double uptimeSeconds))
+                    {
+                        return TimeSpan.FromSeconds(uptimeSeconds);
+                    }
+                }
+                else
+                {
+                    // For windows and other OS, fallback to Environment.TickCount64
+                    return TimeSpan.FromMilliseconds(Environment.TickCount64);
                 }
             }
             catch (Exception ex)
@@ -123,7 +141,6 @@ namespace SmartReaderStandalone.Services
             return TimeSpan.Zero;
         }
 
-
         private double GetCpuUsage()
         {
             using var process = Process.GetCurrentProcess();
@@ -133,13 +150,56 @@ namespace SmartReaderStandalone.Services
             return (cpuTime / uptime) * 100;
         }
 
-        private double GetDiskUsage(string mountPoint)
+        private double GetDiskUsage(string diskPath)
         {
-            var drive = new DriveInfo(mountPoint);
-            if (!drive.IsReady) return 0;
+            try
+            {
+                DriveInfo drive;
 
-            double usedSpace = (double)(drive.TotalSize - drive.TotalFreeSpace) / drive.TotalSize * 100;
-            return usedSpace;
+                if (OperatingSystem.IsWindows())
+                {
+                    // No Windows, garantir que seja uma letra de drive válida
+                    if (!Path.IsPathRooted(diskPath))
+                    {
+                        diskPath = "C:\\";
+                    }
+                    drive = new DriveInfo(diskPath);
+                }
+                else
+                {
+                    // No Linux, tentar usar o drive info diretamente
+                    // Se falhar, usar o primeiro drive disponível
+                    try
+                    {
+                        drive = new DriveInfo(diskPath);
+                    }
+                    catch
+                    {
+                        // Fallback: usar o primeiro drive disponível
+                        var drives = DriveInfo.GetDrives();
+                        drive = drives.FirstOrDefault(d => d.IsReady) ?? drives.FirstOrDefault();
+                        if (drive == null)
+                        {
+                            _logger.LogWarning("No drives available for disk usage calculation");
+                            return 0;
+                        }
+                    }
+                }
+
+                if (!drive.IsReady)
+                {
+                    _logger.LogWarning("Drive is not ready: {DriveName}", drive.Name);
+                    return 0;
+                }
+
+                double usedSpace = (double)(drive.TotalSize - drive.TotalFreeSpace) / drive.TotalSize * 100;
+                return usedSpace;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error calculating disk usage for path: {DiskPath}", diskPath);
+                return 0;
+            }
         }
 
         private Dictionary<string, long> GetNetworkUsage(string interfaceName)

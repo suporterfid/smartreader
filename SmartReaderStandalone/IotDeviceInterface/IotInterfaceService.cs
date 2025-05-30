@@ -483,6 +483,8 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         Services = services;
         HttpClientFactory = httpClientFactory;
+        _iotDeviceInterfaceClient = services.GetService<IR700IotReader>() ?? throw new ArgumentNullException(nameof(IR700IotReader));
+
 
 
         _validationService = new ValidationService(

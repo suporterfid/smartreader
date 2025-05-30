@@ -32,6 +32,7 @@ using SmartReaderStandalone.Services;
 using SmartReaderStandalone.Utils;
 using SmartReaderStandalone.ViewModel;
 using SmartReaderStandalone.ViewModel.Status;
+using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
@@ -182,7 +183,7 @@ builder.Services.AddSingleton<ReaderConfiguration>(sp =>
 
 builder.Services.AddSingleton<IR700IotReader>(provider =>
 {
-    var configuration = provider.GetRequiredService<IReaderConfiguration>();
+    var configuration = provider.GetRequiredService<ReaderConfiguration>();
     var loggerFactory = provider.GetRequiredService<ILoggerFactory>();
     var logger = provider.GetRequiredService<ILogger<R700IotReader>>();
     var configService = provider.GetRequiredService<ISmartReaderConfigurationService>();
@@ -1634,27 +1635,18 @@ app.MapGet("/api/reload", [AuthorizeBasicAuth] async (RuntimeDb db) =>
 });
 
 app.MapGet("/api/getcapabilities", async (
+IServiceProvider serviceProvider,
 RuntimeDb db,
 ILogger<Program> logger,  // For general logging
     ILoggerFactory loggerFactory  // For creating specialized loggers
                                   ) =>
 {
     List<SmartReaderCapabilities> capabilities = [];
-    // Create a dedicated logger for the R700IotReader
-    var readerLogger = loggerFactory.CreateLogger<R700IotReader>();
 
-    var healthMonitor = new HealthMonitor(loggerFactory.CreateLogger<HealthMonitor>());
+    var _iotDeviceInterfaceClient = serviceProvider.GetService<R700IotReader>();
+
+    //var healthMonitor = new HealthMonitor(loggerFactory.CreateLogger<HealthMonitor>());
     
-
-
-    using (IR700IotReader _iotDeviceInterfaceClient = new R700IotReader(
-        readerAddress,
-        readerConfiguration,
-        eventProcessorLogger: readerLogger,  // Logger for event processing
-        loggerFactory: loggerFactory,        // Factory for internal logging
-        healthMonitor
-    ))
-    {
         logger.LogInformation("Retrieving reader capabilities...");
 
         // Get system information with proper error handling
@@ -1738,7 +1730,7 @@ ILogger<Program> logger,  // For general logging
 
         capabilities.Add(capability);
         logger.LogInformation("Successfully retrieved reader capabilities");
-    }
+    
 
 
 

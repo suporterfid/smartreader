@@ -8,33 +8,53 @@
         /// <summary>
         /// Gets or sets the maximum number of retry attempts.
         /// </summary>
-        public int MaxAttempts { get; set; }
+        public int MaxAttempts { get; set; } = 3;
 
         /// <summary>
         /// Gets or sets the initial delay between retries in milliseconds.
         /// </summary>
-        public int InitialDelayMs { get; set; }
+        public int InitialDelayMs { get; set; } = 1000;
 
         /// <summary>
         /// Gets or sets the maximum delay between retries in milliseconds.
         /// </summary>
-        public int MaxDelayMs { get; set; }
+        public int MaxDelayMs { get; set; } = 30000;
 
         /// <summary>
         /// Gets or sets whether to use exponential backoff for retry delays.
         /// </summary>
-        public bool UseExponentialBackoff { get; set; }
+        public bool UseExponentialBackoff { get; set; } = true;
 
         /// <summary>
         /// Gets or sets whether to add jitter to retry delays.
         /// This helps prevent thundering herd problems in distributed systems.
         /// </summary>
-        public bool AddJitter { get; set; }
+        public bool AddJitter { get; set; } = true;
 
         /// <summary>
         /// Gets or sets which HTTP status codes should trigger a retry.
         /// </summary>
-        public required List<int> RetryableStatusCodes { get; set; }
+        public List<int> RetryableStatusCodes { get; set; } = new();
+
+        /// <summary>
+        /// Initializes a new instance of StreamRetryPolicy with default values.
+        /// </summary>
+        public StreamRetryPolicy()
+        {
+            // Garantir que RetryableStatusCodes está sempre inicializada
+            if (RetryableStatusCodes == null || RetryableStatusCodes.Count == 0)
+            {
+                RetryableStatusCodes = new List<int>
+                {
+                    408, // Request Timeout
+                    429, // Too Many Requests
+                    500, // Internal Server Error
+                    502, // Bad Gateway
+                    503, // Service Unavailable
+                    504  // Gateway Timeout
+                };
+            }
+        }
 
         /// <summary>
         /// Creates a new instance of RetryPolicy with production-ready default values.
@@ -61,15 +81,15 @@
                 AddJitter = true,
 
                 // Common retryable HTTP status codes
-                RetryableStatusCodes =
-            [
-                408, // Request Timeout
-                429, // Too Many Requests
-                500, // Internal Server Error
-                502, // Bad Gateway
-                503, // Service Unavailable
-                504  // Gateway Timeout
-            ]
+                RetryableStatusCodes = new List<int>
+                {
+                    408, // Request Timeout
+                    429, // Too Many Requests
+                    500, // Internal Server Error
+                    502, // Bad Gateway
+                    503, // Service Unavailable
+                    504  // Gateway Timeout
+                }
             };
         }
 
@@ -116,6 +136,10 @@
                     }
                 }
             }
+            else
+            {
+                yield return "RetryableStatusCodes list cannot be null or empty";
+            }
         }
 
         /// <summary>
@@ -142,6 +166,59 @@
             }
 
             return Math.Min(delay, MaxDelayMs);
+        }
+
+        /// <summary>
+        /// Determines if a given HTTP status code should trigger a retry.
+        /// </summary>
+        /// <param name="statusCode">The HTTP status code to check.</param>
+        /// <returns>True if the status code should trigger a retry; otherwise, false.</returns>
+        public bool ShouldRetry(int statusCode)
+        {
+            return RetryableStatusCodes?.Contains(statusCode) ?? false;
+        }
+
+        /// <summary>
+        /// Creates a copy of this retry policy with modified settings.
+        /// </summary>
+        /// <returns>A new StreamRetryPolicy instance with copied settings.</returns>
+        public StreamRetryPolicy Clone()
+        {
+            return new StreamRetryPolicy
+            {
+                MaxAttempts = this.MaxAttempts,
+                InitialDelayMs = this.InitialDelayMs,
+                MaxDelayMs = this.MaxDelayMs,
+                UseExponentialBackoff = this.UseExponentialBackoff,
+                AddJitter = this.AddJitter,
+                RetryableStatusCodes = this.RetryableStatusCodes?.ToList() ?? new List<int>(),
+                InitialDelay = this.InitialDelay,
+                MaxDelay = this.MaxDelay
+            };
+        }
+
+        /// <summary>
+        /// Resets the retry policy to default values.
+        /// </summary>
+        public void ResetToDefaults()
+        {
+            MaxAttempts = 3;
+            InitialDelayMs = 1000;
+            MaxDelayMs = 30000;
+            UseExponentialBackoff = true;
+            AddJitter = true;
+            InitialDelay = TimeSpan.FromSeconds(1);
+            MaxDelay = TimeSpan.FromSeconds(30);
+
+            RetryableStatusCodes = new List<int>
+            {
+                408, // Request Timeout
+                429, // Too Many Requests
+                500, // Internal Server Error
+                502, // Bad Gateway
+                503, // Service Unavailable
+                504  // Gateway Timeout
+            };
         }
     }
 }

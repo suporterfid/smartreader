@@ -10,6 +10,7 @@
 #endregion
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using MQTTnet;
 using MQTTnet.Server;
@@ -128,6 +129,48 @@ builder.Services.AddSingleton(levelSwitch);
 builder.Services.AddSingleton<LoggingService>();
 
 builder.Services.AddSingleton<ISmartReaderConfigurationService, SmartReaderConfigurationService>();
+
+
+builder.Services.AddSingleton<IReaderConfiguration>(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<ReaderConfiguration>>();
+    var config = SmartReaderStandalone.IotDeviceInterface.ReaderConfiguration.CreateDefault();
+
+    // Load from configuration file if exists
+    var configPath = "appsettings.reader.json";
+    if (File.Exists(configPath))
+    {
+        config = SmartReaderStandalone.IotDeviceInterface.ConfigurationExtensions.LoadFromJson(configPath);
+    }
+
+    return config;
+});
+
+builder.Services.AddSingleton<ReaderConfiguration>(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<ReaderConfiguration>>();
+
+    return new ReaderConfiguration(logger);
+});
+
+builder.Services.AddScoped<IR700IotReader>(provider =>
+{
+    var configuration = provider.GetRequiredService<IReaderConfiguration>();
+    var loggerFactory = provider.GetRequiredService<ILoggerFactory>();
+    var logger = provider.GetRequiredService<ILogger<R700IotReader>>();
+    var configService = provider.GetRequiredService<ISmartReaderConfigurationService>();
+
+    // Obter o hostname do reader da configuração
+    var hostname = configService.GetReaderAddress();
+
+    return new R700IotReader(
+        hostname,
+        configuration,
+        logger,
+        loggerFactory
+    );
+});
+
 builder.Services.AddSingleton<ITcpSocketService, TcpSocketService>(serviceProvider =>
 {
     var configuration = serviceProvider.GetRequiredService<IConfiguration>();
@@ -148,6 +191,7 @@ builder.Services.AddSingleton<IWebSocketService, WebSocketService>(serviceProvid
 
 builder.Services.AddSingleton<IMqttService, MqttService>(serviceProvider =>
 {
+    var reader = serviceProvider.GetRequiredService<IR700IotReader>();
     var configuration = serviceProvider.GetRequiredService<IConfiguration>();
     var logger = serviceProvider.GetRequiredService<ILogger<MqttService>>();
     var configurationService = serviceProvider.GetRequiredService<ISmartReaderConfigurationService>();
@@ -157,25 +201,23 @@ builder.Services.AddSingleton<IMqttService, MqttService>(serviceProvider =>
 });
 
 
-
 // Register GPO service
-builder.Services.AddScoped<IGpoService, GpoService>();
-
-// Ensure ReaderConfiguration is registered as singleton
-builder.Services.AddSingleton<ReaderConfiguration>(sp =>
+builder.Services.AddScoped<IGpoService>(serviceProvider =>
 {
-    var logger = sp.GetRequiredService<ILogger<ReaderConfiguration>>();
-    var config = ReaderConfiguration.CreateDefault();
+    var reader = serviceProvider.GetRequiredService<IR700IotReader>();
+    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+    var logger = serviceProvider.GetRequiredService<ILogger<GpoService>>();
+    var readerConfiguration = serviceProvider.GetRequiredService<ReaderConfiguration>();
 
-    // Load from configuration file if exists
-    var configPath = "appsettings.reader.json";
-    if (File.Exists(configPath))
-    {
-        config = SmartReaderStandalone.IotDeviceInterface.ConfigurationExtensions.LoadFromJson(configPath);
-    }
-
-    return config;
+return new GpoService(reader, logger, readerConfiguration);
 });
+
+builder.Services.AddSingleton<IHealthMonitor>(provider =>
+{
+    var logger = provider.GetRequiredService<ILogger<HealthMonitor>>();
+    return new HealthMonitor(logger);
+});
+
 
 builder.Services.AddSingleton<IotInterfaceService>();
 builder.Services.AddSingleton<IHostedService, IotInterfaceService>(serviceProvider =>

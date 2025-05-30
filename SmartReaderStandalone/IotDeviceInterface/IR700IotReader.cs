@@ -108,7 +108,7 @@ public interface IR700IotReader : IDisposable
 
     Task UpdateReaderMqttAsync(MqttConfiguration mqttConfiguration);
 
-    Task<GpoConfigurations> DeviceGposGetAsync();
+    Task<List<ExtendedGpoConfiguration>> DeviceGposGetAsync();
 
     Task<object> DeviceGetInventoryPresetsSchemaAsync();
 

@@ -10,6 +10,7 @@
 #endregion
 using Impinj.Atlas;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json.Linq;
 using plugin_contract.ViewModel.Gpi;
 using plugin_contract.ViewModel.Stream;
 using SmartReaderStandalone.IotDeviceInterface;
@@ -353,19 +354,18 @@ public class R700IotReader : IR700IotReader
     {
         try
         {
-            var atlasConfig = await _r700IotEventProcessor.DeviceGposGetAsync();
+            var advancedGposConfig = await _r700IotEventProcessor.DeviceGposGetAsync();
 
             var extendedConfig = new ExtendedGpoConfigurationRequest
             {
                 GpoConfigurations = new List<ExtendedGpoConfiguration>()
             };
 
-            if (atlasConfig?.GpoConfigurations1 != null)
+            if (advancedGposConfig?.Count != 0)
             {
-                foreach (var gpo in atlasConfig.GpoConfigurations1)
+                foreach (var gpo in advancedGposConfig)
                 {
-                    extendedConfig.GpoConfigurations.Add(
-                        IoTInterfaceMapper.MapFromAtlasGpoConfiguration(gpo));
+                    extendedConfig.GpoConfigurations.Add(gpo);
                 }
             }
 
@@ -622,7 +622,7 @@ public class R700IotReader : IR700IotReader
         return _r700IotEventProcessor.UpdateReaderMqttAsync(mqttConfiguration);
     }
 
-    public Task<GpoConfigurations> DeviceGposGetAsync()
+    public Task<List<ExtendedGpoConfiguration>> DeviceGposGetAsync()
     {
         return _r700IotEventProcessor.DeviceGposGetAsync();
     }
@@ -2016,9 +2016,110 @@ public class R700IotReader : IR700IotReader
 
         }
 
-        public Task<GpoConfigurations> DeviceGposGetAsync()
+        public async Task<List<ExtendedGpoConfiguration>> DeviceGposGetAsync()
         {
-            return _iotDeviceInterfaceClient.DeviceGposGetAsync();
+            var endpoint = "device/gpos";
+            var completeUri = _httpClient.BaseAddress + endpoint;
+
+            try
+            {
+                _logger.LogDebug("Getting GPO configurations from {Uri}", completeUri);
+
+                using var response = await _httpClient.GetAsync(completeUri);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogError("Failed to get GPO configurations. Status: {StatusCode}, Response: {Response}",
+                        response.StatusCode, errorContent);
+                    throw new Exception($"Failed to get GPO configurations: {response.StatusCode} - {errorContent}");
+                }
+
+                var jsonContent = await response.Content.ReadAsStringAsync();
+                _logger.LogDebug("Received GPO configurations: {Response}", jsonContent);
+
+                // Parse the JSON response
+                var jsonObject = JObject.Parse(jsonContent);
+
+                // Create the list of ExtendedGpoConfiguration
+                var extendedGpoConfigurations = new List<ExtendedGpoConfiguration>();
+
+                // Parse the gpoConfigurations array
+                if (jsonObject["gpoConfigurations"] is JArray gpoArray)
+                {
+                    foreach (var gpoItem in gpoArray)
+                    {
+                        var extendedConfig = new ExtendedGpoConfiguration
+                        {
+                            Gpo = gpoItem["gpo"]?.Value<int>() ?? 0
+                        };
+
+                        // Handle the control field
+                        var control = gpoItem["control"]?.Value<string>();
+
+                        // Map control values to GpoControlMode
+                        switch (control?.ToLower())
+                        {
+                            case "static":
+                                extendedConfig.Control = GpoControlMode.Static;
+                                // Handle state for static control
+                                var state = gpoItem["state"]?.Value<string>()?.ToLower();
+                                extendedConfig.State = state == "high"
+                                    ? GpoState.High
+                                    : GpoState.Low;
+                                break;
+
+                            case "reading-tags":
+                                extendedConfig.Control = GpoControlMode.Reader;
+                                // For reader control, state might not be relevant
+                                extendedConfig.State = null;
+                                break;
+
+                            case "pulsed":
+                                extendedConfig.Control = GpoControlMode.Pulsed;
+                                // Extract pulse duration if available
+                                if (gpoItem["pulseDuration"] != null)
+                                {
+                                    extendedConfig.PulseDurationMilliseconds = gpoItem["pulseDuration"]?.Value<int>();
+                                }
+                                break;
+
+                            case "network":
+                                extendedConfig.Control = GpoControlMode.Network;
+                                break;
+
+                            default:
+                                // Default to static if unknown
+                                extendedConfig.Control = GpoControlMode.Static;
+                                extendedConfig.State = GpoState.Low;
+                                _logger.LogWarning("Unknown GPO control type: {Control} for GPO {Gpo}", control, extendedConfig.Gpo);
+                                break;
+                        }
+
+                        extendedGpoConfigurations.Add(extendedConfig);
+                    }
+                }
+
+                _logger.LogInformation("Successfully retrieved extended GPO configurations for {Count} ports",
+                    extendedGpoConfigurations.Count);
+
+                return extendedGpoConfigurations;
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogError(ex, "HTTP request error while getting GPO configurations");
+                throw new Exception("Failed to communicate with the reader", ex);
+            }
+            catch (TaskCanceledException ex)
+            {
+                _logger.LogError(ex, "Request timeout while getting GPO configurations");
+                throw new Exception("Request timed out", ex);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error while getting GPO configurations");
+                throw;
+            }
         }
 
         public Task UpdateReaderGpiAsync(GpiConfigRoot gpiConfiguration)

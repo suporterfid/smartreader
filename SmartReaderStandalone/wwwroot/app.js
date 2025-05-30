@@ -4,6 +4,7 @@ var vueApplication = new Vue({
 	el: '#configApp',
 
 	data: {
+		isDarkMode: false,
 		jsonImageSummaryData: {},
 		showImageSummaryPanelBody: true,
 		input: {
@@ -49,6 +50,13 @@ var vueApplication = new Vue({
 
 
 	ready: function () {
+		// Load dark mode preference from localStorage
+		const savedDarkMode = localStorage.getItem('darkMode');
+		if (savedDarkMode !== null) {
+			this.isDarkMode = JSON.parse(savedDarkMode);
+			this.applyDarkMode();
+		}
+
 		this.fetchReaderCap();
 		this.fetchRfidStatus();		
 		this.fetchReaderConfig();		
@@ -116,6 +124,21 @@ var vueApplication = new Vue({
 	  },
 
 	methods: {
+		toggleDarkMode() {
+			this.isDarkMode = !this.isDarkMode;
+			this.applyDarkMode();
+			// Save preference to localStorage
+			localStorage.setItem('darkMode', JSON.stringify(this.isDarkMode));
+		},
+
+		applyDarkMode() {
+			if (this.isDarkMode) {
+				document.body.classList.add('dark-mode');
+			} else {
+				document.body.classList.remove('dark-mode');
+			}
+		},
+
 		downloadFile() {
 			let encodedBasicData = btoa(this.adminAccount.username + ':' + this.adminAccount.password);
 			this.$http.get('/api/settings', {
@@ -829,13 +852,36 @@ var vueApplication = new Vue({
 			    }
 			}
 			
-			//sanitize URLs:
+			// Only encode URL fields to avoid breaking numeric/boolean values
+			const urlFields = [
+				'toiValidationUrl',
+				'heartbeatUrl',
+				'heartbeatHttpAuthenticationTokenApiUrl',
+				'httpPostURL',
+				'httpAuthenticationTokenApiUrl'
+			];
 			for (let keyName in this.readerConfigs[0]) {
-			    let value = encodeURIComponent(this.readerConfigs[0][keyName]);
-			    this.readerConfigs[0][keyName] = value;
-			    console.log('this.readerConfigs[0]['+keyName+']:'+this.readerConfigs[0][keyName]);
+				if (urlFields.includes(keyName) && this.readerConfigs[0][keyName]) {
+					this.readerConfigs[0][keyName] = encodeURIComponent(this.readerConfigs[0][keyName]);
+					console.log('Encoded URL field this.readerConfigs[0][' + keyName + ']: ' + this.readerConfigs[0][keyName]);
+				}
 			}
-			
+
+			// Validate advancedGpoMode values are within allowed range 0-11
+			const gpoModes = [
+				this.readerConfigs[0].advancedGpoMode1,
+				this.readerConfigs[0].advancedGpoMode2,
+				this.readerConfigs[0].advancedGpoMode3,
+				this.readerConfigs[0].advancedGpoMode4
+			];
+			for (let i = 0; i < gpoModes.length; i++) {
+				const mode = parseInt(gpoModes[i]);
+				if (isNaN(mode) || mode < 0 || mode > 11) {
+					alert('Invalid GPO mode value for port ' + (i + 1) + '. Must be between 0 and 11.');
+					return;
+				}
+			}
+
 			if(this.readerConfigs[0].toiValidationEnabled === 1) {
 				this.readerConfigs[0].advancedGpoEnabled = 1;
 				this.readerConfigs[0].advancedGpoMode1 = 0;
@@ -844,36 +890,36 @@ var vueApplication = new Vue({
 				this.readerConfigs[0].advancedGpoMode4 = 0;
 				this.readerConfigs[0].includeGpiEvent = 1;
 			}
-			
+
 			console.log('Applying settings:');
 			console.log('readerConfigs[0].antennaPorts:'+this.readerConfigs[0].antennaPorts);
 			console.log('readerConfigs[0].antennaStates:'+this.readerConfigs[0].antennaStates);
 			console.log('readerConfigs[0].transmitPower:'+this.readerConfigs[0].transmitPower);
 			console.log('readerConfigs[0].receiveSensitivity:'+this.readerConfigs[0].receiveSensitivity);
 			console.log('readerConfigs[0].antennaZones:'+this.readerConfigs[0].antennaZones);
-			
+
 			// POST /apply-settings
 			this.$http.post('/api/settings', this.readerConfigs[0]).then((response) => {
 
-		    // get status
-			 console.log(response.status);
+				// get status
+				console.log(response.status);
 
-		    // get status text
-		    console.log(response.statusText);
+				// get status text
+				console.log(response.statusText);
 
-		    // get 'Expires' header
-		    //console.log(response.headers.get('Expires'));
+				// get 'Expires' header
+				//console.log(response.headers.get('Expires'));
 
-		    // set data on vm
-		    //this.$set('someData', response.body);
-		    console.log('Settings applied!!');
-		    this.fetchReaderConfig();
-		    this.alertSettingsApplied();
-		  }, (response) => {
-		    // error callback
-			  console.log('Error applying settings:'+err);
-			  this.alertSettingsNotApplied();
-		  });
+				// set data on vm
+				//this.$set('someData', response.body);
+				console.log('Settings applied!!');
+				this.fetchReaderConfig();
+				this.alertSettingsApplied();
+			}, (response) => {
+				// error callback
+				console.log('Error applying settings:', response);
+				this.alertSettingsNotApplied();
+			});
 			  
 
 

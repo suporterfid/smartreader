@@ -27,6 +27,178 @@
             float: left;
             margin-right: 30px;
         }
+
+        /* Base transitions for smooth theme switching */
+        body, input, select, button, .navbar, .panel, .form-control, .btn, .nav-pills > li > a,
+        .dropdown-menu, .alert, .label, .panel-heading, .panel-body {
+            transition: all 0.3s ease-out;
+        }
+        
+        /* Dark mode styles */
+        body.dark-mode {
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+        }
+
+        /* Dropdown menu styles */
+        .dark-mode .dropdown-menu {
+            background-color: #242424;
+            border-color: #3a3a3a;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        .dark-mode .dropdown-menu > li > a {
+            color: #e0e0e0;
+        }
+
+        .dark-mode .dropdown-menu > li > a:hover,
+        .dark-mode .dropdown-menu > li > a:focus {
+            background-color: #3a3a3a;
+            color: #ffffff;
+        }
+
+
+        /* Dropdown menu styles */
+        .dark-mode .dropdown-menu {
+            background-color: #242424;
+            border-color: #3a3a3a;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        .dark-mode .dropdown-menu > li > a {
+            color: #e0e0e0;
+        }
+
+        .dark-mode .dropdown-menu > li > a:hover,
+        .dark-mode .dropdown-menu > li > a:focus {
+            background-color: #3a3a3a;
+            color: #ffffff;
+        }
+
+        .dark-mode .navbar-inverse {
+            background-color: #121212;
+            border-color: #2a2a2a;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        .dark-mode .navbar-text {
+            color: #e0e0e0;
+        }
+
+        /* Improve form control contrast and add transitions */
+        .dark-mode .form-control {
+            background-color: #2a2a2a;
+            color: #e0e0e0;
+            border-color: #3a3a3a;
+            transition: all 0.3s ease;
+        }
+
+        .dark-mode .form-control:focus {
+            border-color: #4a90e2;
+            box-shadow: 0 0 0 2px rgba(74,144,226,0.2);
+            background-color: #333333;
+        }
+
+        .dark-mode .nav-pills > li > a {
+            color: #e0e0e0;
+            transition: all 0.3s ease;
+        }
+
+        .dark-mode .nav-pills > li > a:hover {
+            background-color: #2a2a2a;
+        }
+
+        .dark-mode .nav-pills > li.active > a {
+            background-color: #4a90e2;
+            color: #ffffff;
+        }
+
+        .dark-mode .panel {
+            background-color: #242424;
+            border-color: #2a2a2a;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        .dark-mode .panel-heading {
+            background-color: #2a2a2a;
+            border-color: #333333;
+        }
+
+        .dark-mode .panel-title {
+            color: #e0e0e0;
+        }
+
+        /* Improve button styles */
+        .dark-mode .btn {
+            transition: all 0.3s ease;
+        }
+
+        .dark-mode .btn-default {
+            background-color: #2a2a2a;
+            color: #e0e0e0;
+            border-color: #3a3a3a;
+        }
+
+        .dark-mode .btn-default:hover {
+            background-color: #333333;
+            border-color: #4a4a4a;
+        }
+
+        .dark-mode .btn-primary {
+            background-color: #4a90e2;
+            border-color: #357abd;
+        }
+
+        .dark-mode .btn-primary:hover {
+            background-color: #357abd;
+            border-color: #2d6da3;
+        }
+
+        .dark-mode .label-default {
+            background-color: #4a4a4a;
+        }
+
+        .dark-mode select {
+            background-color: #2a2a2a;
+            color: #e0e0e0;
+            border-color: #3a3a3a;
+        }
+
+        .dark-mode select:focus {
+            border-color: #4a90e2;
+            box-shadow: 0 0 0 2px rgba(74,144,226,0.2);
+        }
+
+        .dark-mode table {
+            color: #e0e0e0;
+        }
+
+        .dark-mode .alert {
+            background-color: #2a2a2a;
+            border-color: #3a3a3a;
+            color: #e0e0e0;
+        }
+
+        .dark-mode .alert-success {
+            background-color: #1e4620;
+            border-color: #2d652f;
+            color: #e0e0e0;
+        }
+
+        .dark-mode .alert-danger {
+            background-color: #461e1e;
+            border-color: #652d2d;
+            color: #e0e0e0;
+        }
+
+        /* Custom icons for dark mode toggle */
+        .glyphicon-moon:before {
+            content: "☾";
+        }
+        
+        .glyphicon-sun:before {
+            content: "☀";
+        }
     </style>
 </head>
 <body>
@@ -44,6 +216,10 @@
                         <!-- xConnect 700 -->
                         <!--  R700 SoLink -->
                     </span>
+                    <button id="darkModeToggle" class="btn btn-default navbar-btn pull-right" @click="toggleDarkMode">
+                        <i class="glyphicon" :class="{'glyphicon-moon': !isDarkMode, 'glyphicon-sun': isDarkMode}"></i>
+                        {{isDarkMode ? 'Light Mode' : 'Dark Mode'}}
+                    </button>
                 </div>
             </nav>
             <!--
@@ -123,6 +299,9 @@
                     </template>
                     <li>
                         <a data-toggle="pill" href="#actions">Actions</a>
+                    </li>
+                    <li>
+                        <a data-toggle="pill" href="#test">Test</a>
                     </li>
                     <li>
                         <a data-toggle="pill" href="#admin">Admin</a>
@@ -554,60 +733,122 @@
                             <template v-if="readerConfigs[0].advancedGpoEnabled == '1'">
                                 <label for="outputAdvancedGpoPort1">GPO Port 1:</label>
                                 <select id="outputAdvancedGpoPort1" class="form-control" v-model="readerConfigs[0].advancedGpoMode1">
-                                    <option value="0">Normal</option>
-                                    <!-- <option value="2">Reader Operational Status</option>-->
-                                    <!--  <option value="3">LLRP Connection Status</option>-->
+                                    <option value="0">Static</option>
+                                    <option value="1">Pulsed</option>
+                                    <option value="2">Network Control</option>
+                                    <option value="3">Reader Control</option>
                                     <option value="4">Reader Inventory Status</option>
                                     <option value="6">New Tag Seen</option>
                                     <option value="9">Any Tag Seen</option>
                                     <option value="10">On Error Status</option>
                                     <option value="11">On Network Error Status</option>
-                                    <!--  <option value="5">Network Connection Status</option>-->
                                     <option value="7">Success on Rule Validation</option>
                                     <option value="8">Error on Rule Validation</option>
                                 </select>
+
+                                <template v-if="readerConfigs[0].advancedGpoMode1 == '0'">
+                                    <label for="gpo1State">GPO 1 State:</label>
+                                    <select id="gpo1State" class="form-control" v-model="readerConfigs[0].gpo1State">
+                                        <option value="0">Low</option>
+                                        <option value="1">High</option>
+                                    </select>
+                                </template>
+
+                                <template v-if="readerConfigs[0].advancedGpoMode1 == '1'">
+                                    <label for="gpo1PulseDuration">GPO 1 Pulse Duration (ms):</label>
+                                    <input id="gpo1PulseDuration" type="number" class="form-control" 
+                                           v-model="readerConfigs[0].gpo1PulseDuration" 
+                                           min="1" max="60000">
+                                </template>
 
                                 <label for="outputAdvancedGpoPort2">GPO Port 2:</label>
                                 <select id="outputAdvancedGpoPort2" class="form-control" v-model="readerConfigs[0].advancedGpoMode2">
-                                    <option value="0">Normal</option>
-                                    <!-- <option value="2">Reader Operational Status</option>-->
-                                    <!--  <option value="3">LLRP Connection Status</option>-->
+                                    <option value="0">Static</option>
+                                    <option value="1">Pulsed</option>
+                                    <option value="2">Network Control</option>
+                                    <option value="3">Reader Control</option>
                                     <option value="4">Reader Inventory Status</option>
                                     <option value="6">New Tag Seen</option>
                                     <option value="9">Any Tag Seen</option>
                                     <option value="10">On Error Status</option>
                                     <option value="11">On Network Error Status</option>
-                                    <!--  <option value="5">Network Connection Status</option>-->
                                     <option value="7">Success on Rule Validation</option>
                                     <option value="8">Error on Rule Validation</option>
-
                                 </select>
+
+                                <template v-if="readerConfigs[0].advancedGpoMode2 == '0'">
+                                    <label for="gpo2State">GPO 2 State:</label>
+                                    <select id="gpo2State" class="form-control" v-model="readerConfigs[0].gpo2State">
+                                        <option value="0">Low</option>
+                                        <option value="1">High</option>
+                                    </select>
+                                </template>
+
+                                <template v-if="readerConfigs[0].advancedGpoMode2 == '1'">
+                                    <label for="gpo2PulseDuration">GPO 2 Pulse Duration (ms):</label>
+                                    <input id="gpo2PulseDuration" type="number" class="form-control" 
+                                           v-model="readerConfigs[0].gpo2PulseDuration" 
+                                           min="1" max="60000">
+                                </template>
 
                                 <label for="outputAdvancedGpoPort3">GPO Port 3:</label>
                                 <select id="outputAdvancedGpoPort3" class="form-control" v-model="readerConfigs[0].advancedGpoMode3">
-                                    <option value="0">Normal</option>
-                                    <!-- <option value="2">Reader Operational Status</option>-->
+                                    <option value="0">Static</option>
+                                    <option value="1">Pulsed</option>
+                                    <option value="2">Network Control</option>
+                                    <option value="3">Reader Control</option>
                                     <option value="4">Reader Inventory Status</option>
                                     <option value="6">New Tag Seen</option>
                                     <option value="9">Any Tag Seen</option>
                                     <option value="10">On Error Status</option>
                                     <option value="11">On Network Error Status</option>
-                                    <!--  <option value="5">Network Connection Status</option>-->
                                     <option value="7">Success on Rule Validation</option>
                                     <option value="8">Error on Rule Validation</option>
-
                                 </select>
-                                <!--
+
+                                <template v-if="readerConfigs[0].advancedGpoMode3 == '0'">
+                                    <label for="gpo3State">GPO 3 State:</label>
+                                    <select id="gpo3State" class="form-control" v-model="readerConfigs[0].gpo3State">
+                                        <option value="0">Low</option>
+                                        <option value="1">High</option>
+                                    </select>
+                                </template>
+
+                                <template v-if="readerConfigs[0].advancedGpoMode3 == '1'">
+                                    <label for="gpo3PulseDuration">GPO 3 Pulse Duration (ms):</label>
+                                    <input id="gpo3PulseDuration" type="number" class="form-control" 
+                                           v-model="readerConfigs[0].gpo3PulseDuration" 
+                                           min="1" max="60000">
+                                </template>
                 <label for="outputAdvancedGpoPort4">GPO Port 4:</label>
-                <select id="outputAdvancedGpoPort4" class="form-control" v-model="readerConfigs[0].advancedGpoMode4">
-                    <option value="0">Normal</option>
-                    <option value="2">Reader Operational Status</option>
-                    <option value="3">LLRP Connection Status</option>
-                    <option value="4">Reader Inventory Status</option>
-                    <option value="5">Network Connection Status</option>
-                    <option value="6">Reader Inventory Tags Status</option>
-                </select>
-                -->
+                                <select id="outputAdvancedGpoPort4" class="form-control" v-model="readerConfigs[0].advancedGpoMode4">
+                                    <option value="0">Static</option>
+                                    <option value="1">Pulsed</option>
+                                    <option value="2">Network Control</option>
+                                    <option value="3">Reader Control</option>
+                                    <option value="4">Reader Inventory Status</option>
+                                    <option value="6">New Tag Seen</option>
+                                    <option value="9">Any Tag Seen</option>
+                                    <option value="10">On Error Status</option>
+                                    <option value="11">On Network Error Status</option>
+                                    <option value="7">Success on Rule Validation</option>
+                                    <option value="8">Error on Rule Validation</option>
+                                </select>
+
+                                <template v-if="readerConfigs[0].advancedGpoMode4 == '0'">
+                                    <label for="gpo4State">GPO 4 State:</label>
+                                    <select id="gpo4State" class="form-control" v-model="readerConfigs[0].gpo4State">
+                                        <option value="0">Low</option>
+                                        <option value="1">High</option>
+                                    </select>
+                                </template>
+
+                                <template v-if="readerConfigs[0].advancedGpoMode4 == '1'">
+                                    <label for="gpo4PulseDuration">GPO 4 Pulse Duration (ms):</label>
+                                    <input id="gpo4PulseDuration" type="number" class="form-control" 
+                                           v-model="readerConfigs[0].gpo4PulseDuration" 
+                                           min="1" max="60000">
+                                </template>
                             </template>
                         </template>
 
@@ -2054,7 +2295,19 @@
                         <br />
                     </div>
 
-                    <div id="admin" class="tab-pane fade in active">
+                    <div id="test" class="tab-pane fade">
+                        <h3>Test</h3>
+                        <div class="form-group">
+                            <label for="testEpc">EPC:</label>
+                            <input id="testEpc" class="form-control" v-model="testEpc" placeholder="Enter EPC to test">
+                        </div>
+                        <button class="btn btn-primary" v-on:click="testEpc">Test EPC</button>
+                        <div v-if="testResult" class="alert" v-bind:class="{ 'alert-success': testResult.success, 'alert-danger': !testResult.success }">
+                            {{ testResult.message }}
+                        </div>
+                    </div>
+
+                    <div id="admin" class="tab-pane fade">
                         <br />
                         <label for="outputAdminCurrentPassword">Current Admin Password:</label>
                         <input type="password" id="outputAdminCurrentPassword" class="form-control" v-model="adminCurrentPassword">
@@ -2114,3 +2367,4 @@
 <script src="js/vue-resource.min.js"></script>
 <script src="app.js"></script>
 </html>
+

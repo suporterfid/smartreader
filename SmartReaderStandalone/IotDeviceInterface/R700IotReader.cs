@@ -2043,21 +2043,40 @@ public class R700IotReader : IR700IotReader
             }
         }
 
-        public Task UpdateInternalProcessorReaderGpoAsync(GpoConfigurations gpoConfiguration)
+        public async Task UpdateInternalProcessorReaderGpoAsync(GpoConfigurations gpoConfiguration)
         {
             try
             {
-                return _iotDeviceInterfaceClient.DeviceGposPutAsync(gpoConfiguration);
-            }
-            catch (AtlasException ex) when (ex.StatusCode == 403)
-            {
-                _logger.LogError(ex, "Access denied when updating GPO configuration");
-                throw;
+                var endpoint = "device/gpos";
+                var completeUri = _httpClient.BaseAddress + endpoint;
+
+                string json = JsonSerializer.Serialize(gpoConfiguration);
+                var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
+
+                _logger.LogDebug("Sending GPO configuration update request to {Uri} with payload: {Payload}", completeUri, json);
+
+                using var response = await _httpClient.PutAsync(completeUri, requestContent);
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogError("Failed to update GPO configuration. Status: {StatusCode}, Response: {Response}", 
+                        response.StatusCode, errorContent);
+                    
+                    if (response.StatusCode == HttpStatusCode.Forbidden)
+                    {
+                        throw new Exception($"Access denied when updating GPO configuration: {response.StatusCode} - {errorContent}");
+                    }
+                    
+                    throw new Exception($"Failed to update GPO configuration: {response.StatusCode} - {errorContent}");
+                }
+
+                _logger.LogInformation("Successfully updated GPO configuration");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected error updating GPO configuration");
-                return Task.CompletedTask;
+                _logger.LogError(ex, "Unexpected error updating GPO configuration: {Message}", ex.Message);
+                throw;
             }
         }
 

@@ -1,5 +1,666 @@
 //var Vue = require('vue');
 
+/**
+ * GPO Configuration Manager
+ * Handles all GPO-related operations for the SmartReader application
+ */
+class GpoConfigurationManager {
+	constructor() {
+		this.apiBaseUrl = '/api/gpo';
+		this.maxGpoPorts = 3;
+		this.currentConfig = null;
+		this.isLoading = false;
+
+		// Bind methods to maintain context
+		this.loadConfiguration = this.loadConfiguration.bind(this);
+		this.saveConfiguration = this.saveConfiguration.bind(this);
+		this.resetToDefaults = this.resetToDefaults.bind(this);
+		this.togglePulseDuration = this.togglePulseDuration.bind(this);
+
+		// Initialize when DOM is ready
+		this.init();
+	}
+
+	/**
+	 * Initialize the GPO configuration manager
+	 */
+	async init() {
+		try {
+			this.setupEventListeners();
+			await this.loadConfiguration();
+			this.setupFormValidation();
+		} catch (error) {
+			console.error('Failed to initialize GPO Configuration Manager:', error);
+			this.showError('Failed to initialize GPO configuration');
+		}
+	}
+
+	/**
+	 * Setup event listeners for form interactions
+	 */
+	setupEventListeners() {
+		// Advanced GPO enabled checkbox
+		const advancedCheckbox = document.getElementById('advancedGpoEnabled');
+		if (advancedCheckbox) {
+			advancedCheckbox.addEventListener('change', (e) => {
+				this.toggleAdvancedGpoSection(e.target.checked);
+			});
+		}
+
+		// Control mode change handlers
+		for (let i = 1; i <= this.maxGpoPorts; i++) {
+			const controlSelect = document.getElementById(`gpo${i}Control`);
+			if (controlSelect) {
+				controlSelect.addEventListener('change', () => {
+					this.togglePulseDuration(i);
+					this.validateGpoConfiguration(i);
+				});
+			}
+
+			// State change handlers
+			const stateSelect = document.getElementById(`gpo${i}State`);
+			if (stateSelect) {
+				stateSelect.addEventListener('change', () => {
+					this.validateGpoConfiguration(i);
+				});
+			}
+
+			// Pulse duration change handlers
+			const pulseDurationInput = document.getElementById(`gpo${i}PulseDuration`);
+			if (pulseDurationInput) {
+				pulseDurationInput.addEventListener('input', () => {
+					this.validatePulseDuration(i);
+				});
+			}
+		}
+	}
+
+	/**
+	 * Setup form validation
+	 */
+	setupFormValidation() {
+		const form = document.querySelector('form');
+		if (form) {
+			form.addEventListener('submit', (e) => {
+				e.preventDefault();
+				if (this.validateAllConfigurations()) {
+					this.saveConfiguration();
+				}
+			});
+		}
+	}
+
+	/**
+	 * Toggle the advanced GPO configuration section
+	 */
+	toggleAdvancedGpoSection(enabled) {
+		const configSection = document.getElementById('gpoConfiguration');
+		if (configSection) {
+			configSection.style.display = enabled ? 'block' : 'none';
+		}
+	}
+
+	/**
+	 * Toggle pulse duration input based on control mode
+	 */
+	togglePulseDuration(gpoNumber) {
+		const controlSelect = document.getElementById(`gpo${gpoNumber}Control`);
+		const pulseDurationDiv = document.getElementById(`pulseDuration${gpoNumber}`);
+
+		if (!controlSelect || !pulseDurationDiv) {
+			console.warn(`Elements not found for GPO ${gpoNumber}`);
+			return;
+		}
+
+		if (controlSelect.value === 'pulsed') {
+			pulseDurationDiv.classList.add('show');
+		} else {
+			pulseDurationDiv.classList.remove('show');
+		}
+	}
+
+	/**
+	 * Load GPO configuration from the server
+	 */
+	async loadConfiguration() {
+		this.setLoading(true);
+
+		try {
+			const response = await this.makeApiCall('GET', '/configuration');
+
+			if (response.ok) {
+				const config = await response.json();
+				this.currentConfig = config;
+				this.populateForm(config);
+				this.showSuccess('Configuration loaded successfully');
+			} else {
+				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+			}
+		} catch (error) {
+			console.error('Error loading GPO configuration:', error);
+			this.showError('Failed to load configuration: ' + error.message);
+			// Load defaults if server call fails
+			this.loadDefaultConfiguration();
+		} finally {
+			this.setLoading(false);
+		}
+	}
+
+	/**
+	 * Load default configuration when server is unavailable
+	 */
+	loadDefaultConfiguration() {
+		const defaultConfig = {
+			gpoConfigurations: [
+				{ gpo: 1, control: 'Static', state: 'Low' },
+				{ gpo: 2, control: 'Static', state: 'Low' },
+				{ gpo: 3, control: 'Static', state: 'Low' }
+			]
+		};
+
+		this.currentConfig = defaultConfig;
+		this.populateForm(defaultConfig);
+	}
+
+	/**
+	 * Populate the form with configuration data
+	 */
+	populateForm(config) {
+		try {
+			// Set advanced GPO enabled state
+			const advancedEnabled = config.gpoConfigurations && config.gpoConfigurations.length > 0;
+			const advancedCheckbox = document.getElementById('advancedGpoEnabled');
+			if (advancedCheckbox) {
+				advancedCheckbox.checked = advancedEnabled;
+				this.toggleAdvancedGpoSection(advancedEnabled);
+			}
+
+			// Clear existing form data
+			this.clearForm();
+
+			if (config.gpoConfigurations && config.gpoConfigurations.length > 0) {
+				// Populate configurations for each GPO (limit to 3)
+				const maxConfigs = Math.min(config.gpoConfigurations.length, this.maxGpoPorts);
+
+				for (let i = 0; i < maxConfigs; i++) {
+					const gpoConfig = config.gpoConfigurations[i];
+					if (gpoConfig.gpo >= 1 && gpoConfig.gpo <= this.maxGpoPorts) {
+						this.populateGpoConfiguration(gpoConfig);
+					}
+				}
+			} else {
+				// Set defaults for all 3 GPOs
+				this.setDefaultGpoValues();
+			}
+
+			// Validate all configurations after population
+			this.validateAllConfigurations();
+
+		} catch (error) {
+			console.error('Error populating form:', error);
+			this.showError('Error displaying configuration data');
+			this.setDefaultGpoValues();
+		}
+	}
+
+	/**
+	 * Populate configuration for a specific GPO
+	 */
+	populateGpoConfiguration(gpoConfig) {
+		const gpoNumber = gpoConfig.gpo;
+
+		if (gpoNumber < 1 || gpoNumber > this.maxGpoPorts) {
+			console.warn(`Invalid GPO number: ${gpoNumber}`);
+			return;
+		}
+
+		// Set control mode
+		const controlSelect = document.getElementById(`gpo${gpoNumber}Control`);
+		if (controlSelect && gpoConfig.control) {
+			controlSelect.value = this.mapControlModeFromApi(gpoConfig.control);
+		}
+
+		// Set state with proper fallback
+		const stateSelect = document.getElementById(`gpo${gpoNumber}State`);
+		if (stateSelect) {
+			if (gpoConfig.state !== undefined && gpoConfig.state !== null) {
+				stateSelect.value = this.mapStateFromApi(gpoConfig.state);
+			} else {
+				// Default to low if state is not specified
+				stateSelect.value = 'low';
+			}
+		}
+
+		// Set pulse duration if applicable
+		const pulseDurationInput = document.getElementById(`gpo${gpoNumber}PulseDuration`);
+		if (pulseDurationInput && gpoConfig.pulseDurationMilliseconds) {
+			pulseDurationInput.value = gpoConfig.pulseDurationMilliseconds;
+		}
+
+		// Show/hide pulse duration based on control mode
+		this.togglePulseDuration(gpoNumber);
+	}
+
+	/**
+	 * Clear all form data
+	 */
+	clearForm() {
+		for (let i = 1; i <= this.maxGpoPorts; i++) {
+			const controlSelect = document.getElementById(`gpo${i}Control`);
+			const stateSelect = document.getElementById(`gpo${i}State`);
+			const pulseDurationInput = document.getElementById(`gpo${i}PulseDuration`);
+
+			if (controlSelect) controlSelect.value = 'static';
+			if (stateSelect) stateSelect.value = '';
+			if (pulseDurationInput) pulseDurationInput.value = '1000';
+
+			this.togglePulseDuration(i);
+			this.clearValidationErrors(i);
+		}
+	}
+
+	/**
+	 * Set default values for all GPOs
+	 */
+	setDefaultGpoValues() {
+		for (let i = 1; i <= this.maxGpoPorts; i++) {
+			const controlSelect = document.getElementById(`gpo${i}Control`);
+			const stateSelect = document.getElementById(`gpo${i}State`);
+			const pulseDurationInput = document.getElementById(`gpo${i}PulseDuration`);
+
+			if (controlSelect) controlSelect.value = 'static';
+			if (stateSelect) stateSelect.value = 'low';
+			if (pulseDurationInput) pulseDurationInput.value = '1000';
+
+			this.togglePulseDuration(i);
+		}
+	}
+
+	/**
+	 * Save GPO configuration to the server
+	 */
+	async saveConfiguration() {
+		if (this.isLoading) {
+			console.warn('Save operation already in progress');
+			return;
+		}
+
+		this.setLoading(true);
+
+		try {
+			if (!this.validateAllConfigurations()) {
+				throw new Error('Configuration validation failed');
+			}
+
+			const config = this.buildConfigurationObject();
+
+			const response = await this.makeApiCall('POST', '/configuration', config);
+
+			if (response.ok) {
+				this.currentConfig = config;
+				this.showSuccess('GPO configuration saved successfully');
+			} else {
+				const errorText = await response.text();
+				throw new Error(`HTTP ${response.status}: ${errorText}`);
+			}
+		} catch (error) {
+			console.error('Error saving GPO configuration:', error);
+			this.showError('Failed to save configuration: ' + error.message);
+		} finally {
+			this.setLoading(false);
+		}
+	}
+
+	/**
+	 * Build configuration object from form data
+	 */
+	buildConfigurationObject() {
+		const advancedEnabled = document.getElementById('advancedGpoEnabled')?.checked;
+
+		if (!advancedEnabled) {
+			return { gpoConfigurations: [] };
+		}
+
+		const gpoConfigurations = [];
+
+		for (let i = 1; i <= this.maxGpoPorts; i++) {
+			const control = document.getElementById(`gpo${i}Control`)?.value;
+			const state = document.getElementById(`gpo${i}State`)?.value;
+			const pulseDuration = parseInt(document.getElementById(`gpo${i}PulseDuration`)?.value);
+
+			if (!control) {
+				console.warn(`No control mode specified for GPO ${i}`);
+				continue;
+			}
+
+			const gpoConfig = {
+				gpo: i,
+				control: this.mapControlModeToApi(control)
+			};
+
+			// Only include state for modes that require it
+			if ((control === 'static' || control === 'pulsed') && state) {
+				gpoConfig.state = this.mapStateToApi(state);
+			}
+
+			// Include pulse duration for pulsed mode
+			if (control === 'pulsed' && pulseDuration > 0) {
+				gpoConfig.pulseDurationMilliseconds = pulseDuration;
+			}
+
+			gpoConfigurations.push(gpoConfig);
+		}
+
+		return { gpoConfigurations };
+	}
+
+	/**
+	 * Reset all GPOs to default configuration
+	 */
+	async resetToDefaults() {
+		if (!confirm('Are you sure you want to reset all GPO settings to defaults?')) {
+			return;
+		}
+
+		this.setLoading(true);
+
+		try {
+			const response = await this.makeApiCall('POST', '/reset');
+
+			if (response.ok) {
+				// Reload configuration from server
+				await this.loadConfiguration();
+				this.showSuccess('Configuration reset to defaults');
+			} else {
+				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+			}
+		} catch (error) {
+			console.error('Error resetting configuration:', error);
+			this.showError('Failed to reset configuration: ' + error.message);
+
+			// Fallback to local reset
+			this.resetToLocalDefaults();
+		} finally {
+			this.setLoading(false);
+		}
+	}
+
+	/**
+	 * Reset to local defaults when server reset fails
+	 */
+	resetToLocalDefaults() {
+		const advancedCheckbox = document.getElementById('advancedGpoEnabled');
+		if (advancedCheckbox) {
+			advancedCheckbox.checked = true;
+			this.toggleAdvancedGpoSection(true);
+		}
+
+		this.setDefaultGpoValues();
+		this.showSuccess('Configuration reset to local defaults');
+	}
+
+	/**
+	 * Validate all GPO configurations
+	 */
+	validateAllConfigurations() {
+		let isValid = true;
+
+		for (let i = 1; i <= this.maxGpoPorts; i++) {
+			if (!this.validateGpoConfiguration(i)) {
+				isValid = false;
+			}
+		}
+
+		return isValid;
+	}
+
+	/**
+	 * Validate a specific GPO configuration
+	 */
+	validateGpoConfiguration(gpoNumber) {
+		const controlSelect = document.getElementById(`gpo${gpoNumber}Control`);
+		const stateSelect = document.getElementById(`gpo${gpoNumber}State`);
+
+		if (!controlSelect) {
+			return false;
+		}
+
+		const control = controlSelect.value;
+		const state = stateSelect?.value;
+
+		// Clear previous errors
+		this.clearValidationErrors(gpoNumber);
+
+		let isValid = true;
+
+		// Validate state requirement for static and pulsed modes
+		if ((control === 'static' || control === 'pulsed') && (!state || state === '')) {
+			this.showValidationError(gpoNumber, 'state', 'State is required for this control mode');
+			isValid = false;
+		}
+
+		// Validate pulse duration for pulsed mode
+		if (control === 'pulsed') {
+			if (!this.validatePulseDuration(gpoNumber)) {
+				isValid = false;
+			}
+		}
+
+		return isValid;
+	}
+
+	/**
+	 * Validate pulse duration for a specific GPO
+	 */
+	validatePulseDuration(gpoNumber) {
+		const pulseDurationInput = document.getElementById(`gpo${gpoNumber}PulseDuration`);
+		const controlSelect = document.getElementById(`gpo${gpoNumber}Control`);
+
+		if (!pulseDurationInput || !controlSelect) {
+			return true; // Skip validation if elements not found
+		}
+
+		if (controlSelect.value !== 'pulsed') {
+			return true; // No validation needed for non-pulsed modes
+		}
+
+		const duration = parseInt(pulseDurationInput.value);
+
+		// Clear previous errors
+		this.clearValidationError(gpoNumber, 'pulseDuration');
+
+		if (isNaN(duration) || duration < 100 || duration > 60000) {
+			this.showValidationError(gpoNumber, 'pulseDuration',
+				'Pulse duration must be between 100 and 60000 milliseconds');
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Show validation error for a specific field
+	 */
+	showValidationError(gpoNumber, fieldType, message) {
+		const fieldId = fieldType === 'state' ? `gpo${gpoNumber}State` : `gpo${gpoNumber}PulseDuration`;
+		const field = document.getElementById(fieldId);
+
+		if (field) {
+			field.classList.add('error');
+
+			// Create or update error message
+			let errorDiv = document.getElementById(`${fieldId}Error`);
+			if (!errorDiv) {
+				errorDiv = document.createElement('div');
+				errorDiv.id = `${fieldId}Error`;
+				errorDiv.className = 'error';
+				field.parentNode.appendChild(errorDiv);
+			}
+			errorDiv.textContent = message;
+		}
+	}
+
+	/**
+	 * Clear validation error for a specific field
+	 */
+	clearValidationError(gpoNumber, fieldType) {
+		const fieldId = fieldType === 'state' ? `gpo${gpoNumber}State` : `gpo${gpoNumber}PulseDuration`;
+		const field = document.getElementById(fieldId);
+		const errorDiv = document.getElementById(`${fieldId}Error`);
+
+		if (field) {
+			field.classList.remove('error');
+		}
+		if (errorDiv) {
+			errorDiv.remove();
+		}
+	}
+
+	/**
+	 * Clear all validation errors for a GPO
+	 */
+	clearValidationErrors(gpoNumber) {
+		this.clearValidationError(gpoNumber, 'state');
+		this.clearValidationError(gpoNumber, 'pulseDuration');
+	}
+
+	/**
+	 * Map control mode from API format to UI format
+	 */
+	mapControlModeFromApi(apiControl) {
+		const mapping = {
+			'Static': 'static',
+			'Reader': 'reader',
+			'Pulsed': 'pulsed',
+			'Network': 'network'
+		};
+		return mapping[apiControl] || 'static';
+	}
+
+	/**
+	 * Map control mode from UI format to API format
+	 */
+	mapControlModeToApi(uiControl) {
+		const mapping = {
+			'static': 'Static',
+			'reader': 'Reader',
+			'pulsed': 'Pulsed',
+			'network': 'Network'
+		};
+		return mapping[uiControl] || 'Static';
+	}
+
+	/**
+	 * Map state from API format to UI format
+	 */
+	mapStateFromApi(apiState) {
+		if (typeof apiState === 'string') {
+			return apiState.toLowerCase();
+		}
+		return apiState === 1 || apiState === 'High' ? 'high' : 'low';
+	}
+
+	/**
+	 * Map state from UI format to API format
+	 */
+	mapStateToApi(uiState) {
+		return uiState === 'high' ? 'High' : 'Low';
+	}
+
+	/**
+	 * Make API call with proper error handling
+	 */
+	async makeApiCall(method, endpoint, data = null) {
+		const url = this.apiBaseUrl + endpoint;
+		const options = {
+			method: method,
+			headers: {
+				'Content-Type': 'application/json',
+				'Accept': 'application/json'
+			}
+		};
+
+		if (data) {
+			options.body = JSON.stringify(data);
+		}
+
+		const response = await fetch(url, options);
+		return response;
+	}
+
+	/**
+	 * Set loading state
+	 */
+	setLoading(loading) {
+		this.isLoading = loading;
+		const loadingDiv = document.getElementById('loadingMessage');
+		if (loadingDiv) {
+			loadingDiv.style.display = loading ? 'block' : 'none';
+		}
+
+		// Disable form elements during loading
+		const formElements = document.querySelectorAll('select, input, button');
+		formElements.forEach(element => {
+			element.disabled = loading;
+		});
+	}
+
+	/**
+	 * Show success message
+	 */
+	showSuccess(message) {
+		const successDiv = document.getElementById('successMessage');
+		if (successDiv) {
+			successDiv.textContent = message;
+			successDiv.style.display = 'block';
+			setTimeout(() => {
+				successDiv.style.display = 'none';
+			}, 5000);
+		}
+	}
+
+	/**
+	 * Show error message
+	 */
+	showError(message) {
+		console.error('GPO Configuration Error:', message);
+		alert('Error: ' + message);
+	}
+}
+
+// Global functions for backward compatibility
+let gpoManager;
+
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', function () {
+	gpoManager = new GpoConfigurationManager();
+});
+
+// Global functions called by HTML
+function loadGpoConfiguration() {
+	if (gpoManager) {
+		return gpoManager.loadConfiguration();
+	}
+}
+
+function saveGpoConfiguration() {
+	if (gpoManager) {
+		return gpoManager.saveConfiguration();
+	}
+}
+
+function resetToDefaults() {
+	if (gpoManager) {
+		return gpoManager.resetToDefaults();
+	}
+}
+
+function togglePulseDuration(gpoNumber) {
+	if (gpoManager) {
+		return gpoManager.togglePulseDuration(gpoNumber);
+	}
+}
+
 var vueApplication = new Vue({
 	el: '#configApp',
 

@@ -53,8 +53,6 @@ using ReaderStatus = SmartReaderStandalone.Entities.ReaderStatus;
 using Timer = System.Timers.Timer;
 using System.Threading.RateLimiting;
 using System.Threading.Channels;
-using SmartReaderStandalone.Services.SmartReaderStandalone.Services;
-
 namespace SmartReader.IotDeviceInterface;
 
 public class IotInterfaceService : BackgroundService, IServiceProviderIsService

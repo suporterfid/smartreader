@@ -29,7 +29,6 @@ using SmartReaderStandalone.Authentication;
 using SmartReaderStandalone.Entities;
 using SmartReaderStandalone.IotDeviceInterface;
 using SmartReaderStandalone.Services;
-using SmartReaderStandalone.Services.SmartReaderStandalone.Services;
 using SmartReaderStandalone.Utils;
 using SmartReaderStandalone.ViewModel;
 using SmartReaderStandalone.ViewModel.Status;

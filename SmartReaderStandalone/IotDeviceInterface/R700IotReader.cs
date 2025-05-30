@@ -1264,7 +1264,7 @@ public class R700IotReader : IR700IotReader
         private readonly IAtlasClient _iotDeviceInterfaceClient;
         private readonly IAtlasClient _iotDeviceInterfaceClientSecure;
         private readonly bool _useBasicAuthAlways;
-        private readonly bool _useHttpAlways;
+        private readonly bool _useHttpsAlways;
         private CancellationTokenSource? _cancelSource;
         private Stream? _responseStream;
         private Task? _streamingTask;
@@ -1300,7 +1300,7 @@ public class R700IotReader : IR700IotReader
 
             _hostname = Regex.Replace(hostname, "^https*\\://", "");
             var num = (uint)_configuration.Network.Port > 0U ? _configuration.Network.Port : 0;
-            _useHttpAlways = !_configuration.Network.UseHttps;
+            _useHttpsAlways = _configuration.Network.UseHttps;
             _useBasicAuthAlways = _configuration.Security.UseBasicAuth;
             var baseUrl1 = num != 0
                 ? string.Format("http://{0}:{1}/api/v1", hostname, num)
@@ -1339,7 +1339,7 @@ public class R700IotReader : IR700IotReader
                 };
             }
 
-            if (!_useHttpAlways)
+            if (_useHttpsAlways)
             {
 
 

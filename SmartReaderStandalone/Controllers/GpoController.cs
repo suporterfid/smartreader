@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SmartReader.IotDeviceInterface;
+using SmartReaderStandalone.Authentication;
 using SmartReaderStandalone.IotDeviceInterface;
 using SmartReaderStandalone.Services;
 using System.ComponentModel.DataAnnotations;
@@ -14,7 +15,7 @@ namespace SmartReaderStandalone.Controllers
     /// </summary>
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize]
+    [AuthorizeBasicAuth]
     public class GpoController : ControllerBase
     {
         private readonly IR700IotReader _reader;
@@ -480,7 +481,6 @@ namespace SmartReaderStandalone.Controllers
         /// <returns>List of available control modes</returns>
         [HttpGet("control-modes")]
         [ProducesResponseType(typeof(ControlModesResponse), StatusCodes.Status200OK)]
-        [AllowAnonymous] // This endpoint doesn't require authentication
         public ActionResult<ControlModesResponse> GetControlModes()
         {
             try

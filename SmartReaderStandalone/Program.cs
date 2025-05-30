@@ -59,6 +59,7 @@ var levelSwitch = new LoggingLevelSwitch
 };
 
 
+
 var builder = WebApplication.CreateBuilder(args);
 
 //builder.Configuration.AddJsonFile
@@ -132,24 +133,51 @@ builder.Services.AddSingleton<ISmartReaderConfigurationService, SmartReaderConfi
 
 builder.Services.AddSingleton<IReaderConfiguration>(sp =>
 {
-    var logger = sp.GetRequiredService<ILogger<ReaderConfiguration>>();
-    var config = SmartReaderStandalone.IotDeviceInterface.ReaderConfiguration.CreateDefault();
+    var logger = sp.GetService<ILogger<ReaderConfiguration>>();
+    var readerConfig = ReaderConfiguration.CreateDefault();
 
-    // Load from configuration file if exists
-    var configPath = "appsettings.reader.json";
-    if (File.Exists(configPath))
+    try
     {
-        config = SmartReaderStandalone.IotDeviceInterface.ConfigurationExtensions.LoadFromJson(configPath);
+        var configPath = "/customer/appsettings.json";
+        if (File.Exists(configPath))
+        {
+            readerConfig = SmartReaderStandalone.IotDeviceInterface.ConfigurationExtensions.LoadFromJson(configPath);
+        }
+        readerConfig.SetLogger(logger);
+        return readerConfig;
     }
+    catch (Exception ex)
+    {
+        logger?.LogError(ex, "Failed to load reader configuration from file. Using defaults.");
 
-    return config;
+        var defaultConfig = ReaderConfiguration.CreateDefault();
+        defaultConfig.SetLogger(logger);
+        return defaultConfig;
+    }
 });
-
 builder.Services.AddSingleton<ReaderConfiguration>(sp =>
 {
-    var logger = sp.GetRequiredService<ILogger<ReaderConfiguration>>();
+    var logger = sp.GetService<ILogger<ReaderConfiguration>>();
+    var readerConfig = ReaderConfiguration.CreateDefault();
 
-    return new ReaderConfiguration(logger);
+    try
+    {
+        var configPath = "/customer/appsettings.json";
+        if (File.Exists(configPath))
+        {
+            readerConfig = SmartReaderStandalone.IotDeviceInterface.ConfigurationExtensions.LoadFromJson(configPath);
+        }
+        readerConfig.SetLogger(logger);
+        return readerConfig;
+    }
+    catch (Exception ex)
+    {
+        logger?.LogError(ex, "Failed to load reader configuration from file. Using defaults.");
+
+        var defaultConfig = ReaderConfiguration.CreateDefault();
+        defaultConfig.SetLogger(logger);
+        return defaultConfig;
+    }
 });
 
 builder.Services.AddSingleton<IR700IotReader>(provider =>
@@ -277,6 +305,7 @@ catch (Exception)
 var app = builder.Build();
 
 var eventProcessorLogger = app.Services.GetRequiredService<ILogger<Program>>();
+var readerConfiguration = app.Services.GetRequiredService<ReaderConfiguration>();
 
 var readerAddress = app.Configuration["ReaderInfo:Address"] ?? "127.0.0.1";
 // Get the current build configuration
@@ -307,7 +336,7 @@ if (app.Environment.IsDevelopment())
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<BasicAuthMiddleware>();
-
+app.UseHttpsRedirection();
 
 app.UseDefaultFiles(new DefaultFilesOptions
 {
@@ -339,6 +368,17 @@ if (Directory.Exists("/customer/wwwroot/logs"))
         EnableDirectoryBrowsing = true
     });
 
+app.UseRouting();
+app.MapControllers();
+
+app.MapGet("/debug/routes", (IEnumerable<EndpointDataSource> endpointSources) =>
+{
+    var endpoints = endpointSources.SelectMany(es => es.Endpoints);
+    return endpoints.Select(e => new {
+        DisplayName = e.DisplayName,
+        RoutePattern = (e as RouteEndpoint)?.RoutePattern?.RawText
+    });
+});
 
 app.MapGet("/metrics", async (IServiceProvider serviceProvider) =>
 {
@@ -1604,12 +1644,7 @@ ILogger<Program> logger,  // For general logging
     var readerLogger = loggerFactory.CreateLogger<R700IotReader>();
 
     var healthMonitor = new HealthMonitor(loggerFactory.CreateLogger<HealthMonitor>());
-    var readerConfiguration = ReaderConfiguration.CreateDefault();
-    readerConfiguration.Network.Hostname = readerAddress;
-    readerConfiguration.Security.Username = rshellAuthUserName;
-    readerConfiguration.Security.Password = rshellAuthPassword;
-    readerConfiguration.Security.UseBasicAuth = true;
-    readerConfiguration.Network.UseHttps = true;
+    
 
 
     using (IR700IotReader _iotDeviceInterfaceClient = new R700IotReader(

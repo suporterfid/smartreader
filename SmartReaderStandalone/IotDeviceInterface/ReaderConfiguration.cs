@@ -42,28 +42,13 @@ namespace SmartReaderStandalone.IotDeviceInterface
     /// </summary>
     public class ReaderConfiguration : IReaderConfiguration
     {
-        private readonly ILogger<ReaderConfiguration> _logger;
+        // Remove o campo logger para evitar problemas de deserialização
+        private ILogger<ReaderConfiguration>? _logger;
 
         /// <summary>
         /// Gets or sets the GPO configuration settings.
         /// </summary>
         public GpoSettings Gpo { get; set; }
-
-        /// <summary>
-        /// Initializes a new instance of the ReaderConfiguration class.
-        /// </summary>
-        /// <param name="logger">Logger for configuration-related events.</param>
-        public ReaderConfiguration(ILogger<ReaderConfiguration>? logger = null)
-        {
-            _logger = logger;
-
-            // Initialize with default settings
-            Network = NetworkSettings.CreateDefault();
-            Security = SecuritySettings.CreateDefault();
-            Streaming = StreamingSettings.CreateDefault();
-            RetryPolicy = StreamRetryPolicy.CreateDefault();
-            Gpo = GpoSettings.CreateDefault();
-        }
 
         /// <summary>
         /// Gets or sets the network configuration settings.
@@ -86,6 +71,36 @@ namespace SmartReaderStandalone.IotDeviceInterface
         public StreamRetryPolicy RetryPolicy { get; set; }
 
         /// <summary>
+        /// Construtor padrão sem parâmetros (necessário para deserialização)
+        /// </summary>
+        public ReaderConfiguration()
+        {
+            // Initialize with default settings
+            Network = NetworkSettings.CreateDefault();
+            Security = SecuritySettings.CreateDefault();
+            Streaming = StreamingSettings.CreateDefault();
+            RetryPolicy = StreamRetryPolicy.CreateDefault();
+            Gpo = GpoSettings.CreateDefault();
+        }
+
+        /// <summary>
+        /// Construtor com logger (para injeção de dependência)
+        /// </summary>
+        [JsonConstructor]
+        public ReaderConfiguration(ILogger<ReaderConfiguration>? logger) : this()
+        {
+            _logger = logger;
+        }
+
+        /// <summary>
+        /// Sets the logger after construction (for DI scenarios)
+        /// </summary>
+        public void SetLogger(ILogger<ReaderConfiguration>? logger)
+        {
+            _logger = logger;
+        }
+
+        /// <summary>
         /// Creates a new configuration instance with default settings.
         /// </summary>
         public static ReaderConfiguration CreateDefault()
@@ -96,7 +111,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
                 Security = SecuritySettings.CreateDefault(),
                 Streaming = StreamingSettings.CreateDefault(),
                 RetryPolicy = StreamRetryPolicy.CreateDefault(),
-                Gpo = GpoSettings.CreateDefault() 
+                Gpo = GpoSettings.CreateDefault()
             };
         }
 
@@ -132,7 +147,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
         /// <summary>
         /// Gets or sets the hostname or IP address of the reader.
         /// </summary>
-        public required string Hostname { get; set; }
+        public string Hostname { get; set; } = string.Empty;
 
         /// <summary>
         /// Gets or sets the port number for the connection.
@@ -152,7 +167,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
         /// <summary>
         /// Gets or sets proxy server settings if required.
         /// </summary>
-        public required ProxySettings Proxy { get; set; }
+        public ProxySettings Proxy { get; set; } = new();
 
         public static NetworkSettings CreateDefault()
         {
@@ -200,12 +215,12 @@ namespace SmartReaderStandalone.IotDeviceInterface
         /// <summary>
         /// Gets or sets the username for authentication.
         /// </summary>
-        public required string Username { get; set; }
+        public string Username { get; set; } = string.Empty;
 
         /// <summary>
         /// Gets or sets the password for authentication.
         /// </summary>
-        public required string Password { get; set; }
+        public string Password { get; set; } = string.Empty;
 
         /// <summary>
         /// Gets or sets whether to validate SSL certificates.
@@ -251,7 +266,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
         /// Gets or sets the proxy server address (hostname or IP).
         /// Only used when Enabled is true.
         /// </summary>
-        public string Address { get; set; }
+        public string Address { get; set; } = string.Empty;
 
         /// <summary>
         /// Gets or sets the proxy server port number.
@@ -268,13 +283,13 @@ namespace SmartReaderStandalone.IotDeviceInterface
         /// Gets or sets the username for proxy authentication.
         /// Only used when RequiresAuthentication is true.
         /// </summary>
-        public string Username { get; set; }
+        public string Username { get; set; } = string.Empty;
 
         /// <summary>
         /// Gets or sets the password for proxy authentication.
         /// Only used when RequiresAuthentication is true.
         /// </summary>
-        public string Password { get; set; }
+        public string Password { get; set; } = string.Empty;
 
         /// <summary>
         /// Gets or sets whether local addresses should bypass the proxy.
@@ -298,7 +313,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
         public ProxySettings()
         {
             // Initialize with default values
-            BypassList = [];
+            BypassList = new List<string>();
             SetDefaults();
         }
 
@@ -313,12 +328,12 @@ namespace SmartReaderStandalone.IotDeviceInterface
                 Port = 8080,
                 BypassOnLocal = true,
                 ConnectionTimeoutSeconds = 30,
-                BypassList =
-            [
-                "localhost",
-                "127.0.0.1",
-                "169.254.1.1"
-            ]
+                BypassList = new List<string>
+                {
+                    "localhost",
+                    "127.0.0.1",
+                    "169.254.1.1"
+                }
             };
         }
 
@@ -489,7 +504,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
                 Password = this.Password,
                 BypassOnLocal = this.BypassOnLocal,
                 ConnectionTimeoutSeconds = this.ConnectionTimeoutSeconds,
-                BypassList = this.BypassList?.ToList() ?? []
+                BypassList = this.BypassList?.ToList() ?? new List<string>()
             };
         }
     }
@@ -530,13 +545,12 @@ namespace SmartReaderStandalone.IotDeviceInterface
                 MaxPulseDurationMs = 60000,
                 AllowNetworkControl = true,
                 DefaultConfigurations = new List<ExtendedGpoConfiguration>
-            {
-                // Default all GPOs to reader control
-                new ExtendedGpoConfiguration { Gpo = 1, Control = GpoControlMode.Reader },
-                new ExtendedGpoConfiguration { Gpo = 2, Control = GpoControlMode.Reader },
-                new ExtendedGpoConfiguration { Gpo = 3, Control = GpoControlMode.Reader },
-                new ExtendedGpoConfiguration { Gpo = 4, Control = GpoControlMode.Reader }
-            }
+                {
+                    // Default all GPOs to reader control
+                    new ExtendedGpoConfiguration { Gpo = 1, Control = GpoControlMode.Reader },
+                    new ExtendedGpoConfiguration { Gpo = 2, Control = GpoControlMode.Reader },
+                    new ExtendedGpoConfiguration { Gpo = 3, Control = GpoControlMode.Reader }
+                }
             };
         }
 
@@ -564,6 +578,20 @@ namespace SmartReaderStandalone.IotDeviceInterface
                     yield return $"Default configuration error: {error}";
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Represents validation result
+    /// </summary>
+    public class ValidationResult
+    {
+        public bool IsValid => !Errors.Any();
+        public List<string> Errors { get; }
+
+        public ValidationResult(IEnumerable<string> errors)
+        {
+            Errors = errors.ToList();
         }
     }
 }

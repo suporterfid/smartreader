@@ -18,14 +18,14 @@ namespace SmartReaderStandalone.IotDeviceInterface
         /// Validates the GPO configuration request
         /// </summary>
         /// <returns>Validation result with any errors</returns>
-        public ValidationResult Validate()
+        public GpoValidationResult Validate()
         {
             var errors = new List<string>();
 
             if (GpoConfigurations == null)
             {
                 errors.Add("GPO configurations list cannot be null");
-                return new ValidationResult(errors);
+                return new GpoValidationResult(errors);
             }
 
             // Check for maximum 3 GPO ports
@@ -52,7 +52,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
                 errors.Add($"Duplicate GPO port configuration found: {duplicate}");
             }
 
-            return new ValidationResult(errors);
+            return new GpoValidationResult(errors);
         }
 
         private List<string> ValidateGpoConfiguration(ExtendedGpoConfiguration config)
@@ -289,7 +289,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
     /// <summary>
     /// Validation result for GPO configurations
     /// </summary>
-    public class ValidationResult
+    public class GpoValidationResult
     {
         /// <summary>
         /// List of validation errors
@@ -305,7 +305,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
         /// Creates a new validation result
         /// </summary>
         /// <param name="errors">List of validation errors</param>
-        public ValidationResult(List<string> errors)
+        public GpoValidationResult(List<string> errors)
         {
             Errors = errors ?? new List<string>();
         }
@@ -314,9 +314,9 @@ namespace SmartReaderStandalone.IotDeviceInterface
         /// Creates a successful validation result
         /// </summary>
         /// <returns>Validation result with no errors</returns>
-        public static ValidationResult Success()
+        public static GpoValidationResult Success()
         {
-            return new ValidationResult(new List<string>());
+            return new GpoValidationResult(new List<string>());
         }
 
         /// <summary>
@@ -324,9 +324,9 @@ namespace SmartReaderStandalone.IotDeviceInterface
         /// </summary>
         /// <param name="error">Error message</param>
         /// <returns>Validation result with the specified error</returns>
-        public static ValidationResult Failure(string error)
+        public static GpoValidationResult Failure(string error)
         {
-            return new ValidationResult(new List<string> { error });
+            return new GpoValidationResult(new List<string> { error });
         }
     }
 }

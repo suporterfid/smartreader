@@ -90,7 +90,11 @@ namespace SmartReaderStandalone.IotDeviceInterface
                     }
                     break;
 
-                case GpoControlMode.Reader:
+                case GpoControlMode.ReadingTags:
+                    // Reader control mode doesn't require additional validation
+                    break;
+
+                case GpoControlMode.Running:
                     // Reader control mode doesn't require additional validation
                     break;
 
@@ -218,7 +222,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
             return new ExtendedGpoConfiguration
             {
                 Gpo = gpoNumber,
-                Control = GpoControlMode.Reader
+                Control = GpoControlMode.ReadingTags
             };
         }
 
@@ -256,7 +260,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
         /// <summary>
         /// Reader control - GPO state is controlled by reader operations (e.g., tag reading)
         /// </summary>
-        Reader = 1,
+        ReadingTags = 1,
 
         /// <summary>
         /// Pulsed control - GPO generates a pulse for a specified duration
@@ -264,9 +268,14 @@ namespace SmartReaderStandalone.IotDeviceInterface
         Pulsed = 2,
 
         /// <summary>
-        /// Network control - GPO state is controlled via network commands
+        /// Network control - GPO state is controlled via network statuses
         /// </summary>
-        Network = 3
+        Network = 3,
+
+        /// <summary>
+        /// Running control - GPO state is controlled via inventory running status
+        /// </summary>
+        Running = 4
     }
 
     /// <summary>

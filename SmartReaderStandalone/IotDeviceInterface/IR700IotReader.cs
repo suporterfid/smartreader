@@ -112,7 +112,7 @@ public interface IR700IotReader : IDisposable
 
     Task<object> DeviceGetInventoryPresetsSchemaAsync();
 
-    Task UpdateReaderGpoAsync(GpoConfigurations gpoConfiguration);
+    Task UpdateReaderGpoAsync(ExtendedGpoConfigurationRequest extendedConfiguration);
 
     Task UpdateReaderGpiAsync(GpiConfigRoot gpiConfiguration);
 

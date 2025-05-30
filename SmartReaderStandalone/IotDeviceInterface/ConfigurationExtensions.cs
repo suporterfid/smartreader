@@ -14,47 +14,17 @@ namespace SmartReaderStandalone.IotDeviceInterface
             if (!File.Exists(filePath))
                 throw new FileNotFoundException("Configuration file not found", filePath);
 
-            var json = File.ReadAllText(filePath);
-
-            // Configurar JsonSerializerOptions para lidar com construtores parametrizados
-            var options = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-                AllowTrailingCommas = true,
-                ReadCommentHandling = JsonCommentHandling.Skip,
-                // Permitir campos adicionais não mapeados
-                UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip,
-                // Converter nomes de propriedades do camelCase para PascalCase automaticamente
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-
-                RespectRequiredConstructorParameters = false,
-            };
-
             try
             {
-                var config = JsonSerializer.Deserialize<ReaderConfiguration>(json, options);
+                var configBuilder = new ConfigurationBuilder()
+                    .AddJsonFile(filePath, optional: false, reloadOnChange: false);
 
-                if (config == null)
-                    throw new InvalidOperationException("Failed to deserialize configuration");
-
-                // Garantir que todas as propriedades necessárias estão inicializadas
-                config = EnsurePropertiesInitialized(config);
-
-                // Validate the loaded configuration
-                var validationResult = config.Validate();
-                if (!validationResult.IsValid)
-                {
-                    // Log detalhado dos erros de validação para debug
-                    var errorDetails = string.Join("\n  - ", validationResult.Errors);
-                    throw new InvalidOperationException(
-                        $"Invalid configuration found {validationResult.Errors.Count} errors:\n  - {errorDetails}");
-                }
-
-                return config;
+                var configuration = configBuilder.Build();
+                return LoadFromConfiguration(configuration, "ReaderConfiguration");
             }
-            catch (JsonException ex)
+            catch (Exception ex)
             {
-                throw new InvalidOperationException($"Failed to parse JSON configuration: {ex.Message}", ex);
+                throw new InvalidOperationException($"Failed to load configuration from JSON file '{filePath}': {ex.Message}", ex);
             }
         }
 
@@ -105,9 +75,30 @@ namespace SmartReaderStandalone.IotDeviceInterface
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
             };
 
-            var json = JsonSerializer.Serialize(config, options);
-            File.WriteAllText(filePath, json);
+            Dictionary<string, JsonElement> root;
+
+            // Carrega o JSON existente, se houver
+            if (File.Exists(filePath))
+            {
+                var existingJson = File.ReadAllText(filePath);
+                root = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(existingJson) ?? new();
+            }
+            else
+            {
+                root = new Dictionary<string, JsonElement>();
+            }
+
+            // Serializa a configuração do ReaderConfiguration
+            var readerJson = JsonSerializer.SerializeToElement(config, options);
+
+            // Atualiza a seção "ReaderConfiguration"
+            root["ReaderConfiguration"] = readerJson;
+
+            // Serializa o dicionário completo de volta para o arquivo
+            var finalJson = JsonSerializer.Serialize(root, options);
+            File.WriteAllText(filePath, finalJson);
         }
+
 
         /// <summary>
         /// Ensures all required properties are properly initialized

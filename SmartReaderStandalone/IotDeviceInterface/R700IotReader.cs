@@ -24,6 +24,7 @@ using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using HealthStatus = SmartReaderStandalone.IotDeviceInterface.HealthStatus;
@@ -285,11 +286,11 @@ public class R700IotReader : IR700IotReader
     /// <summary>
     /// Updates the reader GPO configuration with advanced options
     /// </summary>
-    /// <param name="gpoConfiguration">Standard GPO configuration for backward compatibility</param>
+    /// <param name="extendedGpoConfiguration">Extended  GPO configuration</param>
     /// <returns>Task representing the asynchronous operation</returns>
-    public Task UpdateReaderGpoAsync(GpoConfigurations gpoConfiguration)
+    public Task UpdateReaderGpoAsync(ExtendedGpoConfigurationRequest extendedGpoConfiguration)
     {
-        return _r700IotEventProcessor.UpdateInternalProcessorReaderGpoAsync(gpoConfiguration);
+        return _r700IotEventProcessor.UpdateInternalProcessorReaderGpoAsync(extendedGpoConfiguration);
     }
 
     /// <summary>
@@ -313,11 +314,8 @@ public class R700IotReader : IR700IotReader
             _logger.LogInformation("Updating GPO configuration with extended options: {@Config}",
                 extendedConfiguration);
 
-            // Map to Atlas format
-            var atlasConfig = IoTInterfaceMapper.MapToAtlasGpoConfigurations(extendedConfiguration);
-
             // Send to reader
-            await _r700IotEventProcessor.UpdateInternalProcessorReaderGpoAsync(atlasConfig);
+            await _r700IotEventProcessor.UpdateInternalProcessorReaderGpoAsync(extendedConfiguration);
 
             // Record health metric for successful GPO update
             var metric = new HealthMetric.Builder(MetricType.Hardware, "GpoConfigurationUpdate")
@@ -2070,8 +2068,7 @@ public class R700IotReader : IR700IotReader
                                 break;
 
                             case "reading-tags":
-                                extendedConfig.Control = GpoControlMode.Reader;
-                                // For reader control, state might not be relevant
+                                extendedConfig.Control = GpoControlMode.ReadingTags;
                                 extendedConfig.State = null;
                                 break;
 
@@ -2086,6 +2083,12 @@ public class R700IotReader : IR700IotReader
 
                             case "network":
                                 extendedConfig.Control = GpoControlMode.Network;
+                                extendedConfig.State = null;
+                                break;
+
+                            case "running":
+                                extendedConfig.Control = GpoControlMode.Running;
+                                extendedConfig.State = null;
                                 break;
 
                             default:
@@ -2144,31 +2147,62 @@ public class R700IotReader : IR700IotReader
             }
         }
 
-        public async Task UpdateInternalProcessorReaderGpoAsync(GpoConfigurations gpoConfiguration)
+        public async Task UpdateInternalProcessorReaderGpoAsync(ExtendedGpoConfigurationRequest extendedConfiguration)
         {
             try
             {
                 var endpoint = "device/gpos";
                 var completeUri = _httpClient.BaseAddress + endpoint;
 
-                string json = JsonSerializer.Serialize(gpoConfiguration);
+                var payload = new
+                {
+                    gpoConfigurations = extendedConfiguration.GpoConfigurations.Select(gpo =>
+                    {
+                        var controlValue = gpo.Control == GpoControlMode.ReadingTags
+                            ? "reading-tags"
+                            : CamelCase(gpo.Control.ToString());
+
+                        var dict = new Dictionary<string, object?>
+                        {
+                            { "gpo", gpo.Gpo },
+                            { "control", controlValue }
+                        };
+
+                        if (gpo.State.HasValue)
+                            dict.Add("state", CamelCase(gpo.State.ToString()));
+
+                        if (gpo.PulseDurationMilliseconds.HasValue)
+                            dict.Add("pulseDurationMilliseconds", gpo.PulseDurationMilliseconds);
+
+                        return dict;
+                    }).ToList()
+                };
+
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+                    WriteIndented = false
+                };
+
+                string json = JsonSerializer.Serialize(payload, options);
                 var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
 
                 _logger.LogDebug("Sending GPO configuration update request to {Uri} with payload: {Payload}", completeUri, json);
 
                 using var response = await _httpClient.PutAsync(completeUri, requestContent);
-                
+
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
-                    _logger.LogError("Failed to update GPO configuration. Status: {StatusCode}, Response: {Response}", 
+                    _logger.LogError("Failed to update GPO configuration. Status: {StatusCode}, Response: {Response}",
                         response.StatusCode, errorContent);
-                    
+
                     if (response.StatusCode == HttpStatusCode.Forbidden)
                     {
                         throw new Exception($"Access denied when updating GPO configuration: {response.StatusCode} - {errorContent}");
                     }
-                    
+
                     throw new Exception($"Failed to update GPO configuration: {response.StatusCode} - {errorContent}");
                 }
 
@@ -2179,6 +2213,14 @@ public class R700IotReader : IR700IotReader
                 _logger.LogError(ex, "Unexpected error updating GPO configuration: {Message}", ex.Message);
                 throw;
             }
+        }
+
+        private static string CamelCase(string value)
+        {
+            if (string.IsNullOrEmpty(value) || char.IsLower(value[0]))
+                return value;
+
+            return char.ToLowerInvariant(value[0]) + value.Substring(1);
         }
 
 

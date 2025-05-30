@@ -1,3 +1,11 @@
+function toStringFields(data, fields) {
+	fields.forEach(field => {
+		if (field in data && data[field] != null) {
+			data[field] = String(data[field]);
+		}
+	});
+}
+
 //var Vue = require('vue');
 
 /**
@@ -530,9 +538,10 @@ class GpoConfigurationManager {
 	mapControlModeFromApi(apiControl) {
 		const mapping = {
 			'Static': 'static',
-			'Reader': 'reader',
+			'ReadingTags': 'reading-tags',
 			'Pulsed': 'pulsed',
-			'Network': 'network'
+			'Network': 'network',
+            'Running': 'running'
 		};
 		return mapping[apiControl] || 'static';
 	}
@@ -543,9 +552,11 @@ class GpoConfigurationManager {
 	mapControlModeToApi(uiControl) {
 		const mapping = {
 			'static': 'Static',
-			'reader': 'Reader',
+			'reading-tags': 'ReadingTags',
 			'pulsed': 'Pulsed',
-			'network': 'Network'
+			'network': 'Network',
+			'running': 'Running'
+
 		};
 		return mapping[uiControl] || 'Static';
 	}
@@ -683,9 +694,9 @@ var vueApplication = new Vue({
 		rshellCurrentPassword: "",
 		rshellNewPassword: "",
 		rshellNewPasswordCheck: "",
-		applicationLabel: 'version 4.0.1.12',
-		//applicationBy: 'Smartreader R700',
-		applicationBy: 'SoLink R700',
+		applicationLabel: 'version 4.0.1.13',
+		applicationBy: 'Smartreader R700',
+		//applicationBy: 'SoLink R700',
 
 		applicationLogo: 'none',
 		selectTxPowerOptions: [],

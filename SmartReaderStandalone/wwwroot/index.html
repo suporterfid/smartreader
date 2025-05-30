@@ -322,8 +322,8 @@
 
                             <input id="tagValidation" type="checkbox"
                                    v-model="readerConfigs[0].tagValidationEnabled"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
+                                   v-bind:true-value="'1'"
+                                   v-bind:false-value="'0'">
                             <label for="tagValidation">Enable Tag Validation</label>
                             <br>
 
@@ -371,8 +371,8 @@
                         <br />
                         <input id="systemDisableImageFallbackStatus" type="checkbox"
                                v-model="readerConfigs[0].systemDisableImageFallbackStatus"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="systemDisableImageFallbackStatus">Enable</label>
                         <br>
                         <br>
@@ -382,8 +382,8 @@
                         <br />
                         <input id="smartreaderEnabledForManagementOnly" type="checkbox"
                                v-model="readerConfigs[0].smartreaderEnabledForManagementOnly"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="smartreaderEnabledForManagementOnly">Enable</label>
                         <br>
                         <br>
@@ -393,8 +393,8 @@
                         <h3>Network Settings</h3>
                         <input id="applyIpSettingsOnStartup" type="checkbox"
                                v-model="readerConfigs[0].applyIpSettingsOnStartup"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="applyIpSettingsOnStartup">Persist network configuration on startup</label>
 
                         <label for="ipAddressMode">Mode:</label>
@@ -680,8 +680,8 @@
                                         <td align="center">
                                             <input type="checkbox"
                                                    v-model="antennaConfigItem.isAntennaEnabled"
-                                                   v-bind:true-value="1"
-                                                   v-bind:false-value="0">
+                                                   v-bind:true-value="'1'"
+                                                   v-bind:false-value="'0'">
                                         </td>
                                         <td align="center">
                                             <select v-model="antennaConfigItem.antennaSelectedTx">
@@ -739,9 +739,10 @@
                                             <label for="gpo1Control">Control Mode:</label>
                                             <select id="gpo1Control" onchange="togglePulseDuration(1)">
                                                 <option value="static">Static</option>
-                                                <option value="reader">Reading Tags</option>
+                                                <option value="reading-tags">Reading Tags</option>
                                                 <option value="pulsed">Pulsed</option>
                                                 <option value="network">Network</option>
+                                                <option value="running">Running</option>
                                             </select>
                                         </div>
                                         <div class="form-group">
@@ -765,9 +766,10 @@
                                             <label for="gpo2Control">Control Mode:</label>
                                             <select id="gpo2Control" onchange="togglePulseDuration(2)">
                                                 <option value="static">Static</option>
-                                                <option value="reader">Reading Tags</option>
+                                                <option value="reading-tags">Reading Tags</option>
                                                 <option value="pulsed">Pulsed</option>
                                                 <option value="network">Network</option>
+                                                <option value="running">Running</option>
                                             </select>
                                         </div>
                                         <div class="form-group">
@@ -791,9 +793,10 @@
                                             <label for="gpo3Control">Control Mode:</label>
                                             <select id="gpo3Control" onchange="togglePulseDuration(3)">
                                                 <option value="static">Static</option>
-                                                <option value="reader">Reading Tags</option>
+                                                <option value="reading-tags">Reading Tags</option>
                                                 <option value="pulsed">Pulsed</option>
                                                 <option value="network">Network</option>
+                                                <option value="running">Running</option>
                                             </select>
                                         </div>
                                         <div class="form-group">
@@ -906,8 +909,8 @@
 
                             <input id="outputHeartbeatEnabled" type="checkbox"
                                    v-model="readerConfigs[0].heartbeatEnabled"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
+                                   v-bind:true-value="'1'"
+                                   v-bind:false-value="'0'">
                             <label for="outputHeartbeatEnabled">Enabled</label>
 
                             <template v-if="readerConfigs[0].heartbeatEnabled == '1'">
@@ -934,8 +937,8 @@
                                     <br>
                                     <input id="outputHeartbeatHttpAuthenticationTokenApiEnabled" type="checkbox"
                                            v-model="readerConfigs[0].heartbeatHttpAuthenticationTokenApiEnabled"
-                                           v-bind:true-value="1"
-                                           v-bind:false-value="0">
+                                           v-bind:true-value="'1'"
+                                           v-bind:false-value="'0'">
                                     <label for="outputHeartbeatHttpAuthenticationTokenApiEnabled">Enable</label>
                                     <br>
                                     <label for="outputHeartbeatHttpAuthenticationTokenApiUrl">Token(BEARER) API URL:</label>
@@ -985,8 +988,8 @@
                             <br>
                             <input id="outputSiteEnabled" type="checkbox"
                                    v-model="readerConfigs[0].siteEnabled"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
+                                   v-bind:true-value="'1'"
+                                   v-bind:false-value="'0'">
                             <label for="outputSiteEnabled">Enable Site</label>
                             <br>
                             <template v-if="readerConfigs[0].siteEnabled == '1'">
@@ -998,8 +1001,8 @@
                             <br>
                             <input id="outputCustomField1Enabled" type="checkbox"
                                    v-model="readerConfigs[0].customField1Enabled"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
+                                   v-bind:true-value="'1'"
+                                   v-bind:false-value="'0'">
                             <label for="outputCustomField1Enabled">Custom Field1</label>
                             <br>
                             <template v-if="readerConfigs[0].customField1Enabled == '1'">
@@ -1011,8 +1014,8 @@
                             <br>
                             <input id="outputCustomField2Enabled" type="checkbox"
                                    v-model="readerConfigs[0].customField2Enabled"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
+                                   v-bind:true-value="'1'"
+                                   v-bind:false-value="'0'">
                             <label for="outputCustomField2Enabled">Custom Field2</label>
                             <br>
                             <template v-if="readerConfigs[0].customField2Enabled == '1'">
@@ -1024,8 +1027,8 @@
                             <br>
                             <input id="outputCustomField3Enabled" type="checkbox"
                                    v-model="readerConfigs[0].customField3Enabled"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
+                                   v-bind:true-value="'1'"
+                                   v-bind:false-value="'0'">
                             <label for="outputCustomField3Enabled">Custom Field3</label>
                             <br>
                             <template v-if="readerConfigs[0].customField3Enabled == '1'">
@@ -1037,8 +1040,8 @@
                             <br>
                             <input id="outputCustomField4Enabled" type="checkbox"
                                    v-model="readerConfigs[0].customField4Enabled"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
+                                   v-bind:true-value="'1'"
+                                   v-bind:false-value="'0'">
                             <label for="outputCustomField4Enabled">Custom Field4</label>
                             <br>
                             <template v-if="readerConfigs[0].customField4Enabled == '1'">
@@ -1051,30 +1054,30 @@
 
                             <input id="includeSgtinParse" type="checkbox"
                                    v-model="readerConfigs[0].parseSgtinEnabled"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
+                                   v-bind:true-value="'1'"
+                                   v-bind:false-value="'0'">
                             <label for="includeSgtinParse">Parse Tag Data Standard (TDS).</label>
                             <template v-if="readerConfigs[0].parseSgtinEnabled == '1'">
                                 <br />
                                 &nbsp;&nbsp;
                                 <input id="includeIncludeKeyType" type="checkbox"
                                        v-model="readerConfigs[0].parseSgtinIncludeKeyType"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="includeIncludeKeyType">Include TDS Key Type</label>
                                 <br />
                                 &nbsp;&nbsp;
                                 <input id="includeTdsSerial" type="checkbox"
                                        v-model="readerConfigs[0].parseSgtinIncludeSerial"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="includeTdsSerial">Include TDS Serial</label>
                                 <br />
                                 &nbsp;&nbsp;
                                 <input id="includeTdsPureIdentity" type="checkbox"
                                        v-model="readerConfigs[0].parseSgtinIncludePureIdentity"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="includeTdsPureIdentity">Include TDS Pure Identity.</label>
                                 <br />
                             </template>
@@ -1106,65 +1109,65 @@
                         <br>
                         <input id="includeAntennaPort" type="checkbox"
                                v-model="readerConfigs[0].includeAntennaPort"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="includeAntennaPort">Antenna Port</label>
 
                         <br>
                         <input id="includeAntennaZone" type="checkbox"
                                v-model="readerConfigs[0].includeAntennaZone"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="includeAntennaZone">Antenna Zones</label>
 
                         <br>
                         <input id="includeTimestamp" type="checkbox"
                                v-model="readerConfigs[0].includeFirstSeenTimestamp"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="includeTimestamp">Timestamp</label>
                         <br>
 
                         <input id="includeRssi" type="checkbox"
                                v-model="readerConfigs[0].includePeakRssi"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="includeRssi">RSSI</label>
                         <br>
 
                         <input id="includePhase" type="checkbox"
                                v-model="readerConfigs[0].includeRFPhaseAngle"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="includePhase">Phase</label>
                         <br>
 
                         <input id="includeChannel" type="checkbox"
                                v-model="readerConfigs[0].includeRFChannelIndex"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="includeChannel">Frequency</label>
                         <br>
                         <!--
         <input id="includeDoppler" type="checkbox"
                v-model="readerConfigs[0].includeRFDopplerFrequency"
-               v-bind:true-value="1"
-               v-bind:false-value="0">
+               v-bind:true-value="'1'"
+               v-bind:false-value="'0'">
         <label for="includeDoppler">Doppler</label>
         -->
                         <br>
 
                         <input id="fastId" type="checkbox"
                                v-model="readerConfigs[0].includeTid"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="fastId">TID</label>
                         <br>
                         <!--
         <input id="includeUserMemory" type="checkbox"
                v-model="readerConfigs[0].includeUserMemory"
-               v-bind:true-value="1"
-               v-bind:false-value="0">
+               v-bind:true-value="'1'"
+               v-bind:false-value="'0'">
 
         <label for="includeUserMemory">User Memory</label>
         <br>
@@ -1182,8 +1185,8 @@
 
                         <input id="includeGpiEvent" type="checkbox"
                                v-model="readerConfigs[0].includeGpiEvent"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="includeGpiEvent">GPI Event</label>
                         <br>
 
@@ -1215,8 +1218,8 @@
 
                         <input id="softwareFilterIncludeEpcsHeaderListEnabled" type="checkbox"
                                v-model="readerConfigs[0].softwareFilterIncludeEpcsHeaderListEnabled"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="softwareFilterIncludeEpcsHeaderListEnabled">Filter Events by EPCs</label>
                         <br />
                         <label for="softwareFilterIncludeEpcsHeaderList">EPC Header List(separated by commas):</label>
@@ -1226,8 +1229,8 @@
                         <br>
                         <input id="softwareFilterEnabled" type="checkbox"
                                v-model="readerConfigs[0].softwareFilterEnabled"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="softwareFilterEnabled">Enable Software Filter</label>
                         <br />
                         <template v-if="readerConfigs[0].softwareFilterEnabled == '1'">
@@ -1245,8 +1248,8 @@
                         <br>
                         <input id="tagPresenceTimeoutEnabled" type="checkbox"
                                v-model="readerConfigs[0].tagPresenceTimeoutEnabled"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="softwareFilterEnabled">Enable Tag Presence Detection Filter</label>
                         <br />
                         <template v-if="readerConfigs[0].tagPresenceTimeoutEnabled == '1'">
@@ -1262,8 +1265,8 @@
 
         <input id="softwareFilerEnabled" type="checkbox"
                v-model="readerConfigs[0].softwareFilterEnabled"
-               v-bind:true-value="1"
-               v-bind:false-value="0">
+               v-bind:true-value="'1'"
+               v-bind:false-value="'0'">
         <label for="softwareFilerEnabled">Filter Reports by interval</label>
 
         <br>
@@ -1282,8 +1285,8 @@
 
         <input id="softwareFilterReadCountAndTimeEnabled" type="checkbox"
                v-model="readerConfigs[0].softwareFilterReadCountAndTimeEnabled"
-               v-bind:true-value="1"
-               v-bind:false-value="0">
+               v-bind:true-value="'1'"
+               v-bind:false-value="'0'">
         <label for="softwareFilterReadCountAndTimeEnabled">Filter Reports by Minimum Read Count</label>
 
         <br>
@@ -1304,8 +1307,8 @@
 
         <input id="gen2FilterEnabled" type="checkbox"
                v-model="readerConfigs[0].c1g2FilterEnabled"
-               v-bind:true-value="1"
-               v-bind:false-value="0">
+               v-bind:true-value="'1'"
+               v-bind:false-value="'0'">
         <label for="gen2FilterEnabled">Gen2 Filter</label>
         <br>
 
@@ -1341,8 +1344,8 @@
 
                         <input id="positioningEpcsEnabled" type="checkbox"
                                v-model="readerConfigs[0].positioningEpcsEnabled"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="positioningEpcsEnabled">Enable Positioning EPCs</label>
                         <br />
                         <label for="positioningAntennaPorts">Positioning Antenna Port Numbers:</label>
@@ -1372,15 +1375,15 @@
                         <h3>Barcode:</h3>
                         <input id="enableBarcodeHidEnabled" type="checkbox"
                                v-model="readerConfigs[0].enableBarcodeHid"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="enableBarcodeHidEnabled">Enable HID (USB) Barcode Scanner</label>
                         <br />
                         <br />
                         <input id="enableBarcodeSerialEnabled" type="checkbox"
                                v-model="readerConfigs[0].enableBarcodeSerial"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="enableBarcodeSerialEnabled">Enable Serial (USB) Barcode Scanner</label>
                         <br />
 
@@ -1399,8 +1402,8 @@
                         <br />
                         <input id="enableBarcodeTcpEnabled" type="checkbox"
                                v-model="readerConfigs[0].enableBarcodeTcp"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="enableBarcodeTcpEnabled">Enable TCP Barcode Scanner</label>
                         <br />
                         <label for="barcodeTcpAddress">Barcode Scanner IP Address:</label>
@@ -1438,21 +1441,21 @@
                         <h3>Validation:</h3>
                         <input id="groupEventsOnInventoryStatus" type="checkbox"
                                v-model="readerConfigs[0].groupEventsOnInventoryStatus"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="groupEventsOnInventoryStatus">Group Events on RFID Inventory Status</label>
                         <br />
                         <input id="enableValidation" type="checkbox"
                                v-model="readerConfigs[0].enableValidation"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="enableValidation">Enable Validation</label>
                         <br />
                         &nbsp;&nbsp;
                         <input id="requireUniqueProductCode" type="checkbox"
                                v-model="readerConfigs[0].requireUniqueProductCode"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="requireUniqueProductCode">Require Unique Product Code</label>
                         <br />
 
@@ -1472,8 +1475,8 @@
 
                                 <input id="outputEnableSummaryStream" type="checkbox"
                                        v-model="readerConfigs[0].enableSummaryStream"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="outputEnableSummaryStream">Enable Summary Stream</label>
                                 <br />
                             </template>
@@ -1483,8 +1486,8 @@
 
                                 <input id="outputEnableTagEventStream" type="checkbox"
                                        v-model="readerConfigs[0].enableTagEventStream"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="outputEnableTagEventStream">Enable Tag Event Stream</label>
                                 <br />
                             </template>
@@ -1493,30 +1496,30 @@
 
                             <input id="outputMqttEnabled" type="checkbox"
                                    v-model="readerConfigs[0].mqttEnabled"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
+                                   v-bind:true-value="'1'"
+                                   v-bind:false-value="'0'">
                             <label for="outputMqttEnabled">Enable MQTT</label>
                             <br />
                             <template v-if="readerConfigs[0].mqttEnabled == '1'">
                                 <input id="enableTagEventsListBatch" type="checkbox"
                                        v-model="readerConfigs[0].enableTagEventsListBatch"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="enableTagEventsListBatch">Enable Batch List Reporting</label>
                                 <br />
                                 <template v-if="readerConfigs[0].enableTagEventsListBatch == '1'">
                                     &nbsp;&nbsp;
                                     <input id="cleanupTagEventsListBatchOnReload" type="checkbox"
                                            v-model="readerConfigs[0].cleanupTagEventsListBatchOnReload"
-                                           v-bind:true-value="1"
-                                           v-bind:false-value="0">
+                                           v-bind:true-value="'1'"
+                                           v-bind:false-value="'0'">
                                     <label for="cleanupTagEventsListBatchOnReload">Clear Batch List on Reload Operation</label>
                                     <br />
 
                                     <input id="updateTagEventsListBatchOnChange" type="checkbox"
                                            v-model="readerConfigs[0].updateTagEventsListBatchOnChange"
-                                           v-bind:true-value="1"
-                                           v-bind:false-value="0">
+                                           v-bind:true-value="'1'"
+                                           v-bind:false-value="'0'">
                                     <label for="updateTagEventsListBatchOnChange">Publish Batch List On-Change</label>
                                     <br />
                                     <label for="updateTagEventsListBatchOnChangeIntervalInSec">Publish Batch List On-Change Interval (in seconds):</label>
@@ -1526,8 +1529,8 @@
                                     <br />
                                     <input id="enableTagEventsListBatchPublishing" type="checkbox"
                                            v-model="readerConfigs[0].enableTagEventsListBatchPublishing"
-                                           v-bind:true-value="1"
-                                           v-bind:false-value="0">
+                                           v-bind:true-value="'1'"
+                                           v-bind:false-value="'0'">
                                     <label for="enableTagEventsListBatchPublishing">Enable publish interval for Batch Lists</label>
                                     <br />
                                     <template v-if="readerConfigs[0].enableTagEventsListBatchPublishing == '1'">
@@ -1537,8 +1540,8 @@
                                     </template>
                                     <input id="filterTagEventsListBatchOnChangeBasedOnAntennaZone" type="checkbox"
                                            v-model="readerConfigs[0].filterTagEventsListBatchOnChangeBasedOnAntennaZone"
-                                           v-bind:true-value="1"
-                                           v-bind:false-value="0">
+                                           v-bind:true-value="'1'"
+                                           v-bind:false-value="'0'">
                                     <label for="filterTagEventsListBatchOnChangeBasedOnAntennaZone">Filter Batch Updates based on Antenna Zone grouping</label>
                                     <br />
                                     <br />
@@ -1572,8 +1575,8 @@
 
                                 <input id="mqttBrokerCleanSession" type="checkbox"
                                        v-model="readerConfigs[0].mqttBrokerCleanSession"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="mqttBrokerCleanSession">MQTT Broker Clean Session</label>
                                 <br />
 
@@ -1637,8 +1640,8 @@
 
                                 <input id="outputMqttUseSsl" type="checkbox"
                                        v-model="readerConfigs[0].mqttUseSsl"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="outputMqttUseSsl">Enable Command receiver</label>
                                 <br />
                                 <br />
@@ -1700,8 +1703,8 @@
                                 <br />
                                 <input id="mqttEnableSmartreaderDefaultTopics" type="checkbox"
                                        v-model="readerConfigs[0].mqttEnableSmartreaderDefaultTopics"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="mqttEnableSmartreaderDefaultTopics">Enable MQTT internal Topics</label>
                                 <br />
                                 <br />
@@ -1716,8 +1719,8 @@
 
                             <input id="outputUdpEnabled" type="checkbox"
                                    v-model="readerConfigs[0].udpServer"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
+                                   v-bind:true-value="'1'"
+                                   v-bind:false-value="'0'">
                             <label for="outputUdpEnabled">Enable</label>
                             <template v-if="readerConfigs[0].udpServer == '1'">
                                 <br>
@@ -1739,8 +1742,8 @@
                             <h3>Local socket server</h3>
                             <input id="outputSocketEnabled" type="checkbox"
                                    v-model="readerConfigs[0].socketServer"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
+                                   v-bind:true-value="'1'"
+                                   v-bind:false-value="'0'">
                             <label for="outputSocketEnabled">Enable</label>
                             <br>
                             <template v-if="readerConfigs[0].socketServer == '1'">
@@ -1749,8 +1752,8 @@
                                 <br>
                                 <input id="socketCommandServer" type="checkbox"
                                        v-model="readerConfigs[0].socketCommandServer"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="socketCommandServer">Enable Socket Command Server</label>
                                 <br>
                                 <label for="socketCommandServerPort">Socket Command Server Port:</label>
@@ -1761,16 +1764,16 @@
                         <h3>HTTP POST</h3>
                         <input id="outputHttpEnabled" type="checkbox"
                                v-model="readerConfigs[0].httpPostEnabled"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="outputHttpEnabled">Enable</label>
                         <br>
                         <template v-if="readerConfigs[0].httpPostEnabled == '1'">
 
                             <input id="enableTagEventsListBatch" type="checkbox"
                                    v-model="readerConfigs[0].enableTagEventsListBatch"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
+                                   v-bind:true-value="'1'"
+                                   v-bind:false-value="'0'">
                             <label for="enableTagEventsListBatch">Enable Batch List Reporting</label>
                             <br />
 
@@ -1778,15 +1781,15 @@
                                 &nbsp;&nbsp;
                                 <input id="cleanupTagEventsListBatchOnReload" type="checkbox"
                                        v-model="readerConfigs[0].cleanupTagEventsListBatchOnReload"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="cleanupTagEventsListBatchOnReload">Clear Batch List on Reload Operation</label>
                                 <br />
                                 &nbsp;&nbsp;
                                 <input id="updateTagEventsListBatchOnChange" type="checkbox"
                                        v-model="readerConfigs[0].updateTagEventsListBatchOnChange"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="updateTagEventsListBatchOnChange">Publish Batch List On-Change</label>
                                 <br />
                                 <label for="updateTagEventsListBatchOnChangeInterval">Publish Batch List On-Change Interval (in seconds):</label>
@@ -1809,8 +1812,8 @@
             <h3>HTTP Post Backup on USB Flash Drive</h3>
             <input id="outputWriteUsbJsonEnabled" type="checkbox"
                    v-model="readerConfigs[0].writeUsbJson"
-                   v-bind:true-value="1"
-                   v-bind:false-value="0">
+                   v-bind:true-value="'1'"
+                   v-bind:false-value="'0'">
             <label for="outputWriteUsbJsonEnabled">Enable</label>
             -->
                             <br>
@@ -1819,8 +1822,8 @@
                             <h3>HTTP Verify Response Code 2XX</h3>
                             <input id="outputHttpVerifyPostHttpReturnCodeEnabled" type="checkbox"
                                    v-model="readerConfigs[0].httpVerifyPostHttpReturnCode"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
+                                   v-bind:true-value="'1'"
+                                   v-bind:false-value="'0'">
                             <label for="outputHttpVerifyPostHttpReturnCodeEnabled">Enable</label>
                             <br>
                             <br>
@@ -1855,8 +1858,8 @@
                                 <br>
                                 <input id="outputHttpAuthenticationTokenApiEnabled" type="checkbox"
                                        v-model="readerConfigs[0].httpAuthenticationTokenApiEnabled"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="outputHttpAuthenticationTokenApiEnabled">Enable</label>
                                 <br>
                                 <label for="outputHttpAuthenticationTokenApiUrl">Token(BEARER) API URL:</label>
@@ -1880,8 +1883,8 @@
         <h3>OPC-UA Client</h3>
         <input id="enableOpcUaClient" type="checkbox"
                v-model="readerConfigs[0].enableOpcUaClient"
-               v-bind:true-value="1"
-               v-bind:false-value="0">
+               v-bind:true-value="'1'"
+               v-bind:false-value="'0'">
         <label for="enableOpcUaClient">Enable</label>
         <br>
         <template v-if="readerConfigs[0].enableOpcUaClient == '1'">
@@ -1963,20 +1966,20 @@
                                 <br>
                                 <input id="enableUniqueTagRead" type="checkbox"
                                        v-model="readerConfigs[0].enableUniqueTagRead"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="enableUniqueTagRead">Enable Unique Tag Read</label>
                                 <br>
                                 <input id="enableAntennaTask" type="checkbox"
                                        v-model="readerConfigs[0].enableAntennaTask"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="enableAntennaTask">Enable Antenna Task</label>
                                 <br>
                                 <input id="softwareFilterEnabled" type="checkbox"
                                        v-model="readerConfigs[0].softwareFilterEnabled"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="softwareFilterEnabled">Enable Software Filter</label>
                                 <br />
                                 <template v-if="readerConfigs[0].softwareFilterEnabled == '1'">
@@ -1991,15 +1994,15 @@
                                 <br>
                                 <input id="enablePluginShipmentVerification" type="checkbox"
                                        v-model="readerConfigs[0].enablePluginShipmentVerification"
-                                       v-bind:true-value="1"
-                                       v-bind:false-value="0">
+                                       v-bind:true-value="'1'"
+                                       v-bind:false-value="'0'">
                                 <label for="enablePluginShipmentVerification">Enable Shipment Verification</label>
                                 <br>
                                 <template v-if="readerConfigs[0].enablePluginShipmentVerification == '1'">
                                     <input id="enablePartialValidation" type="checkbox"
                                            v-model="readerConfigs[0].enablePartialValidation"
-                                           v-bind:true-value="1"
-                                           v-bind:false-value="0">
+                                           v-bind:true-value="'1'"
+                                           v-bind:false-value="'0'">
                                     <label for="softwareFilterEnabled">Enable Partial Validation</label>
                                     <br />
                                     <label for="validationAcceptanceThreshold">Validation Acceptance Threshold (integer percentage):</label>
@@ -2010,8 +2013,8 @@
                                     <br />
                                     <input id="publishFullShipmentValidationListOnAcceptanceThreshold" type="checkbox"
                                            v-model="readerConfigs[0].publishFullShipmentValidationListOnAcceptanceThreshold"
-                                           v-bind:true-value="1"
-                                           v-bind:false-value="0">
+                                           v-bind:true-value="'1'"
+                                           v-bind:false-value="'0'">
                                     <label for="publishFullShipmentValidationListOnAcceptanceThreshold">Publish Full Shipment Validation List on Acceptance Threshold Reached</label>
                                 </template>
                             </template>
@@ -2024,8 +2027,8 @@
                             <h3>Serial Port (USB)</h3>
                             <input id="outputSerialPortEnabled" type="checkbox"
                                    v-model="readerConfigs[0].serialPort"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
+                                   v-bind:true-value="'1'"
+                                   v-bind:false-value="'0'">
                             <label for="outputSerialPortEnabled">Enable</label>
                             <br>
 
@@ -2050,8 +2053,8 @@
             <h3>Keyboard emulation</h3>
             <input id="outputKeyboardEmulationEnabled" type="checkbox"
                    v-model="readerConfigs[0].usbHid"
-                   v-bind:true-value="1"
-                   v-bind:false-value="0">
+                   v-bind:true-value="'1'"
+                   v-bind:false-value="'0'">
             <label for="outputKeyboardEmulationEnabled">Enable</label>
             -->
                             <br>
@@ -2062,8 +2065,8 @@
                             <h3>USB Flash Drive</h3>
                             <input id="outputUsbFlashDriveEnabled" type="checkbox"
                                    v-model="readerConfigs[0].usbFlashDrive"
-                                   v-bind:true-value="1"
-                                   v-bind:false-value="0">
+                                   v-bind:true-value="'1'"
+                                   v-bind:false-value="'0'">
                             <label for="outputUsbFlashDriveEnabled">Enable</label>
                             <br>
                         </template>
@@ -2082,8 +2085,8 @@
         <h3>Tags of Interest</h3>
         <input id="toiEnabled" type="checkbox"
                v-model="readerConfigs[0].toiValidationEnabled"
-               v-bind:true-value="1"
-               v-bind:false-value="0">
+               v-bind:true-value="'1'"
+               v-bind:false-value="'0'">
         <label for="toiEnabled">Enable</label>
         <br>
         <template v-if="readerConfigs[0].toiValidationEnabled == '1'">
@@ -2188,8 +2191,8 @@
                         <br />
                         <input id="systemDisableImageFallbackStatus" type="checkbox"
                                v-model="readerConfigs[0].systemDisableImageFallbackStatus"
-                               v-bind:true-value="1"
-                               v-bind:false-value="0">
+                               v-bind:true-value="'1'"
+                               v-bind:false-value="'0'">
                         <label for="systemDisableImageFallbackStatus">Enable</label>
                         <br>
                         <br>
@@ -2239,8 +2242,8 @@
                         <!--
         <input id="isLogFileEnabled" type="checkbox"
                v-model="readerConfigs[0].isLogFileEnabled"
-               v-bind:true-value="1"
-               v-bind:false-value="0">
+               v-bind:true-value="'1'"
+               v-bind:false-value="'0'">
         <label for="isLogFileEnabled">Enable Log File.</label>
         -->
                         <br />
@@ -2448,12 +2451,14 @@
         }
     }
 
+   
     function mapControlModeFromApi(apiControl) {
         const mapping = {
             'Static': 'static',
-            'Reader': 'reader',
+            'ReadingTags': 'reading-tags',
             'Pulsed': 'pulsed',
-            'Network': 'network'
+            'Network': 'network',
+            'Running': 'running'
         };
         return mapping[apiControl] || 'static';
     }
@@ -2461,9 +2466,10 @@
     function mapControlModeToApi(uiControl) {
         const mapping = {
             'static': 'Static',
-            'reader': 'Reader',
+            'reading-tags': 'ReadingTags',
             'pulsed': 'Pulsed',
-            'network': 'Network'
+            'network': 'Network',
+            'running': 'Running'
         };
         return mapping[uiControl] || 'Static';
     }

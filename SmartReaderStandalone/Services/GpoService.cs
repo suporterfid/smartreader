@@ -325,7 +325,8 @@ namespace SmartReaderStandalone.Services
                     normalized.State = gpo.State ?? GpoState.Low; // Default to Low if not specified
                     break;
 
-                case GpoControlMode.Reader:
+                case GpoControlMode.ReadingTags:
+                case GpoControlMode.Running:
                 case GpoControlMode.Network:
                     // These modes don't use static state
                     normalized.State = null;

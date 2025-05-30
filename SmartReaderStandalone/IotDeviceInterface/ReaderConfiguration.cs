@@ -87,7 +87,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
         /// <summary>
         /// Construtor com logger (para injeção de dependência)
         /// </summary>
-        [JsonConstructor]
+        //[JsonConstructor]
         public ReaderConfiguration(ILogger<ReaderConfiguration>? logger = null) : this()
         {
             _logger = logger;
@@ -243,7 +243,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
                 Hostname = "localhost",
                 Port = 443,
                 ConnectionTimeoutSeconds = 30,
-                UseHttps = false,
+                UseHttps = true,
                 Proxy = ProxySettings.CreateDefault()
             };
         }
@@ -618,13 +618,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
                 DefaultPulseDurationMs = 1000,
                 MaxPulseDurationMs = 60000,
                 AllowNetworkControl = true,
-                DefaultConfigurations = new List<ExtendedGpoConfiguration>
-                {
-                    // Default all GPOs to reader control
-                    new ExtendedGpoConfiguration { Gpo = 1, Control = GpoControlMode.Reader },
-                    new ExtendedGpoConfiguration { Gpo = 2, Control = GpoControlMode.Reader },
-                    new ExtendedGpoConfiguration { Gpo = 3, Control = GpoControlMode.Reader }
-                }
+                
             };
         }
 

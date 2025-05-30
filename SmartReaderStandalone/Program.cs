@@ -1643,7 +1643,7 @@ ILogger<Program> logger,  // For general logging
 {
     List<SmartReaderCapabilities> capabilities = [];
 
-    var _iotDeviceInterfaceClient = serviceProvider.GetService<R700IotReader>();
+    var _iotDeviceInterfaceClient = serviceProvider.GetService<IR700IotReader>();
 
     //var healthMonitor = new HealthMonitor(loggerFactory.CreateLogger<HealthMonitor>());
     

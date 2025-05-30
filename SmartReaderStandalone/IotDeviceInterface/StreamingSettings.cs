@@ -103,10 +103,7 @@
             {
                 yield return "Message timeout must be greater than 0 seconds";
             }
-            else if (MessageTimeoutSeconds <= HeartbeatIntervalSeconds)
-            {
-                yield return "Message timeout should be less than heartbeat interval";
-            }
+
 
             // Validate concurrent streams
             if (MaxConcurrentStreams <= 0)

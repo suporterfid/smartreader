@@ -53,6 +53,7 @@ using ReaderStatus = SmartReaderStandalone.Entities.ReaderStatus;
 using Timer = System.Timers.Timer;
 using System.Threading.RateLimiting;
 using System.Threading.Channels;
+using static SmartReaderStandalone.Utils.UDPSocket;
 namespace SmartReader.IotDeviceInterface;
 
 public class IotInterfaceService : BackgroundService, IServiceProviderIsService
@@ -2001,19 +2002,15 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         try
         {
-            var gpoConfigurations = new GpoConfigurations();
-            var gpoConfigList = new ObservableCollection<GpoConfiguration>();
-            gpoConfigurations.GpoConfigurations1 = gpoConfigList;
-            var gpoConfiguration = new GpoConfiguration
-            {
-                Gpo = port
-            };
-            if (state)
-                gpoConfiguration.State = GpoConfigurationState.High;
-            else
-                gpoConfiguration.State = GpoConfigurationState.Low;
-            gpoConfigurations.GpoConfigurations1.Add(gpoConfiguration);
-            await _iotDeviceInterfaceClient.UpdateReaderGpoAsync(gpoConfigurations);
+            var gpoRequest = new ExtendedGpoConfigurationRequest();
+            var gpoConfiguration = new ExtendedGpoConfiguration();
+            gpoConfiguration.State = state ? GpoState.High : GpoState.Low;
+            gpoConfiguration.Gpo = port;
+            gpoConfiguration.Control = GpoControlMode.Static;
+
+            gpoRequest.GpoConfigurations.Add(gpoConfiguration);
+           
+            await _iotDeviceInterfaceClient.UpdateReaderGpoAsync(gpoRequest);
         }
         catch (Exception ex)
         {
@@ -2028,24 +2025,20 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
         try
         {
-            var gpoConfigurations = new GpoConfigurations();
-            var gpoConfigList = new ObservableCollection<GpoConfiguration>();
-            gpoConfigurations.GpoConfigurations1 = gpoConfigList;
+            var gpoRequest = new ExtendedGpoConfigurationRequest();
+           
 
             foreach (var gpoVmConfig in gpos.GpoConfigurations)
             {
-                var gpoConfiguration = new GpoConfiguration
-                {
-                    Gpo = gpoVmConfig.Gpo
-                };
-                if (gpoVmConfig.State)
-                    gpoConfiguration.State = GpoConfigurationState.High;
-                else
-                    gpoConfiguration.State = GpoConfigurationState.Low;
-                gpoConfigurations.GpoConfigurations1.Add(gpoConfiguration);
+                var gpoConfiguration = new ExtendedGpoConfiguration();
+                gpoConfiguration.State = gpoVmConfig.State ? GpoState.High : GpoState.Low;
+                gpoConfiguration.Gpo = gpoVmConfig.Gpo;
+                gpoConfiguration.Control = GpoControlMode.Static;
+
+                gpoRequest.GpoConfigurations.Add(gpoConfiguration);
             }
 
-            await _iotDeviceInterfaceClient.UpdateReaderGpoAsync(gpoConfigurations);
+            await _iotDeviceInterfaceClient.UpdateReaderGpoAsync(gpoRequest);
         }
         catch (Exception ex)
         {

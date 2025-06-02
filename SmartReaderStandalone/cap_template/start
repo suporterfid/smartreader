@@ -1,72 +1,99 @@
 #!/bin/sh
 
-#chown -R root:root *
+# Set basic permissions first
 chmod 775 /customer/*.sh
 chmod 775 /customer/cust_app_upgrade
 chmod 777 /customer/config/
 chmod 777 /cust/config/
+
+# Create error file if it doesn't exist
 touch /customer/config/error.txt
 chmod 777 /customer/config/error.txt
+
+# Ensure permissions on default configuration file
 chmod 777 /customer/config/smartreader-default.json
 chown root:cap /customer/config/smartreader-default.json
-chown root:cap /customer/config/error.txt
-#chmod -R 777 /customer/config/*.ini
-#chmod -R 777 /customer/config/*.json
 
-rm -rf /customer/upgrading
-#/opt/ys/rshell -c "config network https enable"
-#/opt/ys/rshell -c "config rfid interface rest"
-
-mkdir /customer/wwwroot/logs
-chmod 777 /customer/wwwroot/logs
-chmod 777 /customer/wwwroot/logs/log-app.txt
-rm -rf /customer/wwwroot/logs/*.*
-cd /customer
-
-
-if [ ! -e /customer/config/smartreader.json ]; then                       
+# IMPORTANT: Check and copy configuration file BEFORE trying to execute the application
+echo "Checking configuration file..."
+if [ ! -e /customer/config/smartreader.json ]; then
+    echo "smartreader.json not found. Copying from default file..."
     cp /customer/config/smartreader-default.json /customer/config/smartreader.json
     chmod 777 /customer/config/smartreader.json
+    chown cap:cap /customer/config/smartreader.json
+    echo "Configuration file copied successfully!"
 else
+    echo "smartreader.json already exists."
     chmod 777 /customer/config/smartreader.json
     chown cap:cap /customer/config/smartreader.json
 fi
 
-chmod 777 /customer/config/smartreader.json
-chown cap:cap /customer/config/smartreader.json
+# Clear upgrade flag
+rm -rf /customer/upgrading
 
-#/usr/bin/systemctl start  wpa_supplicant-wired@eth0.service
+# Create and configure logs directory
+mkdir -p /customer/wwwroot/logs
+chmod 777 /customer/wwwroot/logs
 
+# Create log file if it doesn't exist
+if [ ! -f /customer/wwwroot/logs/log-app.txt ]; then
+    touch /customer/wwwroot/logs/log-app.txt
+fi
+chmod 777 /customer/wwwroot/logs/log-app.txt
+
+# Clear old logs (commented to preserve history during debug)
+# rm -rf /customer/wwwroot/logs/*.*
+
+cd /customer
+
+# Start upgrade monitor in background
 sh /customer/monitor-upgrade.sh &
-(( count = 1 ))
+
+# Startup attempts counter
+count=1
+
+# Main execution loop
 while true ; do
-        # Count the log lines and clean if needed. 
-	# $(..) can be used to get the output of a command
-	# use -ge, not >, for comparing numbers
-	# 5 != 50k
-	#if [ "$(wc -l < /customer/wwwroot/logs/log-app.txt)" -ge 30000 ]
-	#then
-	#	rm -rf /customer/wwwroot/logs/log-app.txt  # specify the file to delete
-	#	echo "++++++++" > /customer/wwwroot/logs/log-app.txt
-		#echo "IS GREATER"
-	#fi # end the if statement 
-	# Check to see whether /customer/SmartReaderStandalone exists
-        if [ -f /customer/SmartReaderStandalone ] ; then
-                # The /customer/SmartReaderStandalone exists, so tes whether it's executable
-                if [ -x /customer/SmartReaderStandalone ] ; then
-                    if [ ! -e /customer/upgrading ]; then
-                            # /customer/SmartReaderStandalone is executable, so run it
-                            appDir=/customer
-                            /customer/SmartReaderStandalone
-                            /usr/bin/logger -p user.notice \
-                                    "Starting custom application, count $count."
-                            (( count = count + 1 ))
-                    fi
+    # Check if executable exists
+    if [ -f /customer/SmartReaderStandalone ] ; then
+        # Check if it's executable
+        if [ -x /customer/SmartReaderStandalone ] ; then
+            # Check if not in upgrade process
+            if [ ! -e /customer/upgrading ]; then
+                # Double-check if configuration file exists before executing
+                if [ ! -e /customer/config/smartreader.json ]; then
+                    echo "WARNING: Configuration file missing! Recreating..."
+                    cp /customer/config/smartreader-default.json /customer/config/smartreader.json
+                    chmod 777 /customer/config/smartreader.json
+                    chown cap:cap /customer/config/smartreader.json
                 fi
-                        # /customer/SmartReaderStandalone is NOT executable, so wait for a moment
-                 
-		sleep 2
+                
+                # Execute SmartReader
+                echo "Starting SmartReader (attempt $count)..."
+                appDir=/customer
+                /customer/SmartReaderStandalone
+                
+                # Log the attempt
+                /usr/bin/logger -p user.notice "Starting custom application, count $count."
+                echo "SmartReader terminated. Restarting in 5 seconds..."
+                
+                # Increment counter
+                count=$((count + 1))
+                
+                # Wait before restart
+                sleep 5
+            else
+                echo "System upgrading. Waiting..."
+                sleep 10
+            fi
         else
-                exit 0
+            # File exists but is not executable
+            echo "SmartReaderStandalone is not executable. Adjusting permissions..."
+            chmod +x /customer/SmartReaderStandalone
+            sleep 2
         fi
+    else
+        echo "SmartReaderStandalone not found!"
+        exit 1
+    fi
 done

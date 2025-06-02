@@ -208,9 +208,16 @@ RUN chmod 755 /etk/cap/start \
     && chmod 777 /etk/cap/config \
     && chmod 777 /etk/cap/config/*.json \
     && chmod 755 /etk/cap/*.json \
+    && echo "Converting line endings for all text files..." \
     && find /etk -type f -name "*.json" -exec dos2unix {} \; \
     && find /etk -type f -name "*.in" -exec dos2unix {} \; \
-    && dos2unix /etk/cap/cust_app_upgrade
+    && find /etk -type f -name "*.sh" -exec dos2unix {} \; \
+    && find /etk -type f -name "start" -exec dos2unix {} \; \
+    && find /etk -type f -name "monitor-upgrade.sh" -exec dos2unix {} \; \
+    && find /etk -type f -name "cust_app_upgrade" -exec dos2unix {} \; \
+    && echo "Setting executable permissions for shell scripts..." \
+    && find /etk -type f -name "*.sh" -exec chmod +x {} \; \
+    && echo "Line ending conversion and permissions completed"
 
 # Final verification before UPGX generation
 RUN echo "=== FINAL VERIFICATION ===" \

@@ -575,6 +575,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
 
         }
+        if(_standaloneConfigDTO == null)
+        {
+            _standaloneConfigDTO = ConfigFileHelper.ReadFile();
+        }
         _batchProcessor = new ThreadSafeBatchProcessor(
                     _logger,
                     _standaloneConfigDTO,

@@ -1,10 +1,18 @@
-﻿using Newtonsoft.Json.Linq;
+﻿#region copyright
+//****************************************************************************************************
+// Copyright ©2025 Impinj, Inc.All rights reserved.              
+//                                    
+// You may use and modify this code under the terms of the Impinj Software Tools License & Disclaimer. 
+// Visit https://support.impinj.com/hc/en-us/articles/360000468370-Software-Tools-License-Disclaimer   
+// for full license details, or contact Impinj, Inc.at support@impinj.com for a copy of the license.   
+//
+//****************************************************************************************************
+#endregion
+using Newtonsoft.Json.Linq;
 using SmartReader.Infrastructure.ViewModel;
 using SuperSimpleTcp;
-using System.Collections.Concurrent;
 using System.Text;
 using System.Threading.RateLimiting;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace SmartReaderStandalone.Services
 {
@@ -460,7 +468,7 @@ namespace SmartReaderStandalone.Services
 
 
                     // Use the bounded queue for better memory management
-                    while (processedCount < batchSize 
+                    while (processedCount < batchSize
                         && messageQueue.TryDequeue(out var message))
                     {
                         try
@@ -512,7 +520,7 @@ namespace SmartReaderStandalone.Services
                 _logger.LogError(ex, "ProcessMessageBatchAsync - Error processing socket messages");
                 return 0;
             }
-            
+
         }
 
         //Asynchronous sending

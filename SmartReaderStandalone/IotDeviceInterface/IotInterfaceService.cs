@@ -1,6 +1,6 @@
-﻿﻿#region copyright
+﻿#region copyright
 //****************************************************************************************************
-// Copyright ©2023 Impinj, Inc.All rights reserved.              
+// Copyright ©2025 Impinj, Inc.All rights reserved.              
 //                                    
 // You may use and modify this code under the terms of the Impinj Software Tools License & Disclaimer. 
 // Visit https://support.impinj.com/hc/en-us/articles/360000468370-Software-Tools-License-Disclaimer   
@@ -45,15 +45,13 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading.Channels;
 using System.Timers;
 using TagDataTranslation;
 using static SmartReader.IotDeviceInterface.R700IotReader;
 using DataReceivedEventArgs = SuperSimpleTcp.DataReceivedEventArgs;
 using ReaderStatus = SmartReaderStandalone.Entities.ReaderStatus;
 using Timer = System.Timers.Timer;
-using System.Threading.RateLimiting;
-using System.Threading.Channels;
-using static SmartReaderStandalone.Utils.UDPSocket;
 namespace SmartReader.IotDeviceInterface;
 
 public class IotInterfaceService : BackgroundService, IServiceProviderIsService
@@ -324,7 +322,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     private readonly BoundedConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventHttpPost = new BoundedConcurrentQueue<JObject>(1000);
 
     // private readonly BoundedConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventHttpPostRetry = new BoundedConcurrentQueue<JObject>(1000);
-    
+
 
     // private readonly BoundedConcurrentQueue<JObject> _messageQueueTagSmartReaderTagEventSocketServerRetry = new BoundedConcurrentQueue<JObject>();
 
@@ -575,7 +573,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
 
         }
-        if(_standaloneConfigDTO == null)
+        if (_standaloneConfigDTO == null)
         {
             _standaloneConfigDTO = ConfigFileHelper.ReadFile();
         }
@@ -2013,7 +2011,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             gpoConfiguration.Control = GpoControlMode.Static;
 
             gpoRequest.GpoConfigurations.Add(gpoConfiguration);
-           
+
             await _iotDeviceInterfaceClient.UpdateReaderGpoAsync(gpoRequest);
         }
         catch (Exception ex)
@@ -2030,7 +2028,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
         try
         {
             var gpoRequest = new ExtendedGpoConfigurationRequest();
-           
+
 
             foreach (var gpoVmConfig in gpos.GpoConfigurations)
             {
@@ -3297,7 +3295,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
             catch (Exception ex)
             {
-            _logger.LogError(ex, "Error starting web socket server. " + ex.Message); 
+                _logger.LogError(ex, "Error starting web socket server. " + ex.Message);
             }
 
             try
@@ -4011,7 +4009,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
 
     private async Task ProcessFilteringQueueAsync()
     {
-        while(true)
+        while (true)
         {
             try
             {
@@ -4049,11 +4047,11 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             {
                 _logger.LogError(ex, "Filtering queue processing encountered an error, restarting...");
             }
-            
+
 
             await Task.Delay(1000); // Avoid busy looping if an error occurs
         }
-        
+
     }
 
 
@@ -4252,7 +4250,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     }
 
 
-    
+
 
     private void AdjustTagReadEventTimestamp(TagInventoryEvent tagInventoryEvent, TagRead tagEvent)
     {
@@ -4332,7 +4330,7 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
             }
 
         }
-        
+
     }
 
     /// <summary>
@@ -4428,10 +4426,10 @@ public class IotInterfaceService : BackgroundService, IServiceProviderIsService
     }
 
 
-/// <summary>
-/// Processes SKU summaries asynchronously to avoid locks.
-/// </summary>
-private async Task<Dictionary<string, SkuSummary>> ProcessSkuSummariesAsync(List<JObject> dataList, string barcode)
+    /// <summary>
+    /// Processes SKU summaries asynchronously to avoid locks.
+    /// </summary>
+    private async Task<Dictionary<string, SkuSummary>> ProcessSkuSummariesAsync(List<JObject> dataList, string barcode)
     {
         var skuSummaryList = new Dictionary<string, SkuSummary>();
 
@@ -4578,7 +4576,7 @@ private async Task<Dictionary<string, SkuSummary>> ProcessSkuSummariesAsync(List
                 await ProcessSoftwareFiltersAsync(); // Modified to not use nested locks
             }
 
-            
+
         }
         catch (TimeoutException)
         {
@@ -4598,7 +4596,7 @@ private async Task<Dictionary<string, SkuSummary>> ProcessSkuSummariesAsync(List
     private void MonitorCollectionSizes()
     {
         const int WarningThreshold = 800;
-        
+
         if (_readEpcs.Count > WarningThreshold)
         {
             _logger.LogWarning($"_readEpcs size ({_readEpcs.Count}) approaching limit");
@@ -4659,7 +4657,7 @@ private async Task<Dictionary<string, SkuSummary>> ProcessSkuSummariesAsync(List
             CleanupExpiredReadEpcs();
             await CleanupTimeoutDictionaryAsync(); // Cleanup also does not need locks
         }
-    }    
+    }
 
     private async Task CleanupTimeoutDictionaryAsync()
     {
@@ -5472,7 +5470,7 @@ private async Task<Dictionary<string, SkuSummary>> ProcessSkuSummariesAsync(List
             }
 
 
-            
+
         }
         catch (Exception ex)
         {

@@ -85,7 +85,7 @@ function getSelectedRowData() {
         for (var i = 0; i < selectedSummaryData.length; i++) {
             epcDisplayList += selectedSummaryData[i] + "\n";
         }
-        fetch('/api/query/external/product/' + selectedData[0].sku)
+        fetch('/api/external/query/product/' + selectedData[0].sku)
             .then((response) => response.json())
             .then((data) => {
                 console.log('requested remote data about ' + selectedData[0].sku);
@@ -235,7 +235,7 @@ function searchOrder() {
 
     // request options
 
-    var url = '/api/query/external/order';
+    var url = '/api/external/query/order';
 
     fetch(url, {
         credentials: 'include',
@@ -392,7 +392,7 @@ function publishData() {
     }
     eventsArray.push(containerData);
     dataToPublish = { events: eventsArray }
-    var url = '/api/publish/external';
+    var url = '/api/external/publish';
     console.log('dataToPublish: ' + JSON.stringify(dataToPublish));
     fetch(url, {
         credentials: 'include',

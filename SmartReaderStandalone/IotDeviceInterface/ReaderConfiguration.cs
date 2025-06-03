@@ -1,6 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
-using System.Net;
-using System.Text.Json;
+﻿using System.Net;
 using System.Text.Json.Serialization;
 
 namespace SmartReaderStandalone.IotDeviceInterface
@@ -618,7 +616,7 @@ namespace SmartReaderStandalone.IotDeviceInterface
                 DefaultPulseDurationMs = 1000,
                 MaxPulseDurationMs = 60000,
                 AllowNetworkControl = true,
-                
+
             };
         }
 

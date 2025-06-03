@@ -1,6 +1,6 @@
 ﻿#region copyright
 //****************************************************************************************************
-// Copyright ©2023 Impinj, Inc.All rights reserved.              
+// Copyright ©2025 Impinj, Inc.All rights reserved.              
 //                                    
 // You may use and modify this code under the terms of the Impinj Software Tools License & Disclaimer. 
 // Visit https://support.impinj.com/hc/en-us/articles/360000468370-Software-Tools-License-Disclaimer   
@@ -9,7 +9,6 @@
 //****************************************************************************************************
 #endregion
 using Impinj.Atlas;
-using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using plugin_contract.ViewModel.Gpi;
 using plugin_contract.ViewModel.Stream;
@@ -1286,7 +1285,7 @@ public class R700IotReader : IR700IotReader
             Func<bool>? isNetworkConnectedDelegate = null,
             R700IotReader? parent = null)
         {
-            
+
 
             _parent = parent ?? throw new ArgumentNullException(nameof(parent));
 

@@ -1,11 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
+﻿#region copyright
+//****************************************************************************************************
+// Copyright ©2025 Impinj, Inc.All rights reserved.              
+//                                    
+// You may use and modify this code under the terms of the Impinj Software Tools License & Disclaimer. 
+// Visit https://support.impinj.com/hc/en-us/articles/360000468370-Software-Tools-License-Disclaimer   
+// for full license details, or contact Impinj, Inc.at support@impinj.com for a copy of the license.   
+//
+//****************************************************************************************************
+#endregion
 using System.Diagnostics;
-using System.Globalization;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace SmartReaderStandalone.Services
 {
@@ -344,11 +347,11 @@ namespace SmartReaderStandalone.Services
                 { "System.Min CPU Used (%)", _minCpuUsage },
                 { "System.Max CPU Used (%)", _maxCpuUsage }
             };
-            if(_networkStats == null)
+            if (_networkStats == null)
             {
                 _networkStats = GetNetworkUsage("eth0"); // Replace eth0 with actual interface
             }
-            
+
             // Add network statistics to the response
             foreach (var entry in _networkStats)
             {

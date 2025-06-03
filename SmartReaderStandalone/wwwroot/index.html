@@ -1651,12 +1651,12 @@
                                 <label for="outputMqttCommandQoS">Management Command QoS Level:</label>
                                 <input id="outputMqttCommandQoS" class="form-control" v-model="readerConfigs[0].mqttManagementCommandQoS">
                                 <!--
-                <input id="mqttManagementCommandRetainMessages" type="checkbox"
-                       v-model="readerConfigs[0].mqttManagementCommandRetainMessages"
-                       v-bind:true-value="true"
-                       v-bind:false-value="false">
-                <label for="mqttManagementCommandRetainMessages">Retain Messages</label>
-                -->
+    <input id="mqttManagementCommandRetainMessages" type="checkbox"
+           v-model="readerConfigs[0].mqttManagementCommandRetainMessages"
+           v-bind:true-value="true"
+           v-bind:false-value="false">
+    <label for="mqttManagementCommandRetainMessages">Retain Messages</label>
+    -->
                                 <br />
 
                                 <br />
@@ -1678,12 +1678,12 @@
                                 <label for="mqttControlCommandQoS">Control Command QoS Level:</label>
                                 <input id="mqttControlCommandQoS" class="form-control" v-model="readerConfigs[0].mqttControlCommandQoS">
                                 <!--
-                <input id="mqttControlCommandRetainMessages" type="checkbox"
-                       v-model="readerConfigs[0].mqttControlCommandRetainMessages"
-                       v-bind:true-value="true"
-                       v-bind:false-value="false">
-                <label for="mqttControlCommandRetainMessages">Retain Messages</label>
-                -->
+    <input id="mqttControlCommandRetainMessages" type="checkbox"
+           v-model="readerConfigs[0].mqttControlCommandRetainMessages"
+           v-bind:true-value="true"
+           v-bind:false-value="false">
+    <label for="mqttControlCommandRetainMessages">Retain Messages</label>
+    -->
                                 <br />
                                 <br />
 
@@ -1696,6 +1696,27 @@
                                        v-bind:true-value="true"
                                        v-bind:false-value="false">
                                 <label for="mqttControlResponseRetainMessages">Retain Messages</label>
+                                <br />
+                                <br />
+                                <br />
+                                <br>
+                                <h3>Upload Certificates</h3>
+                                <div class="form-group">
+                                    <label for="clientCertFile">Client Certificate (.pfx):</label>
+                                    <input type="file" id="clientCertFile" @change="onClientCertSelected" accept=".pfx">
+                                </div>
+                                <div class="form-group">
+                                    <label for="clientCertPassword">PFX Password:</label>
+                                    <input type="password" id="clientCertPassword" v-model="clientCertPassword">
+                                </div>
+                                <button class="btn btn-info" @click="uploadClientCertificate">Upload Client Certificate</button>
+                                <br>
+                                <br>
+                                <div class="form-group">
+                                    <label for="caCertFile">CA Certificate (.crt, .pem, .key):</label>
+                                    <input type="file" id="caCertFile" @change="onCaCertSelected" accept=".crt,.pem,.key">
+                                </div>
+                                <button class="btn btn-info" @click="uploadCaCertificate">Upload CA Certificate</button>
                                 <br />
                                 <br />
                                 <br />

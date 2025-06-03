@@ -716,7 +716,10 @@ var vueApplication = new Vue({
 		file: null,
 		content: null,
 		tagPopulationIsValid: true,
-		sessionIsValid: true
+		sessionIsValid: true,
+		clientCertFile: null,
+		clientCertPassword: '',
+		caCertFile: null,
 
 	},
 
@@ -810,6 +813,77 @@ var vueApplication = new Vue({
 				document.body.classList.remove('dark-mode');
 			}
 		},
+
+		onClientCertSelected(event) {
+			this.clientCertFile = event.target.files[0];
+		},
+		onCaCertSelected(event) {
+			this.caCertFile = event.target.files[0];
+		},
+
+		async uploadClientCertificate() {
+			if (!this.clientCertFile || !this.clientCertPassword) {
+				alert('Please select a client certificate file and enter the password.');
+				return;
+			}
+
+			let formData = new FormData();
+			formData.append('file', this.clientCertFile);
+			formData.append('password', this.clientCertPassword);
+
+			// Basic Auth
+			let basicAuth = btoa('admin:admin');
+			try {
+				let response = await fetch('/upload/mqtt/certificate', {
+					method: 'POST',
+					headers: {
+						'Authorization': 'Basic ' + basicAuth
+					},
+					body: formData
+				});
+
+				if (response.ok) {
+					alert('Client certificate uploaded successfully!');
+				} else {
+					let err = await response.text();
+					alert('Failed to upload client certificate: ' + err);
+				}
+			} catch (error) {
+				alert('Error uploading client certificate: ' + error);
+			}
+		},
+
+		async uploadCaCertificate() {
+			if (!this.caCertFile) {
+				alert('Please select a CA certificate file.');
+				return;
+			}
+
+			let formData = new FormData();
+			formData.append('file', this.caCertFile);
+
+			// Basic Auth
+			let basicAuth = btoa('admin:admin');
+			try {
+				let response = await fetch('/upload/mqtt/ca', {
+					method: 'POST',
+					headers: {
+						'Authorization': 'Basic ' + basicAuth
+					},
+					body: formData
+				});
+
+				if (response.ok) {
+					alert('CA certificate uploaded successfully!');
+				} else {
+					let err = await response.text();
+					alert('Failed to upload CA certificate: ' + err);
+				}
+			} catch (error) {
+				alert('Error uploading CA certificate: ' + error);
+			}
+		},
+
 
 		downloadFile() {
 			let encodedBasicData = btoa(this.adminAccount.username + ':' + this.adminAccount.password);

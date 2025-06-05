@@ -1,15 +1,17 @@
 #region copyright
 //****************************************************************************************************
-// Copyright ©2025 Impinj, Inc.All rights reserved.              
-//                                    
+// Copyright ©2025 Impinj, Inc.All rights reserved.              
+//                                    
 // You may use and modify this code under the terms of the Impinj Software Tools License & Disclaimer. 
-// Visit https://support.impinj.com/hc/en-us/articles/360000468370-Software-Tools-License-Disclaimer   
-// for full license details, or contact Impinj, Inc.at support@impinj.com for a copy of the license.   
+// Visit https://support.impinj.com/hc/en-us/articles/360000468370-Software-Tools-License-Disclaimer   
+// for full license details, or contact Impinj, Inc.at support@impinj.com for a copy of the license.   
 //
 //****************************************************************************************************
 #endregion
+using Microsoft.AspNetCore.Mvc.ModelBinding.Binders;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.OpenApi.Models;
 using MQTTnet;
 using MQTTnet.Server;
 using Serilog;
@@ -18,10 +20,13 @@ using Serilog.Events;
 using SmartReader.Infrastructure.Database;
 using SmartReader.IotDeviceInterface;
 using SmartReaderStandalone.Authentication;
+using SmartReaderStandalone.Filters;
 using SmartReaderStandalone.IotDeviceInterface;
 using SmartReaderStandalone.Services;
 using SmartReaderStandalone.Utils;
+using Swashbuckle.AspNetCore.SwaggerGen;
 using System.Net;
+using System.Reflection;
 using System.Runtime.Loader;
 using static SmartReader.IotDeviceInterface.R700IotReader;
 
@@ -65,9 +70,46 @@ builder.Services.AddLogging(loggingBuilder =>
 });
 
 builder.Services.AddControllers();
+
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "SmartReader Standalone API",
+        Version = "v1",
+        Description = "API for SmartReader Standalone application"
+    });
+
+    c.AddSecurityDefinition("basic", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "basic",
+        In = ParameterLocation.Header,
+        Description = "Basic Authorization header using the Bearer scheme."
+    });
+
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "basic"
+                }
+            },
+            new string[] {}
+        }
+    });
+});
 builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+
+
+
+
 builder.Services.AddCors(o => o.AddPolicy("AllowAll", builder =>
 {
     builder.AllowAnyOrigin()

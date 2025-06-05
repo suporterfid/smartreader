@@ -44,8 +44,9 @@ namespace SmartReaderStandalone.Controllers
         [HttpPost("ca")]
         [ProducesResponseType(typeof(UploadResponse), 200)]
         [ProducesResponseType(typeof(UploadResponse), 400)]
-        public async Task<IActionResult> UploadCaCertificate([FromForm] IFormFile file)
+        public async Task<IActionResult> UploadCaCertificate([FromForm] UploadFileDto model)
         {
+            var file = model?.File;
             if (file == null)
             {
                 return BadRequest(new UploadResponse { Message = "At least one file is required." });
@@ -104,8 +105,10 @@ namespace SmartReaderStandalone.Controllers
         [HttpPost("certificate")]
         [ProducesResponseType(typeof(UploadResponse), 200)]
         [ProducesResponseType(typeof(UploadResponse), 400)]
-        public async Task<IActionResult> UploadClientCertificate([FromForm] IFormFile file, [FromForm] string password)
+        public async Task<IActionResult> UploadClientCertificate([FromForm] UploadCertificateDto model)
         {
+            var file = model?.File;
+            var password = model?.Password;
             if (file == null)
             {
                 return BadRequest(new UploadResponse { Message = "At least one file is required." });
@@ -150,14 +153,29 @@ namespace SmartReaderStandalone.Controllers
                 return StatusCode(500, new UploadResponse { Message = "Error saving certificate file." });
             }
         }
-    }
 
-    /// <summary>
-    /// Simple upload response message.
-    /// </summary>
-    public class UploadResponse
-    {
-        /// <example>CA file uploaded successfully.</example>
-        public string Message { get; set; }
+        /// <summary>
+        /// Simple upload response message.
+        /// </summary>
+        public class UploadResponse
+        {
+            /// <example>CA file uploaded successfully.</example>
+            public string Message { get; set; }
+        }
+
+        public class UploadFileDto
+        {
+            [FromForm(Name = "file")]
+            public IFormFile File { get; set; }
+        }
+
+        public class UploadCertificateDto
+        {
+            [FromForm(Name = "file")]
+            public IFormFile File { get; set; }
+
+            [FromForm(Name = "password")]
+            public string Password { get; set; }
+        }
     }
 }

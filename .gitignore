@@ -1456,3 +1456,4 @@ SmartReaderStandalone/build_logs/build_log_20250122_183430.txt
 .vs/SmartReaderStandalone/v17/.suo
 *.bin
 SmartReaderStandalone/logs/smartreader-20250530.log
+*.log
